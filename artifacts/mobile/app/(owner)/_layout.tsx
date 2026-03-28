@@ -47,7 +47,9 @@ function ClassicTabLayout() {
           borderTopColor: Colors.tabBarBorder,
           borderTopWidth: 1,
           elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
+          height: isWeb ? 64 : 56,
+          paddingBottom: isWeb ? 8 : 4,
+          paddingTop: 6,
         },
         tabBarBackground: () =>
           isIOS ? (
@@ -65,28 +67,28 @@ function ClassicTabLayout() {
         name="index"
         options={{
           title: "لوحة التحكم",
-          tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="grid-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="network"
         options={{
           title: "الشبكة",
-          tabBarIcon: ({ color, size }) => <Ionicons name="wifi-outline" size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="wifi-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="team"
         options={{
           title: "الفريق",
-          tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "حسابي",
-          tabBarIcon: ({ color, size }) => <Ionicons name="person-circle-outline" size={size} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="person-circle-outline" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
