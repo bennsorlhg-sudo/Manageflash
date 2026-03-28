@@ -164,10 +164,10 @@ Expo React Native mobile app with Arabic RTL layout.
 - `app/_layout.tsx` — Root layout with AuthProvider, RTL forced
 - `app/index.tsx` — Auth-based role router (redirects to role-specific tabs)
 - `app/login.tsx` — Login screen (phone + password)
-- `app/(owner)/` — Owner tab layout: dashboard, network, team, profile
-- `app/(finance)/` — Finance manager tabs: finance, profile
-- `app/(supervisor)/` — Supervisor tabs: network, tasks, profile
-- `app/(tech)/` — Tech engineer tabs: tickets, profile
+- `app/(owner)/` — Owner tab layout: dashboard (with live API data, add custody, add task modals), network, team, report, profile
+- `app/(finance)/` — Stack layout: dashboard, sell, disburse, collect, custody, sales, expenses, debts-loans, sales-points, profile
+- `app/(supervisor)/` — Stack layout: dashboard, repair-ticket, installation-tickets, purchase-request, database, tasks, engineer-management, subscription-delivery, finance-audit, profile
+- `app/(tech)/` — Stack layout: home (tasks with New/In Progress/Completed tabs, call/copy buttons), profile
 - `context/AuthContext.tsx` — Auth state with AsyncStorage persistence
 - `constants/colors.ts` — Color theme + status/role color maps
 - `components/StatusBadge.tsx` — Network point status badge

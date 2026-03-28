@@ -1,67 +1,10 @@
-import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
-import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
-import { Ionicons } from "@expo/vector-icons";
+import { Stack } from "expo-router";
 import React from "react";
-import { Platform, StyleSheet, View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator } from "react-native";
 import { Colors } from "@/constants/colors";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 
-function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "network", selected: "network" }} />
-        <Label>الشبكة</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="tasks">
-        <Icon sf={{ default: "checkmark.circle", selected: "checkmark.circle.fill" }} />
-        <Label>المهام</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="profile">
-        <Icon sf={{ default: "person.circle", selected: "person.circle.fill" }} />
-        <Label>حسابي</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
-}
-
-function ClassicTabLayout() {
-  const isIOS = Platform.OS === "ios";
-  const isWeb = Platform.OS === "web";
-
-  return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors.tabActive,
-        tabBarInactiveTintColor: Colors.tabInactive,
-        headerShown: false,
-        tabBarStyle: {
-          position: "absolute",
-          backgroundColor: isIOS ? "transparent" : Colors.tabBar,
-          borderTopColor: Colors.tabBarBorder,
-          borderTopWidth: 1,
-          elevation: 0,
-          ...(isWeb ? { height: 84 } : {}),
-        },
-        tabBarBackground: () =>
-          isIOS ? (
-            <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-          ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.tabBar }]} />
-          ) : null,
-        tabBarLabelStyle: { fontFamily: "Inter_500Medium", fontSize: 11 },
-      }}
-    >
-      <Tabs.Screen name="index" options={{ title: "الشبكة", tabBarIcon: ({ color, size }) => <Ionicons name="wifi-outline" size={size} color={color} /> }} />
-      <Tabs.Screen name="tasks" options={{ title: "المهام", tabBarIcon: ({ color, size }) => <Ionicons name="checkmark-circle-outline" size={size} color={color} /> }} />
-      <Tabs.Screen name="profile" options={{ title: "حسابي", tabBarIcon: ({ color, size }) => <Ionicons name="person-circle-outline" size={size} color={color} /> }} />
-    </Tabs>
-  );
-}
-
-export default function SupervisorTabLayout() {
+export default function SupervisorLayout() {
   const { isLoading, isAuthorized } = useRoleGuard("supervisor");
 
   if (isLoading || !isAuthorized) {
@@ -72,6 +15,23 @@ export default function SupervisorTabLayout() {
     );
   }
 
-  if (isLiquidGlassAvailable()) return <NativeTabLayout />;
-  return <ClassicTabLayout />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        contentStyle: { backgroundColor: Colors.background },
+      }}
+    >
+      <Stack.Screen name="index" />
+      <Stack.Screen name="repair-ticket" />
+      <Stack.Screen name="installation-tickets" />
+      <Stack.Screen name="purchase-request" />
+      <Stack.Screen name="database" />
+      <Stack.Screen name="tasks" />
+      <Stack.Screen name="engineer-management" />
+      <Stack.Screen name="subscription-delivery" />
+      <Stack.Screen name="finance-audit" />
+      <Stack.Screen name="profile" />
+    </Stack>
+  );
 }

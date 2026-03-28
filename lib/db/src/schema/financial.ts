@@ -120,6 +120,89 @@ export const financialTransactionsTable = pgTable("financial_transactions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+export const expenseTemplatesTable = pgTable("expense_templates", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2 }),
+  category: text("category").notNull().default("operational"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const obligationsTable = pgTable("obligations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  dueDay: integer("due_day"),
+  isPaid: integer("is_paid").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const repairTicketsTable = pgTable("repair_tickets", {
+  id: serial("id").primaryKey(),
+  serviceNumber: text("service_number").notNull(),
+  clientName: text("client_name"),
+  serviceType: text("service_type").notNull().default("hotspot"),
+  problemDescription: text("problem_description").notNull(),
+  status: text("status").notNull().default("pending"),
+  priority: text("priority").notNull().default("medium"),
+  assignedToId: integer("assigned_to_id"),
+  assignedToName: text("assigned_to_name"),
+  locationUrl: text("location_url"),
+  notes: text("notes"),
+  createdById: integer("created_by_id"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const installationTicketsTable = pgTable("installation_tickets", {
+  id: serial("id").primaryKey(),
+  clientName: text("client_name").notNull(),
+  clientPhone: text("client_phone").notNull(),
+  serviceType: text("service_type").notNull().default("hotspot_internal"),
+  locationUrl: text("location_url"),
+  address: text("address"),
+  notes: text("notes"),
+  status: text("status").notNull().default("new"),
+  assignedToId: integer("assigned_to_id"),
+  assignedToName: text("assigned_to_name"),
+  scheduledAt: timestamp("scheduled_at"),
+  completedAt: timestamp("completed_at"),
+  archivedAt: timestamp("archived_at"),
+  archiveNotes: text("archive_notes"),
+  createdById: integer("created_by_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const subscriptionDeliveryTable = pgTable("subscription_deliveries", {
+  id: serial("id").primaryKey(),
+  engineerId: integer("engineer_id"),
+  engineerName: text("engineer_name").notNull(),
+  cardType: text("card_type").notNull().default("hotspot"),
+  denomination: integer("denomination").notNull(),
+  cardCount: integer("card_count").notNull(),
+  totalValue: numeric("total_value", { precision: 12, scale: 2 }).notNull(),
+  deliveredToFinanceId: integer("delivered_to_finance_id"),
+  deliveredToName: text("delivered_to_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertExpenseTemplateSchema = createInsertSchema(expenseTemplatesTable).omit({ id: true, createdAt: true });
+export const insertObligationSchema = createInsertSchema(obligationsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertRepairTicketSchema = createInsertSchema(repairTicketsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertInstallationTicketSchema = createInsertSchema(installationTicketsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertSubscriptionDeliverySchema = createInsertSchema(subscriptionDeliveryTable).omit({ id: true, createdAt: true });
+
+export type ExpenseTemplate = typeof expenseTemplatesTable.$inferSelect;
+export type Obligation = typeof obligationsTable.$inferSelect;
+export type RepairTicket = typeof repairTicketsTable.$inferSelect;
+export type InstallationTicket = typeof installationTicketsTable.$inferSelect;
+export type SubscriptionDelivery = typeof subscriptionDeliveryTable.$inferSelect;
+
 export const insertCardInventorySchema = createInsertSchema(cardInventoryTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSalesTransactionSchema = createInsertSchema(salesTransactionsTable).omit({ id: true, createdAt: true });
 export const insertExpenseSchema = createInsertSchema(expensesTable).omit({ id: true, createdAt: true });

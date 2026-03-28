@@ -89,6 +89,13 @@ function ClassicTabLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="person-circle-outline" size={size} color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="report"
+        options={{
+          title: "تقرير",
+          tabBarButton: () => null,
+        }}
+      />
     </Tabs>
   );
 }

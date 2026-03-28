@@ -226,6 +226,10 @@ importers:
         version: 3.1.0
 
   artifacts/mobile:
+    dependencies:
+      expo-clipboard:
+        specifier: 56.0.0-canary-20260305-5163746
+        version: 56.0.0-canary-20260305-5163746(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
     devDependencies:
       '@babel/core':
         specifier: ^7.25.2
@@ -3326,6 +3330,13 @@ packages:
     resolution: {integrity: sha512-rWyE1NBRZEu9WD+X+5l7gyPRszw7n12cW3IRNAb5i6KFzaBp8cxqT5oeaphJapqURvcqhkOZn2k5EtBSbsuU7w==}
     peerDependencies:
       expo: '*'
+      react: '*'
+      react-native: '*'
+
+  expo-clipboard@56.0.0-canary-20260305-5163746:
+    resolution: {integrity: sha512-KxK12jeCxbH/mAi1THNq8KRoA0mXBhiE+MIRmaiVZkTtJVNm1GfCKoy+Ig9FZmOJ10xjtod/eTaH5QOMeZ/9Xw==}
+    peerDependencies:
+      expo: 56.0.0-canary-20260305-5163746
       react: '*'
       react-native: '*'
 
@@ -9088,6 +9099,12 @@ snapshots:
       - supports-color
 
   expo-blur@15.0.8(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
+    dependencies:
+      expo: 54.0.33(@babel/core@7.29.0)(@expo/metro-runtime@6.1.2)(expo-router@6.0.23)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
+      react: 19.1.0
+      react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
+
+  expo-clipboard@56.0.0-canary-20260305-5163746(expo@54.0.33)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0):
     dependencies:
       expo: 54.0.33(@babel/core@7.29.0)(@expo/metro-runtime@6.1.2)(expo-router@6.0.23)(react-native@0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0))(react@19.1.0)
       react: 19.1.0
