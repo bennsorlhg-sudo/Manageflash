@@ -1,0 +1,47 @@
+import bcrypt from "bcryptjs";
+import { db } from "@workspace/db";
+import { usersTable } from "@workspace/db/schema";
+import { sql } from "drizzle-orm";
+import { logger } from "./logger";
+
+const DEFAULT_USERS = [
+  { name: "فهد الهندي", phone: "771163358", role: "owner" as const, password: "123456" },
+  { name: "ريان رضوان", phone: "776218710", role: "finance_manager" as const, password: "123456" },
+  { name: "محمد هاشم الزبود", phone: "772424239", role: "supervisor" as const, password: "123456" },
+  { name: "خالد وليد", phone: "737214609", role: "tech_engineer" as const, password: "123456" },
+];
+
+export async function seedIfEmpty() {
+  try {
+    const result = await db.execute(sql`SELECT COUNT(*) as count FROM users`);
+    const count = Number((result.rows[0] as any)?.count ?? 0);
+
+    if (count > 0) {
+      logger.info({ count }, "Database already has users, skipping seed");
+      return;
+    }
+
+    logger.info("Seeding default users...");
+
+    for (const u of DEFAULT_USERS) {
+      const hash = await bcrypt.hash(u.password, 10);
+      await db.insert(usersTable).values({
+        name: u.name,
+        phone: u.phone,
+        role: u.role,
+        passwordHash: hash,
+        isActive: true,
+      });
+    }
+
+    // Initialize cash box
+    await db.execute(sql`
+      INSERT INTO cash_box (balance) VALUES (0)
+      ON CONFLICT DO NOTHING
+    `);
+
+    logger.info("Seeding complete — 4 users created");
+  } catch (err) {
+    logger.error({ err }, "Seed failed (non-fatal)");
+  }
+}
