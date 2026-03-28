@@ -6,8 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ErrorResponse {
-  error: string;
-  message?: string;
-  details?: string;
+export interface SalesPointRecord {
+  name: string;
+  location?: string;
+  contactName?: string;
+  contactPhone?: string;
+  status?: string;
 }

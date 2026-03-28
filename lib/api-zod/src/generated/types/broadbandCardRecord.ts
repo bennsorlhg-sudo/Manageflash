@@ -6,8 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ErrorResponse {
-  error: string;
-  message?: string;
-  details?: string;
+export interface BroadbandCardRecord {
+  serial: string;
+  denomination: number;
+  batchNumber?: string;
+  status?: string;
 }

@@ -6,8 +6,8 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface ErrorResponse {
-  error: string;
-  message?: string;
-  details?: string;
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
 }

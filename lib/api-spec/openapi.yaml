@@ -16,6 +16,16 @@ tags:
     description: User management operations
   - name: network
     description: Network points operations
+  - name: dashboard
+    description: Owner dashboard
+  - name: custody
+    description: Custody management
+  - name: tasks
+    description: Task assignment
+  - name: finances
+    description: Financial reports
+  - name: import
+    description: Data import operations
 paths:
   /healthz:
     get:
@@ -30,6 +40,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
   /auth/login:
     post:
       operationId: login
@@ -54,6 +65,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
   /auth/me:
     get:
       operationId: getMe
@@ -74,6 +86,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
   /users:
     get:
       operationId: listUsers
@@ -115,6 +128,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
   /users/{id}:
     get:
       operationId: getUser
@@ -160,6 +174,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserProfile"
+
   /users/{id}/toggle-active:
     post:
       operationId: toggleUserActive
@@ -180,6 +195,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UserProfile"
+
   /network/hotspot-points:
     get:
       operationId: listHotspotPoints
@@ -196,6 +212,7 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/HotspotPoint"
+
   /network/broadband-points:
     get:
       operationId: listBroadbandPoints
@@ -212,6 +229,7 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/BroadbandPoint"
+
   /network/sales-points:
     get:
       operationId: listSalesPoints
@@ -228,6 +246,220 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/SalesPoint"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get owner dashboard summary
+      description: Returns key metrics for the owner dashboard
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /custody:
+    post:
+      operationId: createCustody
+      tags: [custody]
+      summary: Add custody to Finance Manager
+      description: Owner adds cash or card custody to Finance Manager
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustodyRequest"
+      responses:
+        "201":
+          description: Custody created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CustodyRecord"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: getCustodyRecords
+      tags: [custody]
+      summary: Get custody records
+      responses:
+        "200":
+          description: List of custody records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustodyRecord"
+
+  /tasks:
+    post:
+      operationId: createTask
+      tags: [tasks]
+      summary: Assign a task to a team member
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTaskRequest"
+      responses:
+        "201":
+          description: Task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    get:
+      operationId: getTasks
+      tags: [tasks]
+      summary: Get all tasks
+      parameters:
+        - name: targetRole
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+
+  /finances/report:
+    get:
+      operationId: getFinancialReport
+      tags: [finances]
+      summary: Get financial report (sales, expenses, profit)
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [day, week, month, custom]
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Financial report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FinancialReport"
+
+  /import/hotspot:
+    post:
+      operationId: importHotspotCards
+      tags: [import]
+      summary: Import hotspot cards in bulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportHotspotRequest"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /import/broadband:
+    post:
+      operationId: importBroadbandCards
+      tags: [import]
+      summary: Import broadband cards in bulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportBroadbandRequest"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /import/sales-points:
+    post:
+      operationId: importSalesPoints
+      tags: [import]
+      summary: Import sales points in bulk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportSalesPointsRequest"
+      responses:
+        "200":
+          description: Import result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResult"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /card-prices:
+    get:
+      operationId: getCardPrices
+      tags: [dashboard]
+      summary: Get card denomination prices
+      responses:
+        "200":
+          description: Card prices
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CardPrices"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -242,16 +474,7 @@ components:
           type: string
       required:
         - status
-    ErrorResponse:
-      type: object
-      properties:
-        error:
-          type: string
-        message:
-          type: string
-      required:
-        - error
-        - message
+
     LoginRequest:
       type: object
       properties:
@@ -262,6 +485,7 @@ components:
       required:
         - phone
         - password
+
     LoginResponse:
       type: object
       properties:
@@ -272,6 +496,7 @@ components:
       required:
         - token
         - user
+
     UserProfile:
       type: object
       properties:
@@ -296,6 +521,7 @@ components:
         - role
         - isActive
         - createdAt
+
     CreateUserRequest:
       type: object
       properties:
@@ -313,6 +539,7 @@ components:
         - phone
         - password
         - role
+
     UpdateUserRequest:
       type: object
       properties:
@@ -323,6 +550,7 @@ components:
         role:
           type: string
           enum: [finance_manager, supervisor, tech_engineer]
+
     HotspotPoint:
       type: object
       properties:
@@ -350,6 +578,7 @@ components:
         - location
         - status
         - createdAt
+
     BroadbandPoint:
       type: object
       properties:
@@ -380,6 +609,7 @@ components:
         - location
         - status
         - createdAt
+
     SalesPoint:
       type: object
       properties:
@@ -403,3 +633,301 @@ components:
         - name
         - location
         - createdAt
+
+    DashboardSummary:
+      type: object
+      properties:
+        ownerName:
+          type: string
+        cashBalance:
+          type: number
+        totalCustody:
+          type: number
+        totalLoans:
+          type: number
+        totalCardValue:
+          type: number
+        totalSalesPoints:
+          type: integer
+        hotspotCount:
+          type: integer
+        broadbandCount:
+          type: integer
+      required:
+        - ownerName
+        - cashBalance
+        - totalCustody
+        - totalLoans
+        - totalCardValue
+        - totalSalesPoints
+        - hotspotCount
+        - broadbandCount
+
+    CreateCustodyRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [cash, cards]
+        amount:
+          type: number
+        denomination:
+          type: integer
+        cardCount:
+          type: integer
+        toRole:
+          type: string
+          enum: [finance_manager, supervisor, tech_engineer]
+        toPersonName:
+          type: string
+        notes:
+          type: string
+      required:
+        - type
+        - toRole
+
+    CustodyRecord:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        amount:
+          type: string
+        denomination:
+          type: integer
+          nullable: true
+        cardCount:
+          type: integer
+          nullable: true
+        fromRole:
+          type: string
+        toRole:
+          type: string
+        toPersonName:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+      required:
+        - id
+        - type
+        - amount
+        - fromRole
+        - toRole
+        - createdAt
+
+    CreateTaskRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        targetRole:
+          type: string
+          enum: [finance_manager, supervisor, tech_engineer]
+        targetPersonName:
+          type: string
+      required:
+        - title
+        - description
+        - targetRole
+
+    Task:
+      type: object
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        targetRole:
+          type: string
+        targetPersonName:
+          type: string
+          nullable: true
+        assignedByRole:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - title
+        - description
+        - targetRole
+        - assignedByRole
+        - status
+        - createdAt
+        - updatedAt
+
+    FinancialReport:
+      type: object
+      properties:
+        period:
+          type: string
+        from:
+          type: string
+        to:
+          type: string
+        totalSales:
+          type: number
+        totalExpenses:
+          type: number
+        profit:
+          type: number
+        salesBreakdown:
+          type: object
+          properties:
+            hotspot:
+              type: number
+            broadband:
+              type: number
+          required:
+            - hotspot
+            - broadband
+        expenseBreakdown:
+          type: object
+          properties:
+            operational:
+              type: number
+            salary:
+              type: number
+            other:
+              type: number
+          required:
+            - operational
+            - salary
+            - other
+      required:
+        - period
+        - from
+        - to
+        - totalSales
+        - totalExpenses
+        - profit
+        - salesBreakdown
+        - expenseBreakdown
+
+    ImportHotspotRequest:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/HotspotCardRecord"
+      required:
+        - records
+
+    HotspotCardRecord:
+      type: object
+      properties:
+        serial:
+          type: string
+        denomination:
+          type: integer
+        batchNumber:
+          type: string
+        status:
+          type: string
+      required:
+        - serial
+        - denomination
+
+    ImportBroadbandRequest:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/BroadbandCardRecord"
+      required:
+        - records
+
+    BroadbandCardRecord:
+      type: object
+      properties:
+        serial:
+          type: string
+        denomination:
+          type: integer
+        batchNumber:
+          type: string
+        status:
+          type: string
+      required:
+        - serial
+        - denomination
+
+    ImportSalesPointsRequest:
+      type: object
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/SalesPointRecord"
+      required:
+        - records
+
+    SalesPointRecord:
+      type: object
+      properties:
+        name:
+          type: string
+        location:
+          type: string
+        contactName:
+          type: string
+        contactPhone:
+          type: string
+        status:
+          type: string
+      required:
+        - name
+
+    ImportResult:
+      type: object
+      properties:
+        imported:
+          type: integer
+        skipped:
+          type: integer
+        errors:
+          type: array
+          items:
+            type: string
+      required:
+        - imported
+        - skipped
+        - errors
+
+    CardPrices:
+      type: object
+      properties:
+        prices:
+          type: object
+          additionalProperties:
+            type: number
+      required:
+        - prices
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: string
+      required:
+        - error

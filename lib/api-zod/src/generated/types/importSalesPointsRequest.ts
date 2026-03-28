@@ -5,9 +5,8 @@
  * Flash Net Network Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { SalesPointRecord } from "./salesPointRecord";
 
-export interface ErrorResponse {
-  error: string;
-  message?: string;
-  details?: string;
+export interface ImportSalesPointsRequest {
+  records: SalesPointRecord[];
 }

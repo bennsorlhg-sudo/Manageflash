@@ -181,3 +181,176 @@ export const ListSalesPointsResponseItem = zod.object({
   createdAt: zod.coerce.date(),
 });
 export const ListSalesPointsResponse = zod.array(ListSalesPointsResponseItem);
+
+/**
+ * Returns key metrics for the owner dashboard
+ * @summary Get owner dashboard summary
+ */
+export const GetDashboardSummaryResponse = zod.object({
+  ownerName: zod.string(),
+  cashBalance: zod.number(),
+  totalCustody: zod.number(),
+  totalLoans: zod.number(),
+  totalCardValue: zod.number(),
+  totalSalesPoints: zod.number(),
+  hotspotCount: zod.number(),
+  broadbandCount: zod.number(),
+});
+
+/**
+ * Owner adds cash or card custody to Finance Manager
+ * @summary Add custody to Finance Manager
+ */
+export const CreateCustodyBody = zod.object({
+  type: zod.enum(["cash", "cards"]),
+  amount: zod.number().optional(),
+  denomination: zod.number().optional(),
+  cardCount: zod.number().optional(),
+  toRole: zod.enum(["finance_manager", "supervisor", "tech_engineer"]),
+  toPersonName: zod.string().optional(),
+  notes: zod.string().optional(),
+});
+
+/**
+ * @summary Get custody records
+ */
+export const GetCustodyRecordsResponseItem = zod.object({
+  id: zod.number(),
+  type: zod.string(),
+  amount: zod.string(),
+  denomination: zod.number().nullish(),
+  cardCount: zod.number().nullish(),
+  fromRole: zod.string(),
+  toRole: zod.string(),
+  toPersonName: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  createdAt: zod.string(),
+});
+export const GetCustodyRecordsResponse = zod.array(
+  GetCustodyRecordsResponseItem,
+);
+
+/**
+ * @summary Assign a task to a team member
+ */
+export const CreateTaskBody = zod.object({
+  title: zod.string(),
+  description: zod.string(),
+  targetRole: zod.enum(["finance_manager", "supervisor", "tech_engineer"]),
+  targetPersonName: zod.string().optional(),
+});
+
+/**
+ * @summary Get all tasks
+ */
+export const GetTasksQueryParams = zod.object({
+  targetRole: zod.coerce.string().optional(),
+});
+
+export const GetTasksResponseItem = zod.object({
+  id: zod.number(),
+  title: zod.string(),
+  description: zod.string(),
+  targetRole: zod.string(),
+  targetPersonName: zod.string().nullish(),
+  assignedByRole: zod.string(),
+  status: zod.string(),
+  createdAt: zod.string(),
+  updatedAt: zod.string(),
+});
+export const GetTasksResponse = zod.array(GetTasksResponseItem);
+
+/**
+ * @summary Get financial report (sales, expenses, profit)
+ */
+export const GetFinancialReportQueryParams = zod.object({
+  period: zod.enum(["day", "week", "month", "custom"]).optional(),
+  from: zod.date().optional(),
+  to: zod.date().optional(),
+});
+
+export const GetFinancialReportResponse = zod.object({
+  period: zod.string(),
+  from: zod.string(),
+  to: zod.string(),
+  totalSales: zod.number(),
+  totalExpenses: zod.number(),
+  profit: zod.number(),
+  salesBreakdown: zod.object({
+    hotspot: zod.number(),
+    broadband: zod.number(),
+  }),
+  expenseBreakdown: zod.object({
+    operational: zod.number(),
+    salary: zod.number(),
+    other: zod.number(),
+  }),
+});
+
+/**
+ * @summary Import hotspot cards in bulk
+ */
+export const ImportHotspotCardsBody = zod.object({
+  records: zod.array(
+    zod.object({
+      serial: zod.string(),
+      denomination: zod.number(),
+      batchNumber: zod.string().optional(),
+      status: zod.string().optional(),
+    }),
+  ),
+});
+
+export const ImportHotspotCardsResponse = zod.object({
+  imported: zod.number(),
+  skipped: zod.number(),
+  errors: zod.array(zod.string()),
+});
+
+/**
+ * @summary Import broadband cards in bulk
+ */
+export const ImportBroadbandCardsBody = zod.object({
+  records: zod.array(
+    zod.object({
+      serial: zod.string(),
+      denomination: zod.number(),
+      batchNumber: zod.string().optional(),
+      status: zod.string().optional(),
+    }),
+  ),
+});
+
+export const ImportBroadbandCardsResponse = zod.object({
+  imported: zod.number(),
+  skipped: zod.number(),
+  errors: zod.array(zod.string()),
+});
+
+/**
+ * @summary Import sales points in bulk
+ */
+export const ImportSalesPointsBody = zod.object({
+  records: zod.array(
+    zod.object({
+      name: zod.string(),
+      location: zod.string().optional(),
+      contactName: zod.string().optional(),
+      contactPhone: zod.string().optional(),
+      status: zod.string().optional(),
+    }),
+  ),
+});
+
+export const ImportSalesPointsResponse = zod.object({
+  imported: zod.number(),
+  skipped: zod.number(),
+  errors: zod.array(zod.string()),
+});
+
+/**
+ * @summary Get card denomination prices
+ */
+export const GetCardPricesResponse = zod.object({
+  prices: zod.record(zod.string(), zod.number()),
+});

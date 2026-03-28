@@ -9,11 +9,6 @@ export interface HealthStatus {
   status: string;
 }
 
-export interface ErrorResponse {
-  error: string;
-  message: string;
-}
-
 export interface LoginRequest {
   phone: string;
   password: string;
@@ -125,3 +120,176 @@ export interface SalesPoint {
   notes?: string | null;
   createdAt: string;
 }
+
+export interface DashboardSummary {
+  ownerName: string;
+  cashBalance: number;
+  totalCustody: number;
+  totalLoans: number;
+  totalCardValue: number;
+  totalSalesPoints: number;
+  hotspotCount: number;
+  broadbandCount: number;
+}
+
+export type CreateCustodyRequestType =
+  (typeof CreateCustodyRequestType)[keyof typeof CreateCustodyRequestType];
+
+export const CreateCustodyRequestType = {
+  cash: "cash",
+  cards: "cards",
+} as const;
+
+export type CreateCustodyRequestToRole =
+  (typeof CreateCustodyRequestToRole)[keyof typeof CreateCustodyRequestToRole];
+
+export const CreateCustodyRequestToRole = {
+  finance_manager: "finance_manager",
+  supervisor: "supervisor",
+  tech_engineer: "tech_engineer",
+} as const;
+
+export interface CreateCustodyRequest {
+  type: CreateCustodyRequestType;
+  amount?: number;
+  denomination?: number;
+  cardCount?: number;
+  toRole: CreateCustodyRequestToRole;
+  toPersonName?: string;
+  notes?: string;
+}
+
+export interface CustodyRecord {
+  id: number;
+  type: string;
+  amount: string;
+  denomination?: number | null;
+  cardCount?: number | null;
+  fromRole: string;
+  toRole: string;
+  toPersonName?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export type CreateTaskRequestTargetRole =
+  (typeof CreateTaskRequestTargetRole)[keyof typeof CreateTaskRequestTargetRole];
+
+export const CreateTaskRequestTargetRole = {
+  finance_manager: "finance_manager",
+  supervisor: "supervisor",
+  tech_engineer: "tech_engineer",
+} as const;
+
+export interface CreateTaskRequest {
+  title: string;
+  description: string;
+  targetRole: CreateTaskRequestTargetRole;
+  targetPersonName?: string;
+}
+
+export interface Task {
+  id: number;
+  title: string;
+  description: string;
+  targetRole: string;
+  targetPersonName?: string | null;
+  assignedByRole: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type FinancialReportSalesBreakdown = {
+  hotspot: number;
+  broadband: number;
+};
+
+export type FinancialReportExpenseBreakdown = {
+  operational: number;
+  salary: number;
+  other: number;
+};
+
+export interface FinancialReport {
+  period: string;
+  from: string;
+  to: string;
+  totalSales: number;
+  totalExpenses: number;
+  profit: number;
+  salesBreakdown: FinancialReportSalesBreakdown;
+  expenseBreakdown: FinancialReportExpenseBreakdown;
+}
+
+export interface HotspotCardRecord {
+  serial: string;
+  denomination: number;
+  batchNumber?: string;
+  status?: string;
+}
+
+export interface ImportHotspotRequest {
+  records: HotspotCardRecord[];
+}
+
+export interface BroadbandCardRecord {
+  serial: string;
+  denomination: number;
+  batchNumber?: string;
+  status?: string;
+}
+
+export interface ImportBroadbandRequest {
+  records: BroadbandCardRecord[];
+}
+
+export interface SalesPointRecord {
+  name: string;
+  location?: string;
+  contactName?: string;
+  contactPhone?: string;
+  status?: string;
+}
+
+export interface ImportSalesPointsRequest {
+  records: SalesPointRecord[];
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export type CardPricesPrices = { [key: string]: number };
+
+export interface CardPrices {
+  prices: CardPricesPrices;
+}
+
+export interface ErrorResponse {
+  error: string;
+  message?: string;
+  details?: string;
+}
+
+export type GetTasksParams = {
+  targetRole?: string;
+};
+
+export type GetFinancialReportParams = {
+  period?: GetFinancialReportPeriod;
+  from?: string;
+  to?: string;
+};
+
+export type GetFinancialReportPeriod =
+  (typeof GetFinancialReportPeriod)[keyof typeof GetFinancialReportPeriod];
+
+export const GetFinancialReportPeriod = {
+  day: "day",
+  week: "week",
+  month: "month",
+  custom: "custom",
+} as const;

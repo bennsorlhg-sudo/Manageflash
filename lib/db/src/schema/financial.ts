@@ -7,6 +7,22 @@ export const transactionTypeEnum = pgEnum("transaction_type", [
   "expense",
 ]);
 
+export const financialTxTypeEnum = pgEnum("financial_tx_type", [
+  "sale",
+  "expense",
+  "custody_in",
+  "custody_out",
+  "loan",
+]);
+
+export const financialTxCategoryEnum = pgEnum("financial_tx_category", [
+  "hotspot",
+  "broadband",
+  "operational",
+  "salary",
+  "other",
+]);
+
 export const debtStatusEnum = pgEnum("debt_status", [
   "pending",
   "partial",
@@ -92,6 +108,18 @@ export const purchaseRequestsTable = pgTable("purchase_requests", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const financialTransactionsTable = pgTable("financial_transactions", {
+  id: serial("id").primaryKey(),
+  type: financialTxTypeEnum("type").notNull(),
+  category: financialTxCategoryEnum("category"),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  description: text("description"),
+  role: text("role").notNull(),
+  personName: text("person_name"),
+  referenceId: text("reference_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const insertCardInventorySchema = createInsertSchema(cardInventoryTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertSalesTransactionSchema = createInsertSchema(salesTransactionsTable).omit({ id: true, createdAt: true });
 export const insertExpenseSchema = createInsertSchema(expensesTable).omit({ id: true, createdAt: true });
@@ -99,6 +127,7 @@ export const insertDebtSchema = createInsertSchema(debtsTable).omit({ id: true, 
 export const insertLoanSchema = createInsertSchema(loansTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertCustodySchema = createInsertSchema(custodiesTable).omit({ id: true, createdAt: true, updatedAt: true });
 export const insertPurchaseRequestSchema = createInsertSchema(purchaseRequestsTable).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertFinancialTransactionSchema = createInsertSchema(financialTransactionsTable).omit({ id: true, createdAt: true });
 
 export type CardInventory = typeof cardInventoryTable.$inferSelect;
 export type SalesTransaction = typeof salesTransactionsTable.$inferSelect;
@@ -107,3 +136,5 @@ export type Debt = typeof debtsTable.$inferSelect;
 export type Loan = typeof loansTable.$inferSelect;
 export type Custody = typeof custodiesTable.$inferSelect;
 export type PurchaseRequest = typeof purchaseRequestsTable.$inferSelect;
+export type FinancialTransaction = typeof financialTransactionsTable.$inferSelect;
+export type InsertFinancialTransaction = z.infer<typeof insertFinancialTransactionSchema>;

@@ -5,9 +5,8 @@
  * Flash Net Network Management API
  * OpenAPI spec version: 0.1.0
  */
+import type { CardPricesPrices } from "./cardPricesPrices";
 
-export interface ErrorResponse {
-  error: string;
-  message?: string;
-  details?: string;
+export interface CardPrices {
+  prices: CardPricesPrices;
 }
