@@ -1,5 +1,5 @@
-import React from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert } from "react-native";
+import React, { useState } from "react";
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Modal } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -12,22 +12,14 @@ export default function SupervisorProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const [showConfirm, setShowConfirm] = useState(false);
 
-  const handleLogout = () => {
-    Alert.alert("تسجيل الخروج", "هل أنت متأكد؟", [
-      { text: "إلغاء", style: "cancel" },
-      {
-        text: "خروج",
-        style: "destructive",
-        onPress: async () => {
-          if (Platform.OS !== "web") {
-            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }
-          await logout();
-          router.replace("/(auth)/login");
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    if (Platform.OS !== "web") {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    await logout();
+    router.replace("/(auth)/login");
   };
 
   if (!user) return null;
@@ -76,12 +68,29 @@ export default function SupervisorProfileScreen() {
           </View>
         </View>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
+        <TouchableOpacity style={styles.logoutBtn} onPress={() => setShowConfirm(true)} activeOpacity={0.8}>
           <Ionicons name="log-out-outline" size={20} color={Colors.error} />
           <Text style={styles.logoutText}>تسجيل الخروج</Text>
         </TouchableOpacity>
         <Text style={styles.version}>Flash Net v1.0.0</Text>
       </ScrollView>
+
+      <Modal transparent visible={showConfirm} animationType="fade" onRequestClose={() => setShowConfirm(false)}>
+        <View style={styles.overlay}>
+          <View style={styles.dialog}>
+            <Text style={styles.dialogTitle}>تسجيل الخروج</Text>
+            <Text style={styles.dialogMsg}>هل أنت متأكد من تسجيل الخروج؟</Text>
+            <View style={styles.dialogBtns}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setShowConfirm(false)} activeOpacity={0.8}>
+                <Text style={styles.cancelText}>إلغاء</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtn} onPress={handleLogout} activeOpacity={0.8}>
+                <Text style={styles.confirmText}>خروج</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -151,4 +160,21 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: Colors.error, fontSize: 15, fontFamily: "Inter_600SemiBold" },
   version: { textAlign: "center", color: Colors.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
+  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", alignItems: "center", justifyContent: "center" },
+  dialog: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 24,
+    width: 300,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 12,
+  },
+  dialogTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: Colors.text, textAlign: "center" },
+  dialogMsg: { fontSize: 14, fontFamily: "Inter_400Regular", color: Colors.textSecondary, textAlign: "center" },
+  dialogBtns: { flexDirection: "row", gap: 10, marginTop: 4 },
+  cancelBtn: { flex: 1, backgroundColor: Colors.border, borderRadius: 12, paddingVertical: 12, alignItems: "center" },
+  cancelText: { color: Colors.text, fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  confirmBtn: { flex: 1, backgroundColor: Colors.error, borderRadius: 12, paddingVertical: 12, alignItems: "center" },
+  confirmText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
 });
