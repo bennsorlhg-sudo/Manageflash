@@ -77,7 +77,7 @@ The database has the following tables (in `lib/db/src/schema/`):
 - `users` — with role enum (owner/finance_manager/supervisor/tech_engineer), HMAC-SHA256 auth
 - `hotspot_points` — with status enum (active/active_incomplete/ready/empty/stopped)
 - `broadband_points` — same status enum
-- `sales_points` (network) — sales locations with managerId
+- `sales_points` (network) — sales locations with managerId, ownerName, phoneNumber, oldDebt
 - `card_inventory` — card stock
 - `cash_box` — cash balance
 - `sales_transactions` — income/expense records
@@ -94,6 +94,10 @@ The database has the following tables (in `lib/db/src/schema/`):
 - `custody_records` — Owner-to-staff custody transfers (cash or cards with auto-calculated value)
 - `tasks` — Owner-assigned tasks to team members
 - `financial_transactions` — Financial ledger (sales, expenses, loans)
+
+### From Task #5 (Tech Engineer / Finance Sales Points)
+- `field_tasks` — Field engineer task lifecycle (new → in_progress → completed) with taskType, serviceNumber, clientName, location, phoneNumber, notes, photoUrl
+- `sales_point_loans` — Per-sales-point loan records (direction: given/received)
 
 ## Card Denomination Prices
 
@@ -136,6 +140,38 @@ All routes mounted at `/api`. See `lib/api-spec/openapi.yaml` for full spec.
 - `POST /api/import/broadband` — bulk import broadband cards (632 records)
 - `POST /api/import/sales-points` — bulk import sales points (56 records)
 
+### Field Engineer Tasks (Task #5)
+- `GET/POST /api/field-tasks` — list/create field engineer tasks
+- `GET/PATCH /api/field-tasks/:id` — get/update field task
+- `POST /api/field-tasks/:id/start` — move to in_progress
+- `POST /api/field-tasks/:id/complete` — move to completed with notes/photo
+
+### Sales Points Management (Task #5)
+- `GET/POST /api/sales-points` — list/create sales points
+- `GET/PATCH /api/sales-points/:id` — get/update sales point
+- `GET/POST /api/sales-points/:id/loans` — list/add loans per sales point
+
+## Features
+
+### Tech Engineer Interface (`TechEngineerHome` mockup)
+- Mobile-first task management screen for field engineers
+- Header: "المهندس الفني - [name]", role, current date
+- 3 quick-count cards: New Tasks / In Progress / Completed Today
+- Tabbed task list (New / In Progress / Completed), default tab is New
+- Task cards: task type badge, service number, client name, location, phone with Call button, Copy Location button
+- "بدء التنفيذ" (Start Execution) moves task to In Progress
+- "تم الإنجاز" (Done) opens modal for notes + photo upload, then moves to Completed
+- No financial data shown to engineers
+
+### Sales Points Management (`SalesPointsList` mockup, Finance Manager)
+- List view of all sales points with name, owner, phone, location
+- Old debt shown as informational badge — never changes through system actions
+- Search/filter by name or location
+- Add new sales point (with old debt as initial reference field)
+- Edit existing sales points (name, owner, phone, location, notes — NOT old debt)
+- Per-point loan management: view/add loans with direction (given/received) and net balance summary
+- Old debt is distinct from loan tracking system
+
 ## Packages
 
 ### `artifacts/api-server` (`@workspace/api-server`)
@@ -151,9 +187,11 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
   - `src/routes/network.ts` — `GET /api/network/hotspot-points`, broadband, sales
   - `src/routes/dashboard.ts` — `GET /api/dashboard/summary`, `GET /api/card-prices`
   - `src/routes/custody.ts` — `POST/GET /api/custody`
-  - `src/routes/tasks.ts` — `POST/GET /api/tasks`
+  - `src/routes/tasks.ts` — `POST/GET /api/tasks` (owner-assigned tasks)
   - `src/routes/finances.ts` — `GET /api/finances/report`
   - `src/routes/import.ts` — `POST /api/import/hotspot|broadband|sales-points`
+  - `src/routes/fieldTasks.ts` — `GET/POST /api/field-tasks`, lifecycle routes
+  - `src/routes/salesPoints.ts` — `GET/POST /api/sales-points`, loans routes
 - Auth: `src/lib/auth.ts` — HMAC-SHA256 based token auth, `requireAuth`/`requireRole` middleware
 - Depends on: `@workspace/db`, `@workspace/api-zod`
 
@@ -185,6 +223,8 @@ Current mockup components:
 - `PurchaseRequests` — Purchase request system with priority, status tracking; appears in Finance Manager view
 - `DatabaseManagement` — Hotspot (sorted numerically) and Broadband tabs with add/search/view/edit; color-coded status system
 - `EngineerManagement` — Add/edit/deactivate engineers; subscription delivery to Finance Manager; Finance Manager audit system
+- `TechEngineerHome` — Mobile-first RTL task interface for field engineers; tabbed (New/In Progress/Completed); Start/Done workflow
+- `SalesPointsList` — Finance Manager sales points with search, add/edit, per-point loans dialog
 
 ### `lib/db` (`@workspace/db`)
 
@@ -192,7 +232,7 @@ Database layer using Drizzle ORM with PostgreSQL. Exports a Drizzle client insta
 
 - `src/index.ts` — creates a `Pool` + Drizzle instance, exports schema
 - `src/schema/index.ts` — barrel re-export of all models
-- Schema files: `users.ts`, `network_points.ts`, `financial.ts`, `tasks_tickets.ts`, `cards.ts`, `custody.ts`, `tasks.ts`, `finances.ts`
+- Schema files: `users.ts`, `network_points.ts`, `financial.ts`, `tasks_tickets.ts`, `cards.ts`, `custody.ts`, `tasks.ts` (fieldTasksTable), `loans.ts` (salesPointLoansTable)
 - `drizzle.config.ts` — Drizzle Kit config (requires `DATABASE_URL`)
 - Run schema push: `pnpm --filter @workspace/db run push`
 

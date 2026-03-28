@@ -170,17 +170,25 @@ export const ListBroadbandPointsResponse = zod.array(
 );
 
 /**
- * @summary List sales points
+ * @summary List network sales points
  */
-export const ListSalesPointsResponseItem = zod.object({
+export const ListNetworkSalesPointsResponseItem = zod.object({
   id: zod.number(),
   name: zod.string(),
+  ownerName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
   location: zod.string(),
-  managerId: zod.number().nullish(),
+  oldDebt: zod
+    .string()
+    .nullish()
+    .describe("Read-only reference field. Never modified by system actions."),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
 });
-export const ListSalesPointsResponse = zod.array(ListSalesPointsResponseItem);
+export const ListNetworkSalesPointsResponse = zod.array(
+  ListNetworkSalesPointsResponseItem,
+);
 
 /**
  * Returns key metrics for the owner dashboard
@@ -353,4 +361,268 @@ export const ImportSalesPointsResponse = zod.object({
  */
 export const GetCardPricesResponse = zod.object({
   prices: zod.record(zod.string(), zod.number()),
+});
+
+/**
+ * Returns a list of field tasks optionally filtered by status or engineer
+ * @summary List field engineer tasks
+ */
+export const ListFieldTasksQueryParams = zod.object({
+  status: zod.enum(["new", "in_progress", "completed"]).optional(),
+  engineerName: zod.coerce.string().optional(),
+});
+
+export const ListFieldTasksResponseItem = zod.object({
+  id: zod.number(),
+  taskType: zod.string(),
+  serviceNumber: zod.string(),
+  clientName: zod.string().nullish(),
+  location: zod.string(),
+  phoneNumber: zod.string(),
+  status: zod.enum(["new", "in_progress", "completed"]),
+  assignedEngineerName: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  photoUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+export const ListFieldTasksResponse = zod.array(ListFieldTasksResponseItem);
+
+/**
+ * @summary Create a new field task
+ */
+export const CreateFieldTaskBody = zod.object({
+  taskType: zod.string(),
+  serviceNumber: zod.string(),
+  clientName: zod.string().nullish(),
+  location: zod.string(),
+  phoneNumber: zod.string(),
+  assignedEngineerName: zod.string().nullish(),
+});
+
+/**
+ * @summary Get a field task by ID
+ */
+export const GetFieldTaskParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetFieldTaskResponse = zod.object({
+  id: zod.number(),
+  taskType: zod.string(),
+  serviceNumber: zod.string(),
+  clientName: zod.string().nullish(),
+  location: zod.string(),
+  phoneNumber: zod.string(),
+  status: zod.enum(["new", "in_progress", "completed"]),
+  assignedEngineerName: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  photoUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Update a field task
+ */
+export const UpdateFieldTaskParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateFieldTaskBody = zod.object({
+  notes: zod.string().nullish(),
+  photoUrl: zod.string().nullish(),
+  assignedEngineerName: zod.string().nullish(),
+});
+
+export const UpdateFieldTaskResponse = zod.object({
+  id: zod.number(),
+  taskType: zod.string(),
+  serviceNumber: zod.string(),
+  clientName: zod.string().nullish(),
+  location: zod.string(),
+  phoneNumber: zod.string(),
+  status: zod.enum(["new", "in_progress", "completed"]),
+  assignedEngineerName: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  photoUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Start field task execution (move to in_progress)
+ */
+export const StartFieldTaskParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const StartFieldTaskResponse = zod.object({
+  id: zod.number(),
+  taskType: zod.string(),
+  serviceNumber: zod.string(),
+  clientName: zod.string().nullish(),
+  location: zod.string(),
+  phoneNumber: zod.string(),
+  status: zod.enum(["new", "in_progress", "completed"]),
+  assignedEngineerName: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  photoUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Complete a field task (move to completed)
+ */
+export const CompleteFieldTaskParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CompleteFieldTaskBody = zod.object({
+  notes: zod.string().nullish(),
+  photoUrl: zod.string().nullish(),
+});
+
+export const CompleteFieldTaskResponse = zod.object({
+  id: zod.number(),
+  taskType: zod.string(),
+  serviceNumber: zod.string(),
+  clientName: zod.string().nullish(),
+  location: zod.string(),
+  phoneNumber: zod.string(),
+  status: zod.enum(["new", "in_progress", "completed"]),
+  assignedEngineerName: zod.string().nullish(),
+  notes: zod.string().nullish(),
+  photoUrl: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  startedAt: zod.coerce.date().nullish(),
+  completedAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary List all sales points
+ */
+export const ListSalesPointsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  ownerName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  location: zod.string(),
+  oldDebt: zod
+    .string()
+    .nullish()
+    .describe("Read-only reference field. Never modified by system actions."),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListSalesPointsResponse = zod.array(ListSalesPointsResponseItem);
+
+/**
+ * @summary Create a new sales point
+ */
+export const CreateSalesPointBody = zod.object({
+  name: zod.string(),
+  ownerName: zod.string(),
+  phoneNumber: zod.string(),
+  location: zod.string(),
+  oldDebt: zod
+    .string()
+    .nullish()
+    .describe("Initial old debt value. Never changed after creation."),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Get a sales point by ID
+ */
+export const GetSalesPointParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetSalesPointResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  ownerName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  location: zod.string(),
+  oldDebt: zod
+    .string()
+    .nullish()
+    .describe("Read-only reference field. Never modified by system actions."),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Update a sales point
+ */
+export const UpdateSalesPointParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateSalesPointBody = zod.object({
+  name: zod.string().optional(),
+  ownerName: zod.string().optional(),
+  phoneNumber: zod.string().optional(),
+  location: zod.string().optional(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateSalesPointResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  ownerName: zod.string().nullish(),
+  phoneNumber: zod.string().nullish(),
+  location: zod.string(),
+  oldDebt: zod
+    .string()
+    .nullish()
+    .describe("Read-only reference field. Never modified by system actions."),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary List loans for a sales point
+ */
+export const ListSalesPointLoansParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListSalesPointLoansResponseItem = zod.object({
+  id: zod.number(),
+  salesPointId: zod.number(),
+  direction: zod
+    .enum(["given", "received"])
+    .describe(
+      "'given' = loan given to sales point, 'received' = received from sales point",
+    ),
+  amount: zod.string(),
+  notes: zod.string().nullish(),
+  recordedAt: zod.coerce.date(),
+  createdAt: zod.coerce.date(),
+});
+export const ListSalesPointLoansResponse = zod.array(
+  ListSalesPointLoansResponseItem,
+);
+
+/**
+ * @summary Record a new loan for a sales point
+ */
+export const CreateLoanParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const CreateLoanBody = zod.object({
+  direction: zod.enum(["given", "received"]),
+  amount: zod.string(),
+  notes: zod.string().nullish(),
 });

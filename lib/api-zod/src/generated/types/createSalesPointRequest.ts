@@ -6,15 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface SalesPoint {
-  id: number;
+export interface CreateSalesPointRequest {
   name: string;
-  ownerName?: string | null;
-  phoneNumber?: string | null;
+  ownerName: string;
+  phoneNumber: string;
   location: string;
-  /** Read-only reference field. Never modified by system actions. */
+  /** Initial old debt value. Never changed after creation. */
   oldDebt?: string | null;
   notes?: string | null;
-  createdAt: Date;
-  updatedAt: Date;
 }

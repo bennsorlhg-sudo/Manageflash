@@ -4,3 +4,4 @@ export * from "./financial";
 export * from "./tasks_tickets";
 export * from "./cards";
 export * from "./custody";
+export * from "./fieldTasks";

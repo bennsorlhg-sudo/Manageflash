@@ -26,6 +26,12 @@ tags:
     description: Financial reports
   - name: import
     description: Data import operations
+  - name: fieldTasks
+    description: Field engineer task operations
+  - name: salesPoints
+    description: Sales points management
+  - name: loans
+    description: Loans and debts management
 paths:
   /healthz:
     get:
@@ -232,9 +238,9 @@ paths:
 
   /network/sales-points:
     get:
-      operationId: listSalesPoints
+      operationId: listNetworkSalesPoints
       tags: [network]
-      summary: List sales points
+      summary: List network sales points
       security:
         - bearerAuth: []
       responses:
@@ -460,6 +466,291 @@ paths:
               schema:
                 $ref: "#/components/schemas/CardPrices"
 
+  /field-tasks:
+    get:
+      operationId: listFieldTasks
+      tags: [fieldTasks]
+      summary: List field engineer tasks
+      description: Returns a list of field tasks optionally filtered by status or engineer
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [new, in_progress, completed]
+        - name: engineerName
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of field tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FieldTask"
+    post:
+      operationId: createFieldTask
+      tags: [fieldTasks]
+      summary: Create a new field task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFieldTaskRequest"
+      responses:
+        "201":
+          description: Field task created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldTask"
+
+  /field-tasks/{id}:
+    get:
+      operationId: getFieldTask
+      tags: [fieldTasks]
+      summary: Get a field task by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Field task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldTask"
+        "404":
+          description: Field task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateFieldTask
+      tags: [fieldTasks]
+      summary: Update a field task
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFieldTaskRequest"
+      responses:
+        "200":
+          description: Updated field task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldTask"
+        "404":
+          description: Field task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /field-tasks/{id}/start:
+    post:
+      operationId: startFieldTask
+      tags: [fieldTasks]
+      summary: Start field task execution (move to in_progress)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Field task started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldTask"
+        "404":
+          description: Field task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /field-tasks/{id}/complete:
+    post:
+      operationId: completeFieldTask
+      tags: [fieldTasks]
+      summary: Complete a field task (move to completed)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompleteFieldTaskRequest"
+      responses:
+        "200":
+          description: Field task completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldTask"
+        "404":
+          description: Field task not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sales-points:
+    get:
+      operationId: listSalesPoints
+      tags: [salesPoints]
+      summary: List all sales points
+      responses:
+        "200":
+          description: List of sales points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SalesPoint"
+    post:
+      operationId: createSalesPoint
+      tags: [salesPoints]
+      summary: Create a new sales point
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSalesPointRequest"
+      responses:
+        "201":
+          description: Sales point created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesPoint"
+
+  /sales-points/{id}:
+    get:
+      operationId: getSalesPoint
+      tags: [salesPoints]
+      summary: Get a sales point by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sales point details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesPoint"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateSalesPoint
+      tags: [salesPoints]
+      summary: Update a sales point
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateSalesPointRequest"
+      responses:
+        "200":
+          description: Updated sales point
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SalesPoint"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /sales-points/{id}/loans:
+    get:
+      operationId: listSalesPointLoans
+      tags: [loans]
+      summary: List loans for a sales point
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of loans
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Loan"
+    post:
+      operationId: createLoan
+      tags: [loans]
+      summary: Record a new loan for a sales point
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateLoanRequest"
+      responses:
+        "201":
+          description: Loan created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Loan"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -474,6 +765,18 @@ components:
           type: string
       required:
         - status
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        details:
+          type: string
+      required:
+        - error
 
     LoginRequest:
       type: object
@@ -617,15 +920,25 @@ components:
           type: integer
         name:
           type: string
+        ownerName:
+          type: string
+          nullable: true
+        phoneNumber:
+          type: string
+          nullable: true
         location:
           type: string
-        managerId:
-          type: integer
+        oldDebt:
+          type: string
           nullable: true
+          description: "Read-only reference field. Never modified by system actions."
         notes:
           type: string
           nullable: true
         createdAt:
+          type: string
+          format: date-time
+        updatedAt:
           type: string
           format: date-time
       required:
@@ -633,6 +946,7 @@ components:
         - name
         - location
         - createdAt
+        - updatedAt
 
     DashboardSummary:
       type: object
@@ -920,14 +1234,180 @@ components:
       required:
         - prices
 
-    ErrorResponse:
+    FieldTask:
       type: object
       properties:
-        error:
+        id:
+          type: integer
+        taskType:
           type: string
-        message:
+        serviceNumber:
           type: string
-        details:
+        clientName:
           type: string
+          nullable: true
+        location:
+          type: string
+        phoneNumber:
+          type: string
+        status:
+          type: string
+          enum: [new, in_progress, completed]
+        assignedEngineerName:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        photoUrl:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
       required:
-        - error
+        - id
+        - taskType
+        - serviceNumber
+        - location
+        - phoneNumber
+        - status
+        - createdAt
+
+    CreateFieldTaskRequest:
+      type: object
+      properties:
+        taskType:
+          type: string
+        serviceNumber:
+          type: string
+        clientName:
+          type: string
+          nullable: true
+        location:
+          type: string
+        phoneNumber:
+          type: string
+        assignedEngineerName:
+          type: string
+          nullable: true
+      required:
+        - taskType
+        - serviceNumber
+        - location
+        - phoneNumber
+
+    UpdateFieldTaskRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          nullable: true
+        photoUrl:
+          type: string
+          nullable: true
+        assignedEngineerName:
+          type: string
+          nullable: true
+
+    CompleteFieldTaskRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          nullable: true
+        photoUrl:
+          type: string
+          nullable: true
+
+    CreateSalesPointRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        ownerName:
+          type: string
+        phoneNumber:
+          type: string
+        location:
+          type: string
+        oldDebt:
+          type: string
+          nullable: true
+          description: "Initial old debt value. Never changed after creation."
+        notes:
+          type: string
+          nullable: true
+      required:
+        - name
+        - ownerName
+        - phoneNumber
+        - location
+
+    UpdateSalesPointRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        ownerName:
+          type: string
+        phoneNumber:
+          type: string
+        location:
+          type: string
+        notes:
+          type: string
+          nullable: true
+
+    Loan:
+      type: object
+      properties:
+        id:
+          type: integer
+        salesPointId:
+          type: integer
+        direction:
+          type: string
+          enum: [given, received]
+          description: "'given' = loan given to sales point, 'received' = received from sales point"
+        amount:
+          type: string
+        notes:
+          type: string
+          nullable: true
+        recordedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - salesPointId
+        - direction
+        - amount
+        - recordedAt
+        - createdAt
+
+    CreateLoanRequest:
+      type: object
+      properties:
+        direction:
+          type: string
+          enum: [given, received]
+        amount:
+          type: string
+        notes:
+          type: string
+          nullable: true
+      required:
+        - direction
+        - amount

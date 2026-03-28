@@ -9,6 +9,12 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface ErrorResponse {
+  error: string;
+  message?: string;
+  details?: string;
+}
+
 export interface LoginRequest {
   phone: string;
   password: string;
@@ -115,10 +121,14 @@ export interface BroadbandPoint {
 export interface SalesPoint {
   id: number;
   name: string;
+  ownerName?: string | null;
+  phoneNumber?: string | null;
   location: string;
-  managerId?: number | null;
+  /** Read-only reference field. Never modified by system actions. */
+  oldDebt?: string | null;
   notes?: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface DashboardSummary {
@@ -268,10 +278,102 @@ export interface CardPrices {
   prices: CardPricesPrices;
 }
 
-export interface ErrorResponse {
-  error: string;
-  message?: string;
-  details?: string;
+export type FieldTaskStatus =
+  (typeof FieldTaskStatus)[keyof typeof FieldTaskStatus];
+
+export const FieldTaskStatus = {
+  new: "new",
+  in_progress: "in_progress",
+  completed: "completed",
+} as const;
+
+export interface FieldTask {
+  id: number;
+  taskType: string;
+  serviceNumber: string;
+  clientName?: string | null;
+  location: string;
+  phoneNumber: string;
+  status: FieldTaskStatus;
+  assignedEngineerName?: string | null;
+  notes?: string | null;
+  photoUrl?: string | null;
+  createdAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+}
+
+export interface CreateFieldTaskRequest {
+  taskType: string;
+  serviceNumber: string;
+  clientName?: string | null;
+  location: string;
+  phoneNumber: string;
+  assignedEngineerName?: string | null;
+}
+
+export interface UpdateFieldTaskRequest {
+  notes?: string | null;
+  photoUrl?: string | null;
+  assignedEngineerName?: string | null;
+}
+
+export interface CompleteFieldTaskRequest {
+  notes?: string | null;
+  photoUrl?: string | null;
+}
+
+export interface CreateSalesPointRequest {
+  name: string;
+  ownerName: string;
+  phoneNumber: string;
+  location: string;
+  /** Initial old debt value. Never changed after creation. */
+  oldDebt?: string | null;
+  notes?: string | null;
+}
+
+export interface UpdateSalesPointRequest {
+  name?: string;
+  ownerName?: string;
+  phoneNumber?: string;
+  location?: string;
+  notes?: string | null;
+}
+
+/**
+ * 'given' = loan given to sales point, 'received' = received from sales point
+ */
+export type LoanDirection = (typeof LoanDirection)[keyof typeof LoanDirection];
+
+export const LoanDirection = {
+  given: "given",
+  received: "received",
+} as const;
+
+export interface Loan {
+  id: number;
+  salesPointId: number;
+  /** 'given' = loan given to sales point, 'received' = received from sales point */
+  direction: LoanDirection;
+  amount: string;
+  notes?: string | null;
+  recordedAt: string;
+  createdAt: string;
+}
+
+export type CreateLoanRequestDirection =
+  (typeof CreateLoanRequestDirection)[keyof typeof CreateLoanRequestDirection];
+
+export const CreateLoanRequestDirection = {
+  given: "given",
+  received: "received",
+} as const;
+
+export interface CreateLoanRequest {
+  direction: CreateLoanRequestDirection;
+  amount: string;
+  notes?: string | null;
 }
 
 export type GetTasksParams = {
@@ -292,4 +394,18 @@ export const GetFinancialReportPeriod = {
   week: "week",
   month: "month",
   custom: "custom",
+} as const;
+
+export type ListFieldTasksParams = {
+  status?: ListFieldTasksStatus;
+  engineerName?: string;
+};
+
+export type ListFieldTasksStatus =
+  (typeof ListFieldTasksStatus)[keyof typeof ListFieldTasksStatus];
+
+export const ListFieldTasksStatus = {
+  new: "new",
+  in_progress: "in_progress",
+  completed: "completed",
 } as const;
