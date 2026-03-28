@@ -79,8 +79,7 @@ export default function OwnerTabLayout() {
       <Tabs.Screen
         name="report"
         options={{
-          title: "تقرير",
-          tabBarButton: () => null,
+          href: null,
           headerShown: false,
         }}
       />
