@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -11,38 +11,64 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useListHotspotPoints, useListBroadbandPoints } from "@workspace/api-client-react";
 import { Colors } from "@/constants/colors";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { PointStatus } from "@/constants/colors";
+import { useAuth } from "@/context/AuthContext";
+import { apiGet } from "@/utils/api";
 
 type Tab = "hotspot" | "broadband";
 
+interface NetworkPoint {
+  id: number;
+  name: string;
+  location: string;
+  status: string;
+  notes?: string | null;
+  supervisorId?: number | null;
+}
+
 export default function NetworkScreen() {
   const insets = useSafeAreaInsets();
+  const { token } = useAuth();
   const [activeTab, setActiveTab] = useState<Tab>("hotspot");
 
-  const {
-    data: hotspotPoints,
-    isLoading: hotspotLoading,
-    refetch: refetchHotspot,
-  } = useListHotspotPoints();
-  const {
-    data: broadbandPoints,
-    isLoading: broadbandLoading,
-    refetch: refetchBroadband,
-  } = useListBroadbandPoints();
+  const [hotspotPoints, setHotspotPoints] = useState<NetworkPoint[]>([]);
+  const [broadbandPoints, setBroadbandPoints] = useState<NetworkPoint[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const isLoading = activeTab === "hotspot" ? hotspotLoading : broadbandLoading;
+  const fetchData = useCallback(async () => {
+    try {
+      const [hotspot, broadband] = await Promise.all([
+        apiGet("/network/hotspot-points", token),
+        apiGet("/network/broadband-points", token),
+      ]);
+      setHotspotPoints(hotspot);
+      setBroadbandPoints(broadband);
+    } catch {} finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [token]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
   const points = activeTab === "hotspot" ? hotspotPoints : broadbandPoints;
 
-  const handleRefresh = () => {
-    if (activeTab === "hotspot") refetchHotspot();
-    else refetchBroadband();
-  };
+  const statusCounts = (arr: NetworkPoint[]) => ({
+    active: arr.filter(p => p.status === "active").length,
+    empty: arr.filter(p => p.status === "empty").length,
+    ready: arr.filter(p => p.status === "ready").length,
+    stopped: arr.filter(p => p.status === "stopped").length,
+  });
+
+  const hCounts = statusCounts(hotspotPoints);
+  const bCounts = statusCounts(broadbandPoints);
+  const counts = activeTab === "hotspot" ? hCounts : bCounts;
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>الشبكة</Text>
         <Ionicons name="wifi" size={22} color={Colors.primary} />
@@ -54,7 +80,7 @@ export default function NetworkScreen() {
           onPress={() => setActiveTab("hotspot")}
         >
           <Text style={[styles.tabText, activeTab === "hotspot" && styles.tabTextActive]}>
-            هوت سبوت
+            هوت سبوت ({hotspotPoints.length})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -62,12 +88,33 @@ export default function NetworkScreen() {
           onPress={() => setActiveTab("broadband")}
         >
           <Text style={[styles.tabText, activeTab === "broadband" && styles.tabTextActive]}>
-            برودباند
+            برودباند ({broadbandPoints.length})
           </Text>
         </TouchableOpacity>
       </View>
 
-      {isLoading ? (
+      {!loading && (
+        <View style={styles.statsRow}>
+          <View style={styles.statItem}>
+            <View style={[styles.statDot, { backgroundColor: Colors.status.active }]} />
+            <Text style={styles.statText}>نشط {counts.active}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <View style={[styles.statDot, { backgroundColor: Colors.status.ready }]} />
+            <Text style={styles.statText}>جاهز {counts.ready}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <View style={[styles.statDot, { backgroundColor: Colors.status.empty }]} />
+            <Text style={styles.statText}>فارغ {counts.empty}</Text>
+          </View>
+          <View style={styles.statItem}>
+            <View style={[styles.statDot, { backgroundColor: Colors.status.stopped }]} />
+            <Text style={styles.statText}>متوقف {counts.stopped}</Text>
+          </View>
+        </View>
+      )}
+
+      {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator color={Colors.primary} size="large" />
         </View>
@@ -80,14 +127,14 @@ export default function NetworkScreen() {
           ]}
           refreshControl={
             <RefreshControl
-              refreshing={false}
-              onRefresh={handleRefresh}
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); fetchData(); }}
               tintColor={Colors.primary}
             />
           }
           showsVerticalScrollIndicator={false}
         >
-          {!points || points.length === 0 ? (
+          {points.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="wifi-outline" size={48} color={Colors.textMuted} />
               <Text style={styles.emptyText}>لا توجد نقاط شبكة بعد</Text>
@@ -126,15 +173,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
-  title: {
-    fontSize: 22,
-    fontFamily: "Inter_700Bold",
-    color: Colors.text,
-  },
+  title: { fontSize: 22, fontFamily: "Inter_700Bold", color: Colors.text },
   tabs: {
     flexDirection: "row-reverse",
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingTop: 12,
+    paddingBottom: 6,
     gap: 8,
   },
   tab: {
@@ -145,28 +189,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  tabActive: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
-  },
-  tabText: {
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-    color: Colors.textSecondary,
-  },
-  tabTextActive: {
-    color: "#fff",
-  },
-  loadingWrap: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  scroll: { flex: 1 },
-  scrollContent: {
-    padding: 20,
+  tabActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  tabText: { fontSize: 14, fontFamily: "Inter_500Medium", color: Colors.textSecondary },
+  tabTextActive: { color: "#fff" },
+  statsRow: {
+    flexDirection: "row-reverse",
+    paddingHorizontal: 20,
+    paddingBottom: 12,
     gap: 12,
   },
+  statItem: { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
+  statDot: { width: 8, height: 8, borderRadius: 4 },
+  statText: { fontSize: 12, color: Colors.textSecondary },
+  loadingWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+  scroll: { flex: 1 },
+  scrollContent: { padding: 20, gap: 12 },
   card: {
     backgroundColor: Colors.surface,
     borderRadius: 14,
@@ -180,37 +217,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  cardName: {
-    fontSize: 16,
-    fontFamily: "Inter_600SemiBold",
-    color: Colors.text,
-    textAlign: "right",
-  },
-  cardRow: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: 4,
-  },
-  cardLocation: {
-    fontSize: 13,
-    fontFamily: "Inter_400Regular",
-    color: Colors.textSecondary,
-  },
-  cardNotes: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    color: Colors.textMuted,
-    textAlign: "right",
-  },
-  empty: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    gap: 12,
-  },
-  emptyText: {
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
-    color: Colors.textMuted,
-  },
+  cardName: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: Colors.text, textAlign: "right" },
+  cardRow: { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
+  cardLocation: { fontSize: 13, fontFamily: "Inter_400Regular", color: Colors.textSecondary },
+  cardNotes: { fontSize: 12, fontFamily: "Inter_400Regular", color: Colors.textMuted, textAlign: "right" },
+  empty: { alignItems: "center", justifyContent: "center", paddingVertical: 60, gap: 12 },
+  emptyText: { fontSize: 15, fontFamily: "Inter_400Regular", color: Colors.textMuted },
 });

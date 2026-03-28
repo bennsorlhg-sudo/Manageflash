@@ -19,6 +19,35 @@ export default function OwnerTabLayout() {
 
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
+  const isAndroid = Platform.OS === "android";
+
+  const tabBarStyle = isWeb
+    ? {
+        position: "absolute" as const,
+        backgroundColor: Colors.tabBar,
+        borderTopColor: Colors.tabBarBorder,
+        borderTopWidth: 1,
+        elevation: 0,
+        height: 80,
+        paddingBottom: 12,
+        paddingTop: 8,
+      }
+    : isIOS
+      ? {
+          position: "absolute" as const,
+          backgroundColor: "transparent",
+          borderTopColor: Colors.tabBarBorder,
+          borderTopWidth: 1,
+          elevation: 0,
+          paddingTop: 8,
+        }
+      : {
+          backgroundColor: Colors.tabBar,
+          borderTopColor: Colors.tabBarBorder,
+          borderTopWidth: 1,
+          elevation: 0,
+          paddingTop: 8,
+        };
 
   return (
     <Tabs
@@ -26,21 +55,10 @@ export default function OwnerTabLayout() {
         tabBarActiveTintColor: Colors.tabActive,
         tabBarInactiveTintColor: Colors.tabInactive,
         headerShown: false,
-        tabBarStyle: {
-          position: "absolute",
-          backgroundColor: isIOS ? "transparent" : Colors.tabBar,
-          borderTopColor: Colors.tabBarBorder,
-          borderTopWidth: 1,
-          elevation: 0,
-          height: isWeb ? 80 : 62,
-          paddingBottom: isWeb ? 12 : 6,
-          paddingTop: 8,
-        },
+        tabBarStyle,
         tabBarBackground: () =>
           isIOS ? (
             <BlurView intensity={80} tint="dark" style={StyleSheet.absoluteFill} />
-          ) : isWeb ? (
-            <View style={[StyleSheet.absoluteFill, { backgroundColor: Colors.tabBar }]} />
           ) : null,
         tabBarLabelStyle: {
           fontFamily: "Inter_500Medium",
@@ -52,28 +70,28 @@ export default function OwnerTabLayout() {
         name="index"
         options={{
           title: "لوحة التحكم",
-          tabBarIcon: ({ color }) => <Ionicons name="grid-outline" size={30} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="grid-outline" size={26} color={color} />,
         }}
       />
       <Tabs.Screen
         name="network"
         options={{
           title: "الشبكة",
-          tabBarIcon: ({ color }) => <Ionicons name="wifi-outline" size={30} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="wifi-outline" size={26} color={color} />,
         }}
       />
       <Tabs.Screen
         name="team"
         options={{
           title: "الفريق",
-          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={30} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="people-outline" size={26} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: "حسابي",
-          tabBarIcon: ({ color }) => <Ionicons name="person-circle-outline" size={30} color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="person-circle-outline" size={26} color={color} />,
         }}
       />
       <Tabs.Screen

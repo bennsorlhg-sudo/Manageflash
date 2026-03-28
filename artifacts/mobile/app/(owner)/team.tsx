@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -14,16 +14,19 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import * as Haptics from "expo-haptics";
 import { Colors, ROLE_LABELS, type UserRole } from "@/constants/colors";
 import { RoleBadge } from "@/components/RoleBadge";
-import {
-  useListUsers,
-  useCreateUser,
-  useToggleUserActive,
-  useUpdateUser,
-} from "@workspace/api-client-react";
-import type { UserProfile } from "@workspace/api-client-react";
+import { useAuth } from "@/context/AuthContext";
+import { apiGet, apiPost, apiPut } from "@/utils/api";
+
+interface UserProfile {
+  id: number;
+  name: string;
+  phone: string;
+  role: string;
+  isActive: boolean;
+  createdAt: string;
+}
 
 const ROLE_OPTIONS: { value: Exclude<UserRole, "owner">; label: string }[] = [
   { value: "finance_manager", label: "مدير مالي" },
@@ -36,11 +39,11 @@ type EditForm = { name: string; phone: string; role: Exclude<UserRole, "owner"> 
 
 export default function TeamScreen() {
   const insets = useSafeAreaInsets();
-  const { data: users, isLoading, refetch } = useListUsers();
-  const createUser = useCreateUser();
-  const updateUser = useUpdateUser();
-  const toggleActive = useToggleUserActive();
+  const { token } = useAuth();
 
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
@@ -53,6 +56,18 @@ export default function TeamScreen() {
   const [editForm, setEditForm] = useState<EditForm>({ name: "", phone: "", role: "supervisor" });
   const [saving, setSaving] = useState(false);
 
+  const fetchUsers = useCallback(async () => {
+    try {
+      const data = await apiGet("/users", token);
+      setUsers(data);
+    } catch {} finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  }, [token]);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
   const handleCreate = async () => {
     if (!createForm.name.trim() || !createForm.phone.trim() || !createForm.password) {
       Alert.alert("خطأ", "جميع الحقول مطلوبة");
@@ -60,14 +75,12 @@ export default function TeamScreen() {
     }
     setSaving(true);
     try {
-      await createUser.mutateAsync({ data: createForm });
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await apiPost("/users", token, createForm);
       setShowCreateModal(false);
       setCreateForm({ name: "", phone: "", password: "", role: "supervisor" });
-      refetch();
-    } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("خطأ", "فشل إنشاء المستخدم");
+      fetchUsers();
+    } catch (e: any) {
+      Alert.alert("خطأ", e?.message ?? "فشل إنشاء المستخدم");
     } finally {
       setSaving(false);
     }
@@ -80,14 +93,12 @@ export default function TeamScreen() {
     }
     setSaving(true);
     try {
-      await updateUser.mutateAsync({ id: editingUser.id, data: editForm });
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      await apiPut(`/users/${editingUser.id}`, token, editForm);
       setShowEditModal(false);
       setEditingUser(null);
-      refetch();
-    } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("خطأ", "فشل تحديث المستخدم");
+      fetchUsers();
+    } catch (e: any) {
+      Alert.alert("خطأ", e?.message ?? "فشل تحديث المستخدم");
     } finally {
       setSaving(false);
     }
@@ -112,9 +123,8 @@ export default function TeamScreen() {
         style: isActive ? "destructive" : "default",
         onPress: async () => {
           try {
-            await toggleActive.mutateAsync({ id });
-            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            refetch();
+            await apiPost(`/users/${id}/toggle-active`, token, {});
+            fetchUsers();
           } catch {
             Alert.alert("خطأ", "فشل تحديث حالة المستخدم");
           }
@@ -124,12 +134,11 @@ export default function TeamScreen() {
   };
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.addBtn}
           onPress={() => setShowCreateModal(true)}
-          testID="add-team-member"
         >
           <Ionicons name="person-add" size={20} color={Colors.primary} />
         </TouchableOpacity>
@@ -148,11 +157,15 @@ export default function TeamScreen() {
             { paddingBottom: Platform.OS === "web" ? 34 : insets.bottom + 80 },
           ]}
           refreshControl={
-            <RefreshControl refreshing={false} onRefresh={refetch} tintColor={Colors.primary} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => { setRefreshing(true); fetchUsers(); }}
+              tintColor={Colors.primary}
+            />
           }
           showsVerticalScrollIndicator={false}
         >
-          {!users || users.length === 0 ? (
+          {users.length === 0 ? (
             <View style={styles.empty}>
               <Ionicons name="people-outline" size={48} color={Colors.textMuted} />
               <Text style={styles.emptyText}>لا يوجد أعضاء في الفريق بعد</Text>
@@ -167,7 +180,6 @@ export default function TeamScreen() {
                   <TouchableOpacity
                     onPress={() => openEditModal(u)}
                     style={styles.editBtn}
-                    testID={`edit-user-${u.id}`}
                   >
                     <Ionicons name="pencil" size={16} color={Colors.primary} />
                   </TouchableOpacity>
@@ -381,10 +393,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   cardInactive: { opacity: 0.5 },
-  cardActions: {
-    alignItems: "center",
-    gap: 8,
-  },
+  cardActions: { alignItems: "center", gap: 8 },
   toggleBtn: {
     width: 34,
     height: 34,
