@@ -15,9 +15,25 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
+import Constants from "expo-constants";
 import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
 import type { UserRole } from "@/context/AuthContext";
+
+function getLoginUrl(): string {
+  if (Platform.OS === "web") return "/api/auth/login";
+
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}/api/auth/login`;
+
+  const hostUri: string = (Constants.expoConfig as any)?.hostUri ?? "";
+  if (hostUri) {
+    const withoutPort = hostUri.split(":")[0];
+    const cleanDomain = withoutPort.replace("expo.", "");
+    if (cleanDomain) return `https://${cleanDomain}/api/auth/login`;
+  }
+  return "/api/auth/login";
+}
 
 const ROLE_ROUTES: Record<UserRole, string> = {
   owner: "/(owner)",
@@ -58,7 +74,8 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
-      const res = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/auth/login`, {
+      const url = getLoginUrl();
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: phone.trim(), password }),
@@ -67,7 +84,9 @@ export default function LoginScreen() {
       const data = await res.json();
 
       if (!res.ok) {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        if (Platform.OS !== "web") {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        }
         if (res.status === 401) {
           Alert.alert("خطأ", data.message ?? "رقم الهاتف أو كلمة المرور غير صحيحة");
         } else {
@@ -76,11 +95,15 @@ export default function LoginScreen() {
         return;
       }
 
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (Platform.OS !== "web") {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
       await login(data.token, data.user);
       router.replace(ROLE_ROUTES[data.user.role as UserRole] as never);
     } catch {
-      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      if (Platform.OS !== "web") {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      }
       Alert.alert("خطأ في الاتصال", "تعذر الاتصال بالخادم، يرجى التحقق من الاتصال بالإنترنت");
     } finally {
       setIsLoading(false);

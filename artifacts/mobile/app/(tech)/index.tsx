@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, Modal, TextInput, ActivityIndicator, RefreshControl, Alert,
+  Linking, Modal, TextInput, ActivityIndicator, RefreshControl, Alert, Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,74 +9,140 @@ import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
-import { apiGet, apiPatch, formatDate } from "@/utils/api";
+import { apiGet, apiPatch, apiPost, formatDate } from "@/utils/api";
+
+type TabKey = "new" | "pending" | "completed";
+
+interface FieldTask {
+  id: number;
+  taskType: string;
+  serviceNumber: string;
+  clientName: string | null;
+  location: string;
+  phoneNumber: string;
+  status: string;
+  assignedEngineerName: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface GeneralTask {
+  id: number;
+  title?: string;
+  description: string;
+  status: string;
+  priority?: string;
+  targetRole: string;
+  assignedByRole?: string;
+  createdAt: string;
+}
+
+const TASK_TYPE_LABELS: Record<string, string> = {
+  repair: "صيانة",
+  installation: "تركيب",
+  maintenance: "صيانة دورية",
+};
+
+const TASK_TYPE_ICONS: Record<string, string> = {
+  repair: "build",
+  installation: "add-circle",
+  maintenance: "construct",
+};
 
 export default function TechEngineerHomeScreen() {
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<"new" | "pending" | "completed">("new");
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<TabKey>("new");
+  const [fieldTasks, setFieldTasks] = useState<FieldTask[]>([]);
+  const [generalTasks, setGeneralTasks] = useState<GeneralTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<any>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+
+  const [selectedFieldTask, setSelectedFieldTask] = useState<FieldTask | null>(null);
   const [completionNotes, setCompletionNotes] = useState("");
+  const [isCompleteModal, setIsCompleteModal] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const fetchTasks = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     try {
-      const data = await apiGet("/tasks?targetRole=tech_engineer", token);
-      setTasks(data);
-    } catch {} finally {
-      setLoading(false); setRefreshing(false);
+      const [ft, gt] = await Promise.all([
+        apiGet("/field-tasks", token).catch(() => []),
+        apiGet("/tasks?targetRole=tech_engineer", token).catch(() => []),
+      ]);
+      const myName = user?.name ?? "";
+      const filtered = Array.isArray(ft)
+        ? ft.filter((t: FieldTask) => !t.assignedEngineerName || t.assignedEngineerName === myName)
+        : [];
+      setFieldTasks(filtered);
+      setGeneralTasks(Array.isArray(gt) ? gt : []);
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  }, [token]);
+  }, [token, user?.name]);
 
-  useEffect(() => { fetchTasks(); }, [fetchTasks]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const counts = {
-    new: tasks.filter(t => t.status === "pending").length,
-    pending: tasks.filter(t => t.status === "in_progress").length,
-    completedToday: tasks.filter(t => t.status === "completed").length,
+  const mapStatus = (s: string): TabKey => {
+    if (s === "new" || s === "pending") return "new";
+    if (s === "in_progress") return "pending";
+    return "completed";
   };
 
-  const filteredTasks = tasks.filter(t => {
-    if (activeTab === "new") return t.status === "pending";
-    if (activeTab === "pending") return t.status === "in_progress";
-    return t.status === "completed";
-  });
+  const filteredField = fieldTasks.filter(t => mapStatus(t.status) === activeTab);
+  const filteredGeneral = generalTasks.filter(t => mapStatus(t.status) === activeTab);
 
-  const updateStatus = async (id: number, status: string, notes?: string) => {
+  const counts = {
+    new: fieldTasks.filter(t => mapStatus(t.status) === "new").length
+      + generalTasks.filter(t => mapStatus(t.status) === "new").length,
+    pending: fieldTasks.filter(t => mapStatus(t.status) === "pending").length
+      + generalTasks.filter(t => mapStatus(t.status) === "pending").length,
+    completed: fieldTasks.filter(t => mapStatus(t.status) === "completed").length
+      + generalTasks.filter(t => mapStatus(t.status) === "completed").length,
+  };
+
+  const updateFieldStatus = async (id: number, status: string, notes?: string) => {
     setUpdating(true);
     try {
-      await apiPatch(`/tasks/${id}`, token, { status, notes });
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
-      setIsModalOpen(false);
+      if (status === "in_progress") {
+        await apiPost(`/field-tasks/${id}/start`, token, {});
+      } else if (status === "completed") {
+        await apiPost(`/field-tasks/${id}/complete`, token, notes ? { notes } : {});
+      } else {
+        await apiPatch(`/field-tasks/${id}`, token, { notes: notes ?? "" });
+      }
+      setFieldTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+      setIsCompleteModal(false);
       setCompletionNotes("");
     } catch (e: any) {
-      Alert.alert("خطأ", e.message);
+      Alert.alert("خطأ", e.message ?? "فشل التحديث");
     } finally {
       setUpdating(false);
     }
   };
 
+  const updateGeneralStatus = async (id: number, status: string) => {
+    try {
+      await apiPatch(`/tasks/${id}`, token, { status });
+      setGeneralTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    } catch (e: any) {
+      Alert.alert("خطأ", e.message ?? "فشل التحديث");
+    }
+  };
+
   const copyText = async (text: string) => {
     await Clipboard.setStringAsync(text);
-    Alert.alert("تم النسخ", "تم نسخ النص");
+    Alert.alert("تم النسخ", "تم نسخ الموقع");
   };
 
-  const getPriorityColor = (p: string) => {
-    if (p === "urgent") return Colors.error;
-    if (p === "high") return Colors.warning;
-    if (p === "medium") return Colors.info;
-    return Colors.textMuted;
-  };
-
-  const getPriorityLabel = (p: string) => {
-    const map: Record<string, string> = { urgent: "عاجل", high: "مرتفع", medium: "متوسط", low: "منخفض" };
-    return map[p] ?? p;
+  const callPhone = (phone: string) => {
+    const cleaned = phone.replace(/\D/g, "");
+    Linking.openURL(`tel:${cleaned}`);
   };
 
   if (loading) {
@@ -87,8 +153,11 @@ export default function TechEngineerHomeScreen() {
     );
   }
 
+  const isEmpty = filteredField.length === 0 && filteredGeneral.length === 0;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={{ alignItems: "flex-end" }}>
           <Text style={styles.welcomeText}>المهندس الفني — {user?.name}</Text>
@@ -99,115 +168,218 @@ export default function TechEngineerHomeScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Count Cards */}
       <View style={styles.countGrid}>
-        <TouchableOpacity style={styles.countCard} onPress={() => setActiveTab("new")}>
-          <Text style={[styles.countValue, activeTab === "new" && { color: Colors.roles.tech_engineer }]}>{counts.new}</Text>
-          <Text style={styles.countLabel}>مهام جديدة</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.countCard} onPress={() => setActiveTab("pending")}>
-          <Text style={[styles.countValue, { color: Colors.warning }, activeTab === "pending" && { color: Colors.warning }]}>{counts.pending}</Text>
-          <Text style={styles.countLabel}>قيد التنفيذ</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.countCard} onPress={() => setActiveTab("completed")}>
-          <Text style={[styles.countValue, { color: Colors.success }]}>{counts.completedToday}</Text>
-          <Text style={styles.countLabel}>مكتملة</Text>
-        </TouchableOpacity>
+        {([
+          { key: "new" as TabKey, label: "مهام جديدة", color: Colors.roles.tech_engineer },
+          { key: "pending" as TabKey, label: "قيد التنفيذ", color: Colors.warning },
+          { key: "completed" as TabKey, label: "مكتملة", color: Colors.success },
+        ]).map(({ key, label, color }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.countCard, activeTab === key && { borderColor: color, borderWidth: 2 }]}
+            onPress={() => setActiveTab(key)}
+          >
+            <Text style={[styles.countValue, { color }]}>{counts[key]}</Text>
+            <Text style={styles.countLabel}>{label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
+      {/* Tabs */}
       <View style={styles.tabs}>
-        <TouchableOpacity style={[styles.tab, activeTab === "completed" && styles.tabActive]} onPress={() => setActiveTab("completed")}>
-          <Text style={[styles.tabText, activeTab === "completed" && styles.tabTextActive]}>المكتملة</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, activeTab === "pending" && styles.tabActive]} onPress={() => setActiveTab("pending")}>
-          <Text style={[styles.tabText, activeTab === "pending" && styles.tabTextActive]}>قيد التنفيذ</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, activeTab === "new" && styles.tabActive]} onPress={() => setActiveTab("new")}>
-          <Text style={[styles.tabText, activeTab === "new" && styles.tabTextActive]}>الجديدة</Text>
-        </TouchableOpacity>
+        {([
+          { key: "completed" as TabKey, label: "المكتملة" },
+          { key: "pending" as TabKey, label: "قيد التنفيذ" },
+          { key: "new" as TabKey, label: "الجديدة" },
+        ]).map(({ key, label }) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.tab, activeTab === key && styles.tabActive]}
+            onPress={() => setActiveTab(key)}
+          >
+            <Text style={[styles.tabText, activeTab === key && styles.tabTextActive]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
       <ScrollView
         contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchTasks(); }} />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} />
+        }
       >
-        {filteredTasks.length === 0 ? (
+        {isEmpty ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="checkmark-done-circle-outline" size={48} color={Colors.textMuted} />
+            <Ionicons name="checkmark-done-circle-outline" size={56} color={Colors.textMuted} />
             <Text style={styles.emptyText}>
               {activeTab === "new" ? "لا توجد مهام جديدة" : activeTab === "pending" ? "لا توجد مهام جارية" : "لا توجد مهام مكتملة"}
             </Text>
           </View>
-        ) : filteredTasks.map(task => (
-          <View key={task.id} style={styles.taskCard}>
-            <View style={styles.cardHeader}>
-              <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(task.priority) + "20" }]}>
-                <Text style={[styles.priorityText, { color: getPriorityColor(task.priority) }]}>
-                  {getPriorityLabel(task.priority)}
-                </Text>
+        ) : (
+          <>
+            {/* Field Tasks */}
+            {filteredField.map(task => (
+              <View key={`ft-${task.id}`} style={styles.taskCard}>
+                <View style={styles.cardHeader}>
+                  <View style={[
+                    styles.typeBadge,
+                    { backgroundColor: task.taskType === "repair" ? Colors.error + "20" : Colors.primary + "20" }
+                  ]}>
+                    <Ionicons
+                      name={(TASK_TYPE_ICONS[task.taskType] ?? "build") as any}
+                      size={14}
+                      color={task.taskType === "repair" ? Colors.error : Colors.primary}
+                    />
+                    <Text style={[
+                      styles.typeText,
+                      { color: task.taskType === "repair" ? Colors.error : Colors.primary }
+                    ]}>
+                      {TASK_TYPE_LABELS[task.taskType] ?? task.taskType}
+                    </Text>
+                  </View>
+                  <Text style={styles.refText}>#{task.serviceNumber}</Text>
+                </View>
+
+                {task.clientName ? (
+                  <Text style={styles.clientName}>{task.clientName}</Text>
+                ) : null}
+
+                <View style={styles.infoRow}>
+                  <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
+                  <Text style={styles.infoText}>{task.location}</Text>
+                </View>
+
+                <View style={styles.infoRow}>
+                  <Ionicons name="call-outline" size={16} color={Colors.textMuted} />
+                  <Text style={styles.infoText}>{task.phoneNumber}</Text>
+                </View>
+
+                {task.notes ? (
+                  <View style={styles.infoRow}>
+                    <Ionicons name="document-text-outline" size={16} color={Colors.textMuted} />
+                    <Text style={styles.infoText}>{task.notes}</Text>
+                  </View>
+                ) : null}
+
+                <Text style={styles.dateText}>{formatDate(task.createdAt)}</Text>
+
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => callPhone(task.phoneNumber)}
+                  >
+                    <Ionicons name="call" size={20} color={Colors.success} />
+                    <Text style={[styles.actionBtnText, { color: Colors.success }]}>اتصال</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => copyText(task.location)}
+                  >
+                    <Ionicons name="copy-outline" size={20} color={Colors.primaryLight} />
+                    <Text style={[styles.actionBtnText, { color: Colors.primaryLight }]}>نسخ الموقع</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {(task.status === "new" || task.status === "pending") && activeTab === "new" && (
+                  <TouchableOpacity
+                    style={styles.mainBtn}
+                    onPress={() => updateFieldStatus(task.id, "in_progress")}
+                  >
+                    <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
+                  </TouchableOpacity>
+                )}
+                {task.status === "in_progress" && activeTab === "pending" && (
+                  <TouchableOpacity
+                    style={[styles.mainBtn, { backgroundColor: Colors.success }]}
+                    onPress={() => { setSelectedFieldTask(task); setIsCompleteModal(true); }}
+                  >
+                    <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
+                  </TouchableOpacity>
+                )}
               </View>
-              <Text style={styles.refText}>#{task.id}</Text>
-            </View>
+            ))}
 
-            <Text style={styles.taskTitle}>{task.title}</Text>
-            {task.description && <Text style={styles.taskDesc}>{task.description}</Text>}
-            {task.targetPersonName && <Text style={styles.locationText}>{task.targetPersonName}</Text>}
+            {/* General Tasks */}
+            {filteredGeneral.map(task => (
+              <View key={`gt-${task.id}`} style={[styles.taskCard, { borderLeftWidth: 3, borderLeftColor: Colors.warning }]}>
+                <View style={styles.cardHeader}>
+                  <View style={[styles.typeBadge, { backgroundColor: Colors.warning + "20" }]}>
+                    <Ionicons name="clipboard-outline" size={14} color={Colors.warning} />
+                    <Text style={[styles.typeText, { color: Colors.warning }]}>مهمة إدارية</Text>
+                  </View>
+                  <Text style={styles.refText}>#{task.id}</Text>
+                </View>
 
-            <Text style={styles.dateText}>{formatDate(task.createdAt)}</Text>
+                <Text style={styles.clientName}>{task.description}</Text>
+                <Text style={styles.dateText}>{formatDate(task.createdAt)}</Text>
 
-            <View style={styles.actionRow}>
-              {task.targetPersonName && (
-                <TouchableOpacity style={styles.actionBtn} onPress={() => Linking.openURL(`tel:${task.targetPersonName}`)}>
-                  <Ionicons name="call" size={20} color={Colors.success} />
-                </TouchableOpacity>
-              )}
-              {task.description && (
-                <TouchableOpacity style={styles.actionBtn} onPress={() => copyText(task.description)}>
-                  <Ionicons name="copy" size={20} color={Colors.primaryLight} />
-                </TouchableOpacity>
-              )}
-            </View>
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.actionBtn}
+                    onPress={() => copyText(task.description)}
+                  >
+                    <Ionicons name="copy-outline" size={20} color={Colors.primaryLight} />
+                    <Text style={[styles.actionBtnText, { color: Colors.primaryLight }]}>نسخ</Text>
+                  </TouchableOpacity>
+                </View>
 
-            {task.status === "pending" && (
-              <TouchableOpacity style={styles.mainBtn} onPress={() => updateStatus(task.id, "in_progress")}>
-                {updating ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.mainBtnText}>بدء التنفيذ</Text>}
-              </TouchableOpacity>
-            )}
-
-            {task.status === "in_progress" && (
-              <TouchableOpacity
-                style={[styles.mainBtn, { backgroundColor: Colors.success }]}
-                onPress={() => { setSelectedTask(task); setIsModalOpen(true); }}
-              >
-                <Text style={styles.mainBtnText}>إكمال المهمة</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ))}
-        <View style={{ height: 40 }} />
+                {task.status === "pending" && activeTab === "new" && (
+                  <TouchableOpacity
+                    style={styles.mainBtn}
+                    onPress={() => updateGeneralStatus(task.id, "in_progress")}
+                  >
+                    <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
+                  </TouchableOpacity>
+                )}
+                {task.status === "in_progress" && activeTab === "pending" && (
+                  <TouchableOpacity
+                    style={[styles.mainBtn, { backgroundColor: Colors.success }]}
+                    onPress={() => updateGeneralStatus(task.id, "completed")}
+                  >
+                    <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+          </>
+        )}
+        <View style={{ height: 60 }} />
       </ScrollView>
 
-      <Modal visible={isModalOpen} transparent animationType="slide">
+      {/* Complete Field Task Modal */}
+      <Modal visible={isCompleteModal} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>إكمال المهمة</Text>
-            <Text style={styles.modalSubtitle}>{selectedTask?.title}</Text>
-            <Text style={styles.label}>ملاحظات الإكمال</Text>
+            <Text style={styles.modalTitle}>إكمال المهمة الميدانية</Text>
+            {selectedFieldTask && (
+              <Text style={styles.modalSubtitle}>
+                {TASK_TYPE_LABELS[selectedFieldTask.taskType] ?? selectedFieldTask.taskType} — {selectedFieldTask.serviceNumber}
+              </Text>
+            )}
+            <Text style={styles.label}>ملاحظات الإكمال (اختياري)</Text>
             <TextInput
-              style={styles.modalInput} multiline
-              placeholder="اكتب ملاحظاتك هنا..." placeholderTextColor={Colors.textMuted}
-              value={completionNotes} onChangeText={setCompletionNotes}
+              style={styles.modalInput}
+              multiline
+              placeholder="اكتب ملاحظاتك هنا..."
+              placeholderTextColor={Colors.textMuted}
+              value={completionNotes}
+              onChangeText={setCompletionNotes}
               textAlign="right"
             />
             <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsModalOpen(false)}>
+              <TouchableOpacity style={styles.cancelBtn} onPress={() => setIsCompleteModal(false)}>
                 <Text style={styles.cancelBtnText}>إلغاء</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.confirmBtn}
-                onPress={() => updateStatus(selectedTask?.id, "completed", completionNotes)}
+                onPress={() => selectedFieldTask && updateFieldStatus(selectedFieldTask.id, "completed", completionNotes)}
                 disabled={updating}
               >
-                {updating ? <ActivityIndicator color="#FFF" size="small" /> : <Text style={styles.confirmBtnText}>حفظ وإكمال</Text>}
+                {updating
+                  ? <ActivityIndicator color="#FFF" size="small" />
+                  : <Text style={styles.confirmBtnText}>حفظ وإكمال</Text>
+                }
               </TouchableOpacity>
             </View>
           </View>
@@ -224,41 +396,65 @@ const styles = StyleSheet.create({
     alignItems: "center", padding: 20,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  welcomeText: { color: Colors.text, fontSize: 18, fontWeight: "bold" },
+  welcomeText: { color: Colors.text, fontSize: 18, fontWeight: "bold", textAlign: "right" },
   roleText: { color: Colors.roles.tech_engineer, fontSize: 12 },
   countGrid: { flexDirection: "row-reverse", padding: 15, gap: 10 },
   countCard: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: 12,
-    padding: 12, alignItems: "center", borderWidth: 1, borderColor: Colors.border,
+    padding: 12, alignItems: "center",
+    borderWidth: 1, borderColor: Colors.border,
   },
-  countValue: { fontSize: 22, fontWeight: "bold", color: Colors.primaryLight },
+  countValue: { fontSize: 24, fontWeight: "bold" },
   countLabel: { fontSize: 10, color: Colors.textSecondary, marginTop: 4, textAlign: "center" },
   tabs: { flexDirection: "row-reverse", borderBottomWidth: 1, borderBottomColor: Colors.border },
-  tab: { flex: 1, paddingVertical: 15, alignItems: "center" },
+  tab: { flex: 1, paddingVertical: 14, alignItems: "center" },
   tabActive: { borderBottomWidth: 2, borderBottomColor: Colors.roles.tech_engineer },
   tabText: { color: Colors.textSecondary, fontSize: 13 },
   tabTextActive: { color: Colors.roles.tech_engineer, fontWeight: "bold" },
-  listContent: { padding: 20 },
-  emptyContainer: { alignItems: "center", marginTop: 60, gap: 12 },
+  listContent: { padding: 16, gap: 12 },
+  emptyContainer: { alignItems: "center", marginTop: 80, gap: 12 },
   emptyText: { color: Colors.textMuted, fontSize: 15 },
   taskCard: {
     backgroundColor: Colors.surface, borderRadius: 15,
-    padding: 16, marginBottom: 15, borderWidth: 1, borderColor: Colors.border,
+    padding: 16, borderWidth: 1, borderColor: Colors.border,
   },
-  cardHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  priorityBadge: { flexDirection: "row-reverse", alignItems: "center", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  priorityText: { fontSize: 12, fontWeight: "bold" },
+  cardHeader: {
+    flexDirection: "row-reverse", justifyContent: "space-between",
+    alignItems: "center", marginBottom: 10,
+  },
+  typeBadge: {
+    flexDirection: "row-reverse", alignItems: "center",
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, gap: 5,
+  },
+  typeText: { fontSize: 12, fontWeight: "bold" },
   refText: { color: Colors.textMuted, fontSize: 12 },
-  taskTitle: { color: Colors.text, fontSize: 16, fontWeight: "bold", textAlign: "right", marginBottom: 4 },
-  taskDesc: { color: Colors.textSecondary, fontSize: 13, textAlign: "right", marginBottom: 4 },
-  locationText: { color: Colors.textMuted, fontSize: 13, textAlign: "right", marginTop: 2 },
-  dateText: { color: Colors.textMuted, fontSize: 11, textAlign: "right", marginTop: 4 },
-  actionRow: { flexDirection: "row-reverse", gap: 15, marginTop: 12, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12 },
-  actionBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: Colors.surfaceElevated, justifyContent: "center", alignItems: "center" },
-  mainBtn: { backgroundColor: Colors.primary, borderRadius: 8, padding: 12, alignItems: "center", marginTop: 12 },
+  clientName: { color: Colors.text, fontSize: 16, fontWeight: "bold", textAlign: "right", marginBottom: 8 },
+  infoRow: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 8,
+    marginBottom: 5,
+  },
+  infoText: { color: Colors.textSecondary, fontSize: 13, flex: 1, textAlign: "right" },
+  dateText: { color: Colors.textMuted, fontSize: 11, textAlign: "right", marginTop: 6 },
+  actionRow: {
+    flexDirection: "row-reverse", gap: 10, marginTop: 12,
+    borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12,
+  },
+  actionBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 6,
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 8,
+  },
+  actionBtnText: { fontSize: 13, fontWeight: "600" },
+  mainBtn: {
+    backgroundColor: Colors.primary, borderRadius: 10,
+    padding: 12, alignItems: "center", marginTop: 12,
+  },
   mainBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 20 },
-  modalContent: { backgroundColor: Colors.surface, borderRadius: 15, padding: 20, borderWidth: 1, borderColor: Colors.border },
+  modalContent: {
+    backgroundColor: Colors.surface, borderRadius: 16,
+    padding: 20, borderWidth: 1, borderColor: Colors.border,
+  },
   modalTitle: { color: Colors.text, fontSize: 18, fontWeight: "bold", textAlign: "right", marginBottom: 4 },
   modalSubtitle: { color: Colors.textSecondary, fontSize: 14, textAlign: "right", marginBottom: 16 },
   label: { color: Colors.textSecondary, fontSize: 14, textAlign: "right", marginBottom: 8 },

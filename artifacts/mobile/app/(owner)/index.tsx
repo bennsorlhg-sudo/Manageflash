@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { apiGet, apiPost } from "@/utils/api";
 
 const CARD_PRICES: Record<string, number> = {
   "200": 180, "300": 270, "500": 450, "1000": 900,
@@ -49,13 +50,8 @@ export default function OwnerDashboard() {
 
   const fetchDashboard = useCallback(async () => {
     try {
-      const res = await fetch("/api/dashboard/summary", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
+      const json = await apiGet("/dashboard/summary", token);
+      setData(json);
     } catch {
       // silent
     } finally {
@@ -206,21 +202,12 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, insets }: { visib
       const body = type === "cash"
         ? { type, amount: parseFloat(amount), toRole, notes }
         : { type, denomination: parseInt(denomination), cardCount: parseInt(cardCount), toRole, notes };
-      const res = await fetch("/api/custody", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        Alert.alert("تم", "تم إضافة العهدة بنجاح");
-        onSuccess();
-        setAmount(""); setCardCount(""); setNotes("");
-      } else {
-        const err = await res.json();
-        Alert.alert("خطأ", err.error ?? "فشل إضافة العهدة");
-      }
-    } catch {
-      Alert.alert("خطأ", "فشل الاتصال بالخادم");
+      await apiPost("/custody", token, body);
+      Alert.alert("تم", "تم إضافة العهدة بنجاح");
+      onSuccess();
+      setAmount(""); setCardCount(""); setNotes("");
+    } catch (e: any) {
+      Alert.alert("خطأ", e?.message ?? "فشل إضافة العهدة");
     } finally {
       setSaving(false);
     }
@@ -323,20 +310,12 @@ function AddTaskModal({ visible, token, onClose, onSuccess, insets }: { visible:
     if (!description.trim()) { Alert.alert("تنبيه", "يرجى كتابة وصف المهمة"); return; }
     setSaving(true);
     try {
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ targetRole, description, assignedByRole: "owner" }),
-      });
-      if (res.ok) {
-        Alert.alert("تم", "تم إضافة المهمة بنجاح");
-        onSuccess();
-        setDescription("");
-      } else {
-        Alert.alert("خطأ", "فشل إضافة المهمة");
-      }
-    } catch {
-      Alert.alert("خطأ", "فشل الاتصال بالخادم");
+      await apiPost("/tasks", token, { title: description.slice(0, 80), description, targetRole, assignedByRole: "owner" });
+      Alert.alert("تم", "تم إضافة المهمة بنجاح");
+      onSuccess();
+      setDescription("");
+    } catch (e: any) {
+      Alert.alert("خطأ", e?.message ?? "فشل إضافة المهمة");
     } finally {
       setSaving(false);
     }

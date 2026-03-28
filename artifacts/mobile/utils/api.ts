@@ -1,4 +1,20 @@
-const BASE = "/api";
+import { Platform } from "react-native";
+import Constants from "expo-constants";
+
+function getApiBase(): string {
+  if (Platform.OS === "web") return "/api";
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}/api`;
+  const hostUri: string = (Constants.expoConfig as any)?.hostUri ?? "";
+  if (hostUri) {
+    const withoutPort = hostUri.split(":")[0];
+    const cleanDomain = withoutPort.replace("expo.", "");
+    if (cleanDomain) return `https://${cleanDomain}/api`;
+  }
+  return "/api";
+}
+
+const BASE = getApiBase();
 
 export async function apiFetch(
   path: string,

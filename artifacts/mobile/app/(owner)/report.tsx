@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
+import { apiGet } from "@/utils/api";
 
 type Period = "day" | "week" | "month";
 
@@ -49,13 +50,8 @@ export default function ReportScreen() {
   const fetchReport = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/finances/report?period=${period}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
+      const json = await apiGet(`/finances/report?period=${period}`, token);
+      setData(json);
     } catch {
       // silent
     } finally {
