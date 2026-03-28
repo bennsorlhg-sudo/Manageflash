@@ -137,6 +137,25 @@ Generated Zod schemas from the OpenAPI spec. Used by `api-server` for response v
 
 Generated React Query hooks and fetch client from the OpenAPI spec.
 
+### `artifacts/mockup-sandbox` (`@workspace/mockup-sandbox`)
+
+React 19 + Vite + Tailwind CSS 4 component preview server. Used for prototyping UI screens.
+
+- Components live in `src/components/mockups/` — auto-discovered by `mockupPreviewPlugin.ts`
+- Access previews at `/__mockup/preview/<ComponentPath>` (e.g. `/__mockup/preview/finance/FinanceDashboard`)
+- Full shadcn/ui component library in `src/components/ui/`
+- Finance Manager Interface screens in `src/components/mockups/finance/`:
+  - `FinanceDashboard.tsx` — main dashboard with KPI cards and action buttons
+  - `SellScreen.tsx` — sell cards/broadband with cash or loan payment
+  - `DisburseScreen.tsx` — expense recording with type/payment selection and invoice photo
+  - `CollectScreen.tsx` — collect loans (receivable) and pay debts (payable)
+  - `CustodyScreen.tsx` — send/receive custody management
+  - `ManageSalesScreen.tsx` — custody history and sales point management
+  - `SalesScreen.tsx` — sales log with period filters and summaries
+  - `ExpensesScreen.tsx` — expenses log with edit/delete, templates, and obligations management
+  - `DebtsLoansScreen.tsx` — loans/debts overview with sort and search
+  - `data.ts` — mock data and types for all finance screens
+
 ### `scripts` (`@workspace/scripts`)
 
 Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
