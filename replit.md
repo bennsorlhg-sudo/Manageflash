@@ -139,4 +139,16 @@ Generated React Query hooks and fetch client from the OpenAPI spec.
 
 ### `scripts` (`@workspace/scripts`)
 
-Utility scripts package.
+Utility scripts package. Each script is a `.ts` file in `src/` with a corresponding npm script in `package.json`. Run scripts via `pnpm --filter @workspace/scripts run <script>`. Scripts can import any workspace package (e.g., `@workspace/db`) by adding it as a dependency in `scripts/package.json`.
+
+### `artifacts/mockup-sandbox` (`@workspace/mockup-sandbox`)
+
+React + Vite mockup component gallery. Components in `src/components/mockups/` are accessible at `/__mockup/preview/<ComponentName>`.
+
+Current mockup components (Supervisor Interface - Flash Net):
+- `SupervisorDashboard` — Home screen with subscription indicator, info cards, 3-section button layout, recent tasks, owner tasks, purchase requests
+- `RepairTicket` — Repair ticket creation with service number lookup, auto-detection, manual entry, description, photo, engineer assignment
+- `InstallationTickets` — 4-view ticket system (New/In Progress/Archived/Completed) with creation for Hotspot Internal/External/Broadband; archive review flow
+- `PurchaseRequests` — Purchase request system with priority, status tracking; appears in Finance Manager view
+- `DatabaseManagement` — Hotspot (sorted numerically) and Broadband tabs with add/search/view/edit; color-coded status system
+- `EngineerManagement` — Add/edit/deactivate engineers; subscription delivery to Finance Manager; Finance Manager audit system
