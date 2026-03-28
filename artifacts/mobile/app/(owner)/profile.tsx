@@ -11,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import type { ComponentProps } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Colors, ROLE_LABELS, type UserRole } from "@/constants/colors";
 import { RoleBadge } from "@/components/RoleBadge";
@@ -20,6 +21,7 @@ type IoniconsName = ComponentProps<typeof Ionicons>["name"];
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { user, logout } = useAuth();
 
   const handleLogout = () => {
@@ -31,6 +33,7 @@ export default function ProfileScreen() {
         onPress: async () => {
           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
           await logout();
+          router.replace("/(auth)/login");
         },
       },
     ]);

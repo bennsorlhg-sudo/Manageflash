@@ -71,14 +71,17 @@ export default function OwnerDashboard() {
   const fmt = (n: number) => n.toLocaleString("ar-SA") + " ﷼";
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 12 : insets.top }]}>
       <View style={styles.header}>
-        <View style={styles.logoMini}>
-          <Ionicons name="flash" size={22} color={Colors.primary} />
-        </View>
-        <View>
+        <TouchableOpacity onPress={() => router.push("/(owner)/profile")} style={styles.profileBtn}>
+          <Ionicons name="person-circle" size={28} color={Colors.primary} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>مالك الشبكة</Text>
           <Text style={styles.userName}>فهد الهندي</Text>
+        </View>
+        <View style={styles.logoMini}>
+          <Ionicons name="flash" size={22} color={Colors.primary} />
         </View>
       </View>
 
@@ -378,11 +381,12 @@ const styles = StyleSheet.create({
     flexDirection: "row-reverse",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
   },
+  profileBtn: { padding: 4 },
   greeting: { fontSize: 12, color: Colors.textSecondary, fontFamily: "Inter_400Regular", textAlign: "right" },
   userName: { fontSize: 20, color: Colors.text, fontFamily: "Inter_700Bold", textAlign: "right" },
   logoMini: {
