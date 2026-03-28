@@ -1,37 +1,22 @@
 import { BlurView } from "expo-blur";
-import { isLiquidGlassAvailable } from "expo-glass-effect";
 import { Tabs } from "expo-router";
-import { Icon, Label, NativeTabs } from "expo-router/unstable-native-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View, ActivityIndicator } from "react-native";
 import { Colors } from "@/constants/colors";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 
-function NativeTabLayout() {
-  return (
-    <NativeTabs>
-      <NativeTabs.Trigger name="index">
-        <Icon sf={{ default: "square.grid.2x2", selected: "square.grid.2x2.fill" }} />
-        <Label>لوحة التحكم</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="network">
-        <Icon sf={{ default: "network", selected: "network" }} />
-        <Label>الشبكة</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="team">
-        <Icon sf={{ default: "person.3", selected: "person.3.fill" }} />
-        <Label>الفريق</Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="profile">
-        <Icon sf={{ default: "person.circle", selected: "person.circle.fill" }} />
-        <Label>حسابي</Label>
-      </NativeTabs.Trigger>
-    </NativeTabs>
-  );
-}
+export default function OwnerTabLayout() {
+  const { isLoading, isAuthorized } = useRoleGuard("owner");
 
-function ClassicTabLayout() {
+  if (isLoading || !isAuthorized) {
+    return (
+      <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={Colors.primary} />
+      </View>
+    );
+  }
+
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
 
@@ -96,23 +81,9 @@ function ClassicTabLayout() {
         options={{
           title: "تقرير",
           tabBarButton: () => null,
+          headerShown: false,
         }}
       />
     </Tabs>
   );
-}
-
-export default function OwnerTabLayout() {
-  const { isLoading, isAuthorized } = useRoleGuard("owner");
-
-  if (isLoading || !isAuthorized) {
-    return (
-      <View style={{ flex: 1, backgroundColor: Colors.background, alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color={Colors.primary} />
-      </View>
-    );
-  }
-
-  if (isLiquidGlassAvailable()) return <NativeTabLayout />;
-  return <ClassicTabLayout />;
 }
