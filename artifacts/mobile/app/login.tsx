@@ -75,10 +75,11 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const url = getLoginUrl();
+      const cleanPhone = phone.replace(/\D/g, "").trim();
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phone.trim(), password }),
+        body: JSON.stringify({ phone: cleanPhone, password }),
       });
 
       const data = await res.json();
@@ -144,7 +145,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={phone}
-                onChangeText={(t) => { setPhone(t); setPhoneError(""); }}
+                onChangeText={(t) => { setPhone(t.replace(/\D/g, "")); setPhoneError(""); }}
                 placeholder="05xxxxxxxx"
                 placeholderTextColor={Colors.textMuted}
                 keyboardType="phone-pad"
