@@ -31,7 +31,9 @@ export default function ProfileScreen() {
         text: "خروج",
         style: "destructive",
         onPress: async () => {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          if (Platform.OS !== "web") {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
           await logout();
           router.replace("/(auth)/login");
         },
@@ -42,7 +44,7 @@ export default function ProfileScreen() {
   if (!user) return null;
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 12 : insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>حسابي</Text>
       </View>

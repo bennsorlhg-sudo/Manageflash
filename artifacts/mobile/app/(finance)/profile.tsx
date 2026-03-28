@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform, Alert } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import { Colors, ROLE_LABELS, type UserRole } from "@/constants/colors";
 import { RoleBadge } from "@/components/RoleBadge";
@@ -9,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 
 export default function FinanceProfileScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { user, logout } = useAuth();
 
   const handleLogout = () => {
@@ -18,8 +20,11 @@ export default function FinanceProfileScreen() {
         text: "خروج",
         style: "destructive",
         onPress: async () => {
-          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          if (Platform.OS !== "web") {
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
           await logout();
+          router.replace("/(auth)/login");
         },
       },
     ]);
@@ -28,7 +33,7 @@ export default function FinanceProfileScreen() {
   if (!user) return null;
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
+    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 12 : insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>حسابي</Text>
       </View>
@@ -44,10 +49,38 @@ export default function FinanceProfileScreen() {
           <Text style={styles.phone}>{user.phone}</Text>
           <RoleBadge role={user.role as UserRole} />
         </View>
+
+        <View style={styles.section}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoValue}>{user.phone}</Text>
+            <View style={styles.infoRight}>
+              <Text style={styles.infoLabel}>رقم الهاتف</Text>
+              <Ionicons name="call-outline" size={16} color={Colors.textMuted} />
+            </View>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoValue}>{ROLE_LABELS[user.role as UserRole]}</Text>
+            <View style={styles.infoRight}>
+              <Text style={styles.infoLabel}>الدور</Text>
+              <Ionicons name="shield-checkmark-outline" size={16} color={Colors.textMuted} />
+            </View>
+          </View>
+          <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
+            <Text style={[styles.infoValue, { color: user.isActive ? Colors.success : Colors.error }]}>
+              {user.isActive ? "نشط" : "غير نشط"}
+            </Text>
+            <View style={styles.infoRight}>
+              <Text style={styles.infoLabel}>الحالة</Text>
+              <Ionicons name="radio-button-on-outline" size={16} color={Colors.textMuted} />
+            </View>
+          </View>
+        </View>
+
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout} activeOpacity={0.8}>
           <Ionicons name="log-out-outline" size={20} color={Colors.error} />
           <Text style={styles.logoutText}>تسجيل الخروج</Text>
         </TouchableOpacity>
+        <Text style={styles.version}>Flash Net v1.0.0</Text>
       </ScrollView>
     </View>
   );
@@ -82,9 +115,29 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 2,
     borderColor: Colors.roles.finance_manager + "55",
+    marginBottom: 4,
   },
-  name: { fontSize: 20, fontFamily: "Inter_700Bold", color: Colors.text },
+  name: { fontSize: 22, fontFamily: "Inter_700Bold", color: Colors.text },
   phone: { fontSize: 14, fontFamily: "Inter_400Regular", color: Colors.textSecondary },
+  section: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    overflow: "hidden",
+  },
+  infoRow: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  infoRight: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  infoLabel: { fontSize: 14, fontFamily: "Inter_500Medium", color: Colors.textSecondary },
+  infoValue: { fontSize: 14, fontFamily: "Inter_400Regular", color: Colors.text },
   logoutBtn: {
     backgroundColor: Colors.error + "15",
     borderWidth: 1,
@@ -97,4 +150,5 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoutText: { color: Colors.error, fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  version: { textAlign: "center", color: Colors.textMuted, fontSize: 12, fontFamily: "Inter_400Regular" },
 });
