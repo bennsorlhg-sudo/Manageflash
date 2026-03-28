@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet } from "@/utils/api";
@@ -37,7 +37,6 @@ interface FinancialReport {
 
 export default function ReportScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { token } = useAuth();
   const params = useLocalSearchParams<{ type?: string }>();
   const reportType = (params.type ?? "sales") as keyof typeof TYPE_CONFIG;
@@ -73,9 +72,7 @@ export default function ReportScreen() {
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 67 : insets.top }]}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-forward" size={22} color={Colors.text} />
-        </TouchableOpacity>
+        <Ionicons name={config.icon} size={22} color={config.color} />
         <Text style={styles.title}>{config.label}</Text>
       </View>
 
