@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Flash Net Network Management API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: users
+    description: User management operations
+  - name: network
+    description: Network points operations
 paths:
   /healthz:
     get:
@@ -24,7 +30,210 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with phone and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current user
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserProfile"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new user (Owner only)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateUserRequest"
+      responses:
+        "201":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+    put:
+      operationId: updateUser
+      tags: [users]
+      summary: Update a user (Owner only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRequest"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+  /users/{id}/toggle-active:
+    post:
+      operationId: toggleUserActive
+      tags: [users]
+      summary: Activate or deactivate a user (Owner only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User activation status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+  /network/hotspot-points:
+    get:
+      operationId: listHotspotPoints
+      tags: [network]
+      summary: List hotspot points
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of hotspot points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HotspotPoint"
+  /network/broadband-points:
+    get:
+      operationId: listBroadbandPoints
+      tags: [network]
+      summary: List broadband points
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of broadband points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BroadbandPoint"
+  /network/sales-points:
+    get:
+      operationId: listSalesPoints
+      tags: [network]
+      summary: List sales points
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: List of sales points
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SalesPoint"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   schemas:
     HealthStatus:
       type: object
@@ -33,4 +242,164 @@ components:
           type: string
       required:
         - status
-
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message
+    LoginRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        password:
+          type: string
+      required:
+        - phone
+        - password
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserProfile"
+      required:
+        - token
+        - user
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [owner, finance_manager, supervisor, tech_engineer]
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - phone
+        - role
+        - isActive
+        - createdAt
+    CreateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        password:
+          type: string
+        role:
+          type: string
+          enum: [finance_manager, supervisor, tech_engineer]
+      required:
+        - name
+        - phone
+        - password
+        - role
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [finance_manager, supervisor, tech_engineer]
+    HotspotPoint:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        location:
+          type: string
+        status:
+          type: string
+          enum: [active, active_incomplete, ready, empty, stopped]
+        supervisorId:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - location
+        - status
+        - createdAt
+    BroadbandPoint:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        location:
+          type: string
+        status:
+          type: string
+          enum: [active, active_incomplete, ready, empty, stopped]
+        supervisorId:
+          type: integer
+          nullable: true
+        speed:
+          type: string
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - location
+        - status
+        - createdAt
+    SalesPoint:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        location:
+          type: string
+        managerId:
+          type: integer
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - location
+        - createdAt
