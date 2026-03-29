@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { hotspotPointsTable, broadbandPointsTable, salesPointsTable } from "@workspace/db";
 import { requireAuth } from "../lib/auth";
-import { eq } from "drizzle-orm";
+import { eq, ilike, or, and, asc, sql } from "drizzle-orm";
 
 const router = Router();
 
@@ -19,9 +19,45 @@ const BROADBAND_FIELDS = [
   "subscriptionFee", "locationUrl",
 ];
 
-router.get("/hotspot-points", requireAuth, async (_req, res) => {
-  const points = await db.select().from(hotspotPointsTable).orderBy(hotspotPointsTable.flashNumber);
-  res.json(points);
+router.get("/hotspot-points", requireAuth, async (req, res) => {
+  try {
+    const { search, type, limit = "50", offset = "0" } = req.query as any;
+    const lim = Math.min(parseInt(limit) || 50, 200);
+    const off = parseInt(offset) || 0;
+
+    const conditions: any[] = [];
+    if (type === "internal") conditions.push(eq(hotspotPointsTable.hotspotType, "internal"));
+    else if (type === "external") conditions.push(eq(hotspotPointsTable.hotspotType, "external"));
+
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`;
+      conditions.push(or(
+        ilike(hotspotPointsTable.name, q),
+        ilike(hotspotPointsTable.location, q),
+        ilike(hotspotPointsTable.clientName, q),
+        ilike(hotspotPointsTable.deviceName, q),
+      ));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [rows, countRows] = await Promise.all([
+      db.select().from(hotspotPointsTable)
+        .where(where)
+        .orderBy(asc(hotspotPointsTable.flashNumber))
+        .limit(lim).offset(off),
+      db.select({ count: sql<number>`count(*)` }).from(hotspotPointsTable).where(where),
+    ]);
+
+    res.json({ data: rows, total: Number(countRows[0]?.count ?? 0), offset: off, limit: lim });
+  } catch (err) {
+    res.status(500).json({ error: "فشل في جلب النقاط", details: String(err) });
+  }
+});
+
+router.get("/hotspot-points/flash-numbers", requireAuth, async (_req, res) => {
+  const rows = await db.select({ n: hotspotPointsTable.flashNumber }).from(hotspotPointsTable);
+  res.json(rows.map(r => r.n).filter(Boolean).sort((a: any, b: any) => a - b));
 });
 
 router.post("/hotspot-points", requireAuth, async (req, res) => {
@@ -63,9 +99,42 @@ router.delete("/hotspot-points/:id", requireAuth, async (req, res) => {
   }
 });
 
-router.get("/broadband-points", requireAuth, async (_req, res) => {
-  const points = await db.select().from(broadbandPointsTable).orderBy(broadbandPointsTable.flashNumber);
-  res.json(points);
+router.get("/broadband-points", requireAuth, async (req, res) => {
+  try {
+    const { search, limit = "50", offset = "0" } = req.query as any;
+    const lim = Math.min(parseInt(limit) || 50, 200);
+    const off = parseInt(offset) || 0;
+
+    const conditions: any[] = [];
+    if (search && search.trim()) {
+      const q = `%${search.trim()}%`;
+      conditions.push(or(
+        ilike(broadbandPointsTable.name, q),
+        ilike(broadbandPointsTable.location, q),
+        ilike(broadbandPointsTable.clientName, q),
+        ilike(broadbandPointsTable.subscriptionName, q),
+      ));
+    }
+
+    const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [rows, countRows] = await Promise.all([
+      db.select().from(broadbandPointsTable)
+        .where(where)
+        .orderBy(asc(broadbandPointsTable.flashNumber))
+        .limit(lim).offset(off),
+      db.select({ count: sql<number>`count(*)` }).from(broadbandPointsTable).where(where),
+    ]);
+
+    res.json({ data: rows, total: Number(countRows[0]?.count ?? 0), offset: off, limit: lim });
+  } catch (err) {
+    res.status(500).json({ error: "فشل في جلب النقاط", details: String(err) });
+  }
+});
+
+router.get("/broadband-points/flash-numbers", requireAuth, async (_req, res) => {
+  const rows = await db.select({ n: broadbandPointsTable.flashNumber }).from(broadbandPointsTable);
+  res.json(rows.map(r => r.n).filter(Boolean).sort((a: any, b: any) => a - b));
 });
 
 router.post("/broadband-points", requireAuth, async (req, res) => {
