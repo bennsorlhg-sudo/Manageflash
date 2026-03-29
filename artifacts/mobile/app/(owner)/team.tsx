@@ -69,13 +69,14 @@ export default function TeamScreen() {
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
   const handleCreate = async () => {
-    if (!createForm.name.trim() || !createForm.phone.trim() || !createForm.password) {
+    const cleanPhone = createForm.phone.replace(/\D/g, "");
+    if (!createForm.name.trim() || !cleanPhone || !createForm.password) {
       Alert.alert("خطأ", "جميع الحقول مطلوبة");
       return;
     }
     setSaving(true);
     try {
-      await apiPost("/users", token, createForm);
+      await apiPost("/users", token, { ...createForm, phone: cleanPhone });
       setShowCreateModal(false);
       setCreateForm({ name: "", phone: "", password: "", role: "supervisor" });
       fetchUsers();
@@ -87,13 +88,14 @@ export default function TeamScreen() {
   };
 
   const handleEdit = async () => {
-    if (!editingUser || !editForm.name.trim() || !editForm.phone.trim()) {
+    const cleanPhone = editForm.phone.replace(/\D/g, "");
+    if (!editingUser || !editForm.name.trim() || !cleanPhone) {
       Alert.alert("خطأ", "الاسم ورقم الهاتف مطلوبان");
       return;
     }
     setSaving(true);
     try {
-      await apiPut(`/users/${editingUser.id}`, token, editForm);
+      await apiPut(`/users/${editingUser.id}`, token, { ...editForm, phone: cleanPhone });
       setShowEditModal(false);
       setEditingUser(null);
       fetchUsers();

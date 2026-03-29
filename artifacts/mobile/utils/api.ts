@@ -30,8 +30,18 @@ export async function apiFetch(
     },
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "خطأ غير متوقع" }));
-    throw new Error(err.error ?? err.message ?? "خطأ في الطلب");
+    const err = await res.json().catch(() => ({ message: "خطأ غير متوقع" }));
+    const msg = err.message ?? err.error ?? "خطأ في الطلب";
+    const arabicMessages: Record<string, string> = {
+      conflict: "رقم الهاتف مستخدم مسبقاً",
+      bad_request: "البيانات المدخلة غير صحيحة",
+      unauthorized: "غير مصرح لك بهذا الإجراء",
+      forbidden: "ليس لديك صلاحية",
+      not_found: "العنصر غير موجود",
+      invalid_credentials: "رقم الهاتف أو كلمة المرور غير صحيحة",
+      account_inactive: "الحساب موقوف",
+    };
+    throw new Error(arabicMessages[err.error ?? ""] ?? msg);
   }
   return res.json();
 }
