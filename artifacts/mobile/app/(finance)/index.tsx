@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "expo-router";
-import { apiGet, apiPut, formatCurrency, formatDate } from "@/utils/api";
+import { apiGet, apiPatch, formatCurrency, formatDate } from "@/utils/api";
 
 /* ─────────────────────────────────────────
    بطاقة KPI نصف الصف
@@ -49,6 +49,31 @@ function ActionBtn({ label, icon, onPress, color }: {
   );
 }
 
+/* ─────────────────────────────────────────
+   عنوان قسم
+───────────────────────────────────────── */
+function SectionHeader({ title, count, color }: { title: string; count?: number; color?: string }) {
+  const c = color ?? Colors.primary;
+  return (
+    <View style={styles.sectionHeader}>
+      <View style={[styles.sectionDot, { backgroundColor: c }]} />
+      <Text style={styles.sectionTitle}>{title}</Text>
+      {count != null && count > 0 && (
+        <View style={[styles.badge, { backgroundColor: c + "28" }]}>
+          <Text style={[styles.badgeText, { color: c }]}>{count}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const PRIORITY_LABEL: Record<string, { label: string; color: string }> = {
+  urgent: { label: "عاجل",   color: "#EF5350" },
+  high:   { label: "عالي",   color: "#FF9800" },
+  medium: { label: "متوسط",  color: "#42A5F5" },
+  low:    { label: "منخفض",  color: "#66BB6A" },
+};
+
 export default function FinanceDashboard() {
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
@@ -58,21 +83,25 @@ export default function FinanceDashboard() {
   const [refreshing, setRefreshing] = useState(false);
 
   /* ─── الأرقام الست ─── */
-  const [totalCustody, setTotalCustody] = useState(0);   // إجمالي العهدة
-  const [cashBalance, setCashBalance] = useState(0);     // الصندوق النقدي
-  const [cardsValue, setCardsValue] = useState(0);       // إجمالي الكروت
-  const [agentCustody, setAgentCustody] = useState(0);   // العهدة عند المندوبين
-  const [totalLoans, setTotalLoans] = useState(0);       // السلف
-  const [totalDebts, setTotalDebts] = useState(0);       // الديون
+  const [totalCustody, setTotalCustody]   = useState(0);
+  const [cashBalance, setCashBalance]     = useState(0);
+  const [cardsValue, setCardsValue]       = useState(0);
+  const [agentCustody, setAgentCustody]   = useState(0);
+  const [totalLoans, setTotalLoans]       = useState(0);
+  const [totalDebts, setTotalDebts]       = useState(0);
 
-  /* ─── قوائم مساعدة ─── */
+  /* ─── مهام المالك ─── */
+  const [ownerTasks, setOwnerTasks]       = useState<any[]>([]);
+  const [completingTask, setCompletingTask] = useState<number | null>(null);
+
+  /* ─── طلبات الشراء ─── */
   const [purchaseRequests, setPurchaseRequests] = useState<any[]>([]);
-  const [updatingReq, setUpdatingReq] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [summary, reqs] = await Promise.all([
+      const [summary, tasks, reqs] = await Promise.all([
         apiGet("/finances/summary", token),
+        apiGet("/tasks?targetRole=finance_manager", token),
         apiGet("/purchase-requests", token),
       ]);
 
@@ -83,7 +112,12 @@ export default function FinanceDashboard() {
       setTotalLoans(summary.totalLoans ?? 0);
       setTotalDebts(summary.totalDebts ?? 0);
 
-      setPurchaseRequests((reqs as any[]).filter((r: any) => r.status === "pending"));
+      setOwnerTasks(
+        (tasks as any[]).filter((t: any) => t.status === "pending" || t.status === "in_progress")
+      );
+      setPurchaseRequests(
+        (reqs as any[]).filter((r: any) => r.status === "pending")
+      );
     } catch {
     } finally {
       setLoading(false);
@@ -93,12 +127,13 @@ export default function FinanceDashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleRequestAction = async (id: number, status: "approved" | "rejected") => {
-    setUpdatingReq(id);
+  /* ─── تنفيذ مهمة ─── */
+  const handleCompleteTask = async (id: number) => {
+    setCompletingTask(id);
     try {
-      await apiPut(`/purchase-requests/${id}`, token, { status });
-      setPurchaseRequests(prev => prev.filter(r => r.id !== id));
-    } catch {} finally { setUpdatingReq(null); }
+      await apiPatch(`/tasks/${id}`, token, { status: "completed" });
+      setOwnerTasks(prev => prev.filter(t => t.id !== id));
+    } catch {} finally { setCompletingTask(null); }
   };
 
   if (loading) {
@@ -127,137 +162,125 @@ export default function FinanceDashboard() {
 
         {/* ══════════════════════════════════════
             6 بطاقات KPI — 3 صفوف × 2 عمود
-            الترتيب كما في المواصفات:
-            [ إجمالي العهدة  ]  [ الصندوق النقدي       ]
-            [ إجمالي الكروت  ]  [ العهدة عند المندوبين ]
-            [ السلف          ]  [ الديون               ]
         ══════════════════════════════════════ */}
         <View style={styles.kpiGrid}>
-
-          {/* صف 1 */}
           <View style={styles.kpiRow}>
-            <KPICard
-              title="إجمالي العهدة"
-              value={totalCustody}
-              icon="briefcase"
-              color={Colors.primary}
-              subtitle="نقد + كروت + برودباند"
-            />
-            <KPICard
-              title="الصندوق النقدي"
-              value={cashBalance}
-              icon="wallet"
-              color={Colors.success}
-              subtitle="النقد الفعلي"
-            />
+            <KPICard title="إجمالي العهدة"    value={totalCustody}  icon="briefcase"     color={Colors.primary}  subtitle="نقد + كروت + برودباند" />
+            <KPICard title="الصندوق النقدي"   value={cashBalance}   icon="wallet"         color={Colors.success}  subtitle="النقد الفعلي" />
           </View>
-
-          {/* صف 2 */}
           <View style={styles.kpiRow}>
-            <KPICard
-              title="إجمالي الكروت"
-              value={cardsValue}
-              icon="card"
-              color={Colors.info}
-              subtitle="قيمة إجمالية"
-            />
-            <KPICard
-              title="عند المندوبين"
-              value={agentCustody}
-              icon="people"
-              color="#9C27B0"
-              subtitle="كروت مسلّمة"
-            />
+            <KPICard title="إجمالي الكروت"   value={cardsValue}    icon="card"           color={Colors.info}     subtitle="قيمة إجمالية" />
+            <KPICard title="عند المندوبين"    value={agentCustody}  icon="people"         color="#9C27B0"         subtitle="كروت مسلّمة" />
           </View>
-
-          {/* صف 3 */}
           <View style={styles.kpiRow}>
-            <KPICard
-              title="السلف"
-              value={totalLoans}
-              icon="trending-up"
-              color={Colors.warning}
-              subtitle="مبيعات بسلفة"
-            />
-            <KPICard
-              title="الديون"
-              value={totalDebts}
-              icon="trending-down"
-              color={Colors.error}
-              subtitle="التزامات الشبكة"
-            />
+            <KPICard title="السلف"            value={totalLoans}    icon="trending-up"    color={Colors.warning}  subtitle="مبيعات بسلفة" />
+            <KPICard title="الديون"           value={totalDebts}    icon="trending-down"  color={Colors.error}    subtitle="التزامات الشبكة" />
           </View>
         </View>
 
         {/* ─── أزرار العمليات ─── */}
         <View style={styles.actionsBlock}>
           <View style={styles.actionRow}>
-            <ActionBtn label="بيع" icon="cart" color={Colors.info} onPress={() => router.push("/(finance)/sell")} />
-            <ActionBtn label="صرف" icon="arrow-up-circle" color={Colors.error} onPress={() => router.push("/(finance)/disburse")} />
-            <ActionBtn label="تحصيل" icon="arrow-down-circle" color={Colors.success} onPress={() => router.push("/(finance)/collect")} />
+            <ActionBtn label="بيع"          icon="cart"           color={Colors.info}    onPress={() => router.push("/(finance)/sell")} />
+            <ActionBtn label="صرف"          icon="arrow-up-circle" color={Colors.error}  onPress={() => router.push("/(finance)/disburse")} />
+            <ActionBtn label="تحصيل"        icon="arrow-down-circle" color={Colors.success} onPress={() => router.push("/(finance)/collect")} />
           </View>
           <View style={styles.actionRow}>
-            <ActionBtn label="إدارة العهدة" icon="briefcase" color="#673AB7" onPress={() => router.push("/(finance)/custody")} />
-            <ActionBtn label="نقاط البيع" icon="location" color="#009688" onPress={() => router.push("/(finance)/sales-points")} />
+            <ActionBtn label="إدارة العهدة" icon="briefcase"      color="#673AB7"        onPress={() => router.push("/(finance)/custody")} />
+            <ActionBtn label="نقاط البيع"   icon="location"       color="#009688"        onPress={() => router.push("/(finance)/sales-points")} />
           </View>
           <View style={styles.actionRow}>
-            <ActionBtn label="المصاريف" icon="receipt" color="#FF5722" onPress={() => router.push("/(finance)/expenses")} />
-            <ActionBtn label="ديون/سلف" icon="stats-chart" color="#795548" onPress={() => router.push("/(finance)/debts-loans")} />
-            <ActionBtn label="المبيعات" icon="bar-chart" color="#4CAF50" onPress={() => router.push("/(finance)/sales")} />
+            <ActionBtn label="المصاريف"     icon="receipt"        color="#FF5722"        onPress={() => router.push("/(finance)/expenses")} />
+            <ActionBtn label="ديون/سلف"    icon="stats-chart"    color="#795548"        onPress={() => router.push("/(finance)/debts-loans")} />
+            <ActionBtn label="المبيعات"     icon="bar-chart"      color="#4CAF50"        onPress={() => router.push("/(finance)/sales")} />
           </View>
         </View>
 
-        {/* ─── طلبات الشراء المعلقة ─── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>طلبات الشراء</Text>
-          {purchaseRequests.length > 0 && (
-            <View style={[styles.badge, { backgroundColor: Colors.warning + "33" }]}>
-              <Text style={[styles.badgeText, { color: Colors.warning }]}>{purchaseRequests.length}</Text>
-            </View>
-          )}
-        </View>
+        {/* ══════════════════════════════════════
+            1. قائمة مهام المالك
+        ══════════════════════════════════════ */}
+        <SectionHeader title="مهام المالك" count={ownerTasks.length} color="#7E57C2" />
 
-        {purchaseRequests.length === 0 ? (
+        {ownerTasks.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Ionicons name="checkmark-circle-outline" size={28} color={Colors.success} />
-            <Text style={styles.emptyText}>لا توجد طلبات شراء معلقة</Text>
+            <Ionicons name="checkmark-done-circle-outline" size={26} color={Colors.success} />
+            <Text style={styles.emptyText}>لا توجد مهام مفتوحة</Text>
           </View>
         ) : (
-          purchaseRequests.map((req: any) => (
-            <View key={req.id} style={styles.reqCard}>
-              <View style={styles.reqRow}>
-                {req.amount
-                  ? <Text style={styles.reqAmount}>{formatCurrency(parseFloat(req.amount))}</Text>
-                  : null}
-                <Text style={styles.reqDesc} numberOfLines={2}>{req.description}</Text>
-              </View>
-              {req.notes ? <Text style={styles.reqNotes}>{req.notes}</Text> : null}
-              <View style={styles.reqFooter}>
-                <Text style={styles.reqDate}>{formatDate(req.createdAt)}</Text>
-                <View style={styles.reqBtns}>
-                  <TouchableOpacity
-                    style={[styles.reqBtn, { backgroundColor: Colors.error + "20" }]}
-                    onPress={() => handleRequestAction(req.id, "rejected")}
-                    disabled={updatingReq === req.id}
-                  >
-                    {updatingReq === req.id
-                      ? <ActivityIndicator size="small" color={Colors.error} />
-                      : <Text style={[styles.reqBtnText, { color: Colors.error }]}>رفض</Text>}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.reqBtn, { backgroundColor: Colors.success + "20" }]}
-                    onPress={() => handleRequestAction(req.id, "approved")}
-                    disabled={updatingReq === req.id}
-                  >
-                    {updatingReq === req.id
-                      ? <ActivityIndicator size="small" color={Colors.success} />
-                      : <Text style={[styles.reqBtnText, { color: Colors.success }]}>موافقة</Text>}
-                  </TouchableOpacity>
-                </View>
+          ownerTasks.map((task: any) => (
+            <View key={task.id} style={[styles.taskCard, { borderRightColor: "#7E57C2" }]}>
+              {/* عنوان المهمة */}
+              <Text style={styles.taskTitle} numberOfLines={2}>{task.title}</Text>
+              {task.description ? (
+                <Text style={styles.taskDesc} numberOfLines={3}>{task.description}</Text>
+              ) : null}
+              {/* تذييل: تاريخ + زر */}
+              <View style={styles.taskFooter}>
+                <TouchableOpacity
+                  style={[styles.doneBtn, completingTask === task.id && { opacity: 0.6 }]}
+                  onPress={() => handleCompleteTask(task.id)}
+                  disabled={completingTask === task.id}
+                >
+                  {completingTask === task.id
+                    ? <ActivityIndicator size="small" color="#fff" />
+                    : (
+                      <>
+                        <Ionicons name="checkmark" size={13} color="#fff" />
+                        <Text style={styles.doneBtnText}>تم التنفيذ</Text>
+                      </>
+                    )}
+                </TouchableOpacity>
+                <Text style={styles.taskDate}>{formatDate(task.createdAt)}</Text>
               </View>
             </View>
           ))
         )}
+
+        {/* ══════════════════════════════════════
+            2. قائمة المشتريات
+        ══════════════════════════════════════ */}
+        <SectionHeader title="طلبات الشراء" count={purchaseRequests.length} color={Colors.warning} />
+
+        {purchaseRequests.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="cube-outline" size={26} color={Colors.textMuted} />
+            <Text style={styles.emptyText}>لا توجد طلبات شراء معلقة</Text>
+          </View>
+        ) : (
+          purchaseRequests.map((req: any) => {
+            const pri = PRIORITY_LABEL[req.priority ?? "medium"] ?? PRIORITY_LABEL.medium;
+            return (
+              <View key={req.id} style={[styles.purchaseCard, { borderRightColor: pri.color }]}>
+                {/* رأس البطاقة: الصنف + الأولوية */}
+                <View style={styles.purchaseTop}>
+                  <View style={[styles.priBadge, { backgroundColor: pri.color + "22" }]}>
+                    <Text style={[styles.priText, { color: pri.color }]}>{pri.label}</Text>
+                  </View>
+                  <Text style={styles.purchaseTitle} numberOfLines={2}>{req.description}</Text>
+                </View>
+
+                {/* الكمية */}
+                {req.quantity != null && (
+                  <View style={styles.purchaseMeta}>
+                    <Ionicons name="layers-outline" size={13} color={Colors.textMuted} />
+                    <Text style={styles.purchaseMetaText}>
+                      الكمية: {req.quantity}{req.unit ? ` ${req.unit}` : ""}
+                    </Text>
+                  </View>
+                )}
+
+                {/* الوصف المختصر */}
+                {req.notes ? (
+                  <Text style={styles.purchaseNotes} numberOfLines={2}>{req.notes}</Text>
+                ) : null}
+
+                {/* التاريخ */}
+                <Text style={styles.purchaseDate}>{formatDate(req.createdAt)}</Text>
+              </View>
+            );
+          })
+        )}
+
       </ScrollView>
     </View>
   );
@@ -287,7 +310,7 @@ const styles = StyleSheet.create({
   kpiSub: { fontSize: 10, color: Colors.textMuted, textAlign: "right", marginTop: 3 },
 
   /* ─── Actions ─── */
-  actionsBlock: { gap: 8, marginBottom: 22 },
+  actionsBlock: { gap: 8, marginBottom: 24 },
   actionRow: { flexDirection: "row-reverse", gap: 8 },
   actionBtn: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: 14,
@@ -297,35 +320,59 @@ const styles = StyleSheet.create({
   actionIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: "center", alignItems: "center" },
   actionLabel: { fontSize: 11, color: Colors.text, fontWeight: "600", textAlign: "center" },
 
-  /* ─── Sections ─── */
+  /* ─── Section Header ─── */
   sectionHeader: {
     flexDirection: "row-reverse", alignItems: "center",
-    justifyContent: "space-between", marginBottom: 10,
+    gap: 8, marginBottom: 10, marginTop: 4,
   },
-  sectionTitle: { fontSize: 15, fontWeight: "bold", color: Colors.text },
+  sectionDot: { width: 4, height: 18, borderRadius: 2 },
+  sectionTitle: { flex: 1, fontSize: 15, fontWeight: "bold", color: Colors.text, textAlign: "right" },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
   badgeText: { fontSize: 12, fontWeight: "bold" },
 
+  /* ─── Empty State ─── */
   emptyCard: {
     backgroundColor: Colors.surface, borderRadius: 14, padding: 20,
     alignItems: "center", gap: 8, borderWidth: 1, borderColor: Colors.border,
+    marginBottom: 18,
   },
   emptyText: { fontSize: 13, color: Colors.textMuted },
 
-  reqCard: {
+  /* ─── Task Cards (مهام المالك) ─── */
+  taskCard: {
     backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: Colors.border, marginBottom: 8,
+    borderRightWidth: 3,
   },
-  reqRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, gap: 8 },
-  reqDesc: { flex: 1, fontSize: 14, fontWeight: "600", color: Colors.text, textAlign: "right" },
-  reqAmount: { fontSize: 14, fontWeight: "bold", color: Colors.primaryLight, flexShrink: 0 },
-  reqNotes: { fontSize: 12, color: Colors.textMuted, textAlign: "right", marginBottom: 8 },
-  reqFooter: {
-    flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
-    borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 4,
+  taskTitle: { fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right", marginBottom: 4 },
+  taskDesc: { fontSize: 12, color: Colors.textSecondary, textAlign: "right", lineHeight: 18, marginBottom: 10 },
+  taskFooter: {
+    flexDirection: "row-reverse", justifyContent: "space-between",
+    alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10,
   },
-  reqDate: { fontSize: 11, color: Colors.textMuted },
-  reqBtns: { flexDirection: "row-reverse", gap: 8 },
-  reqBtn: { paddingHorizontal: 16, paddingVertical: 7, borderRadius: 8, minWidth: 60, alignItems: "center" },
-  reqBtnText: { fontSize: 12, fontWeight: "bold" },
+  taskDate: { fontSize: 11, color: Colors.textMuted },
+  doneBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 5,
+    backgroundColor: "#43A047", paddingHorizontal: 14, paddingVertical: 7,
+    borderRadius: 8,
+  },
+  doneBtnText: { fontSize: 12, fontWeight: "bold", color: "#fff" },
+
+  /* ─── Purchase Cards (طلبات الشراء) ─── */
+  purchaseCard: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: 8,
+    borderRightWidth: 3,
+  },
+  purchaseTop: {
+    flexDirection: "row-reverse", alignItems: "flex-start",
+    gap: 8, marginBottom: 8,
+  },
+  purchaseTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right" },
+  priBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexShrink: 0 },
+  priText: { fontSize: 11, fontWeight: "bold" },
+  purchaseMeta: { flexDirection: "row-reverse", alignItems: "center", gap: 5, marginBottom: 4 },
+  purchaseMetaText: { fontSize: 12, color: Colors.textSecondary },
+  purchaseNotes: { fontSize: 12, color: Colors.textMuted, textAlign: "right", lineHeight: 17, marginBottom: 4 },
+  purchaseDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
 });

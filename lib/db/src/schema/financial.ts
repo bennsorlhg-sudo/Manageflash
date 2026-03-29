@@ -104,6 +104,9 @@ export const purchaseRequestsTable = pgTable("purchase_requests", {
   requestedById: integer("requested_by_id").notNull(),
   status: text("status").notNull().default("pending"),
   notes: text("notes"),
+  quantity: integer("quantity"),
+  unit: text("unit"),
+  priority: text("priority").notNull().default("medium"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

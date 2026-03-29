@@ -126,15 +126,17 @@ router.post("/purchase-requests", requireAuth, async (req, res) => {
   try {
     const { description, amount, estimatedCost, notes, quantity, unit, priority } = req.body;
     const finalAmount = amount ?? estimatedCost;
-    const notesWithDetails = [notes, quantity ? `الكمية: ${quantity} ${unit ?? ""}` : ""].filter(Boolean).join(" | ");
     const [row] = await db.insert(purchaseRequestsTable).values({
       description,
       amount: finalAmount ? String(finalAmount) : undefined,
       requestedById: req.currentUser!.id,
       status: "pending",
-      notes: notesWithDetails || undefined,
+      notes: notes || undefined,
+      quantity: quantity ? parseInt(quantity) : undefined,
+      unit: unit || undefined,
+      priority: priority ?? "medium",
     }).returning();
-    res.json({ ...row, quantity, unit, priority });
+    res.json(row);
   } catch (error) {
     res.status(500).json({ error: "فشل في إنشاء طلب الشراء", details: String(error) });
   }
