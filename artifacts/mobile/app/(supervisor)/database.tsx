@@ -150,6 +150,7 @@ export default function DatabaseScreen() {
 
   /* ─── Initial load & filter/search changes ─── */
   useEffect(() => {
+    if (!token) return;
     setLoading(true);
     const run = async () => {
       try {
@@ -160,7 +161,7 @@ export default function DatabaseScreen() {
       setRefreshing(false);
     };
     run();
-  }, [tab, hotspotFilter, debouncedSearch]);
+  }, [tab, hotspotFilter, debouncedSearch, token]);
 
   /* ─── Load more ─── */
   const loadMore = async () => {
