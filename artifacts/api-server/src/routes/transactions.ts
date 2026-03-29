@@ -89,6 +89,21 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
     const desc = description ?? `صرفية - ${expenseType}`;
     const pt = paymentType === "debt" ? "debt" : "cash";
 
+    let linkedLoanId: number | undefined;
+
+    if (pt === "debt") {
+      // أنشئ سجل الدين أولاً لنحتفظ بمعرّفه
+      const [loan] = await db.insert(loansTable).values({
+        personName: personName ?? desc,
+        amount: String(parsedAmount),
+        paidAmount: "0",
+        status: "pending",
+        notes: notes ?? desc,
+        userId: req.currentUser!.id,
+      }).returning();
+      linkedLoanId = loan.id;
+    }
+
     await db.insert(financialTransactionsTable).values({
       type: "expense",
       category: category as any,
@@ -98,6 +113,7 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
       personName: personName ?? req.currentUser!.name,
       referenceId: `EXP-${Date.now()}`,
       paymentType: pt,
+      linkedLoanId: linkedLoanId ?? null,
     });
 
     await db.insert(expensesTable).values({
@@ -107,25 +123,124 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
     });
 
     if (pt === "cash") {
-      // صرف نقدي → ينقص من الصندوق وينقص من إجمالي العهدة
       await db.execute(
         sql`UPDATE cash_box SET balance = balance - ${parsedAmount}, updated_at = NOW() WHERE id = 1`
       );
-    } else {
-      // صرف دين → لا ينقص من الصندوق، يُسجّل كالتزام على الشبكة
-      await db.insert(loansTable).values({
-        personName: personName ?? desc,
-        amount: String(parsedAmount),
-        paidAmount: "0",
-        status: "pending",
-        notes: notes ?? desc,
-        userId: req.currentUser!.id,
-      });
     }
 
     res.json({ success: true, amount: parsedAmount });
   } catch (error) {
     res.status(500).json({ error: "فشل في تسجيل الصرفية", details: String(error) });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   DELETE /transactions/:id
+   حذف معاملة مالية مع عكس أثرها المحاسبي
+─────────────────────────────────────────────── */
+router.delete("/transactions/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [tx] = await db.select().from(financialTransactionsTable)
+      .where(eq(financialTransactionsTable.id, id)).limit(1);
+    if (!tx) return res.status(404).json({ error: "المعاملة غير موجودة" });
+
+    const amt = parseFloat(tx.amount);
+
+    if (tx.type === "expense") {
+      if (tx.paymentType === "cash") {
+        /* نقدي: نُعيد المبلغ للصندوق */
+        await db.execute(
+          sql`UPDATE cash_box SET balance = balance + ${amt}, updated_at = NOW() WHERE id = 1`
+        );
+      } else if (tx.paymentType === "debt" && tx.linkedLoanId) {
+        /* دين: نحذف سجل الدين المرتبط */
+        await db.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
+      }
+    }
+
+    await db.delete(financialTransactionsTable)
+      .where(eq(financialTransactionsTable.id, id));
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حذف المعاملة", details: String(error) });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   PUT /transactions/:id
+   تعديل معاملة مالية مع تعديل الأثر بالفرق
+─────────────────────────────────────────────── */
+router.put("/transactions/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [tx] = await db.select().from(financialTransactionsTable)
+      .where(eq(financialTransactionsTable.id, id)).limit(1);
+    if (!tx) return res.status(404).json({ error: "المعاملة غير موجودة" });
+
+    const { amount, description, paymentType, personName } = req.body;
+    const oldAmt = parseFloat(tx.amount);
+    const newAmt = parseFloat(amount) || oldAmt;
+    const oldPt  = tx.paymentType ?? "cash";
+    const newPt  = paymentType ?? oldPt;
+
+    /* حساب الأثر على الصندوق */
+    if (tx.type === "expense") {
+      if (oldPt === "cash" && newPt === "cash") {
+        /* نقد → نقد: عدّل الفرق */
+        const diff = newAmt - oldAmt;
+        if (diff !== 0) {
+          await db.execute(
+            sql`UPDATE cash_box SET balance = balance - ${diff}, updated_at = NOW() WHERE id = 1`
+          );
+        }
+      } else if (oldPt === "cash" && newPt === "debt") {
+        /* نقد → دين: أعد المبلغ القديم للصندوق وأنشئ دين جديد */
+        await db.execute(
+          sql`UPDATE cash_box SET balance = balance + ${oldAmt}, updated_at = NOW() WHERE id = 1`
+        );
+        /* حذف الدين القديم إن وجد */
+        if (tx.linkedLoanId) await db.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
+        /* إنشاء دين جديد */
+        const [newLoan] = await db.insert(loansTable).values({
+          personName: personName ?? tx.personName ?? tx.description ?? "غير محدد",
+          amount: String(newAmt),
+          paidAmount: "0",
+          status: "pending",
+          notes: description ?? tx.description ?? "",
+          userId: req.currentUser!.id,
+        }).returning();
+        await db.update(financialTransactionsTable)
+          .set({ linkedLoanId: newLoan.id })
+          .where(eq(financialTransactionsTable.id, id));
+      } else if (oldPt === "debt" && newPt === "cash") {
+        /* دين → نقد: احذف الدين وانقص من الصندوق */
+        if (tx.linkedLoanId) await db.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
+        await db.execute(
+          sql`UPDATE cash_box SET balance = balance - ${newAmt}, updated_at = NOW() WHERE id = 1`
+        );
+      } else if (oldPt === "debt" && newPt === "debt") {
+        /* دين → دين: عدّل المبلغ في سجل الدين */
+        if (tx.linkedLoanId) {
+          await db.update(loansTable)
+            .set({ amount: String(newAmt), updatedAt: new Date() })
+            .where(eq(loansTable.id, tx.linkedLoanId));
+        }
+      }
+    }
+
+    /* حدّث المعاملة */
+    const [updated] = await db.update(financialTransactionsTable).set({
+      amount: String(newAmt),
+      description: description ?? tx.description,
+      paymentType: newPt,
+      personName: personName ?? tx.personName,
+    }).where(eq(financialTransactionsTable.id, id)).returning();
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "فشل في تعديل المعاملة", details: String(error) });
   }
 });
 

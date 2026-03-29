@@ -121,6 +121,7 @@ export const financialTransactionsTable = pgTable("financial_transactions", {
   personName: text("person_name"),
   referenceId: text("reference_id"),
   paymentType: text("payment_type"),
+  linkedLoanId: integer("linked_loan_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

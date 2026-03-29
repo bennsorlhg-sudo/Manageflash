@@ -64,9 +64,10 @@ export default function DisburseScreen() {
   const [modal,          setModal]          = useState({ visible: false, title: "", message: "", color: Colors.success });
 
   /* ── مشتريات ── */
-  const [purchaseReqs,   setPurchaseReqs]   = useState<any[]>([]);
-  const [loadingReqs,    setLoadingReqs]    = useState(false);
-  const [selectedReqs,   setSelectedReqs]   = useState<Set<number>>(new Set());
+  const [purchaseReqs,    setPurchaseReqs]    = useState<any[]>([]);
+  const [loadingReqs,     setLoadingReqs]     = useState(false);
+  const [selectedReqs,    setSelectedReqs]    = useState<Set<number>>(new Set());
+  const [purchaseAmount,  setPurchaseAmount]  = useState("");
 
   const showMsg = (title: string, message: string, color = Colors.success) =>
     setModal({ visible: true, title, message, color });
@@ -85,23 +86,38 @@ export default function DisburseScreen() {
     if (expenseType === "purchase") fetchPurchaseReqs();
   }, [expenseType, fetchPurchaseReqs]);
 
+  /* حساب مجموع الأسعار التقديرية للطلبات المحددة */
+  const calcPurchaseTotal = (ids: Set<number>) => {
+    const total = purchaseReqs
+      .filter(r => ids.has(r.id))
+      .reduce((sum, r) => {
+        const p = parseFloat(r.estimatedPrice ?? r.amount ?? "0");
+        return sum + (isNaN(p) ? 0 : p);
+      }, 0);
+    if (total > 0) setPurchaseAmount(String(total));
+  };
+
   const toggleReq = (id: number) => {
     setSelectedReqs(prev => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
+      calcPurchaseTotal(next);
       return next;
     });
   };
 
   const selectAll = () => {
-    setSelectedReqs(new Set(purchaseReqs.map(r => r.id)));
+    const all = new Set(purchaseReqs.map(r => r.id));
+    setSelectedReqs(all);
+    calcPurchaseTotal(all);
   };
 
   const parsedAmt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
+  const parsedPurchaseAmt = parseFloat(purchaseAmount.replace(/[^0-9.]/g, "")) || 0;
 
   /* صلاحية الحفظ */
   const canSave = expenseType === "purchase"
-    ? selectedReqs.size > 0
+    ? selectedReqs.size > 0 && parsedPurchaseAmt > 0
     : parsedAmt > 0 && !!description.trim() && (payType === "cash" || !!personName.trim());
 
   const handleSave = async () => {
@@ -111,31 +127,27 @@ export default function DisburseScreen() {
       if (expenseType === "purchase") {
         /* ── تنفيذ المشتريات المحددة ── */
         const selected = purchaseReqs.filter(r => selectedReqs.has(r.id));
-        const totalAmt = selected.reduce((sum: number, r: any) => {
-          const price = parseFloat(r.estimatedPrice ?? r.amount ?? "0");
-          return sum + (isNaN(price) ? 0 : price);
-        }, 0);
         const desc = selected.map((r: any) => `${r.description ?? r.itemName ?? "صنف"} (${r.quantity} ${r.unit ?? ""})`).join("، ");
 
         await apiPost("/transactions/disburse", token, {
           expenseType: "purchase",
           paymentType: payType,
-          amount: totalAmt,
+          amount: parsedPurchaseAmt,
           description: `مشتريات: ${desc}`,
           personName: payType === "debt" ? (personName.trim() || "المورد") : undefined,
         });
 
-        /* تحديث حالة الطلبات إلى "executed" */
+        /* تحديث حالة الطلبات إلى "approved" */
         await Promise.all(
           selected.map(r => apiPut(`/purchase-requests/${r.id}`, token, { status: "approved" }))
         );
 
-        const names = selected.map((r: any) => `• ${r.itemName}`).join("\n");
         showMsg(
           "تم تنفيذ المشتريات ✓",
-          `تم تسجيل ${selected.length} طلب شراء وتحويلها إلى "منفذ"\n\n${names}${totalAmt > 0 ? `\n\nالإجمالي: ${formatCurrency(totalAmt)}` : ""}`
+          `تم تسجيل ${selected.length} طلب شراء وتحويلها إلى "منفذ"\nالإجمالي: ${formatCurrency(parsedPurchaseAmt)}`
         );
         setSelectedReqs(new Set());
+        setPurchaseAmount("");
         fetchPurchaseReqs();
       } else {
         /* ── صرف عادي ── */
@@ -285,6 +297,36 @@ export default function DisburseScreen() {
                 <Text style={s.selectedSummaryTxt}>
                   {selectedReqs.size} طلب محدد
                 </Text>
+              </View>
+            )}
+
+            {/* خانة المبلغ الإجمالي للمشتريات */}
+            <View style={{ marginTop: 14 }}>
+              <Text style={s.fieldLabel}>المبلغ الإجمالي (ر.س) *</Text>
+              <TextInput
+                style={[s.input, s.amtInput]}
+                value={purchaseAmount}
+                onChangeText={v => setPurchaseAmount(v.replace(/[^0-9.]/g, ""))}
+                placeholder="0.00 — يُحسب تلقائياً أو أدخله يدوياً"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="decimal-pad"
+                textAlign="right"
+              />
+              {parsedPurchaseAmt > 0 && (
+                <Text style={[s.fieldLabel, { color: Colors.warning, marginTop: 4, fontSize: 12 }]}>
+                  {payType === "cash" ? "⬇ ينقص من الصندوق:" : "⬆ يُضاف للديون:"} {formatCurrency(parsedPurchaseAmt)}
+                </Text>
+              )}
+            </View>
+
+            {/* اسم الجهة عند الدين */}
+            {payType === "debt" && (
+              <View style={{ marginTop: 14 }}>
+                <Text style={s.fieldLabel}>اسم المورد / الجهة *</Text>
+                <TextInput
+                  style={s.input} value={personName} onChangeText={setPersonName}
+                  placeholder="اسم المورد..." placeholderTextColor={Colors.textMuted} textAlign="right"
+                />
               </View>
             )}
           </View>

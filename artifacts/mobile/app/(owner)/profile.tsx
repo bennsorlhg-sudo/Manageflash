@@ -30,7 +30,7 @@ export default function ProfileScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
     await logout();
-    router.replace("/(auth)/login");
+    router.replace("/login");
   };
 
   if (!user) return null;
