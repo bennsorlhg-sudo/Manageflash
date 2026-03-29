@@ -22,8 +22,8 @@ export default function EngineerManagementScreen() {
 
   const fetchEngineers = useCallback(async () => {
     try {
-      const users = await apiGet("/users", token);
-      setEngineers(users.filter((u: any) => u.role === "tech_engineer"));
+      const data = await apiGet("/users/engineers", token);
+      setEngineers(data);
     } catch {} finally {
       setLoading(false); setRefreshing(false);
     }

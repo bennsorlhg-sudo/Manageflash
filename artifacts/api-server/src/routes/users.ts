@@ -6,6 +6,19 @@ import { requireAuth, requireRole, hashPassword } from "../lib/auth";
 
 const router = Router();
 
+router.get("/engineers", requireAuth, requireRole("owner", "supervisor"), async (_req, res) => {
+  const engineers = await db
+    .select({
+      id: usersTable.id,
+      name: usersTable.name,
+      phone: usersTable.phone,
+      isActive: usersTable.isActive,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.role, "tech_engineer"));
+  res.json(engineers);
+});
+
 router.get("/", requireAuth, requireRole("owner"), async (_req, res) => {
   const users = await db
     .select({

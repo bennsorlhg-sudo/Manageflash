@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   Linking, Alert, ActivityIndicator, Platform,
@@ -23,10 +23,18 @@ export default function RepairTicketScreen() {
   const [clientData, setClientData] = useState<any>(null);
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState("medium");
+  const [assignedToId, setAssignedToId] = useState<number | null>(null);
   const [assignedToName, setAssignedToName] = useState("");
   const [locationUrl, setLocationUrl] = useState("");
   const [fetching, setFetching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [engineers, setEngineers] = useState<{ id: number; name: string; phone: string }[]>([]);
+
+  useEffect(() => {
+    apiGet("/users/engineers", token)
+      .then(setEngineers)
+      .catch(() => {});
+  }, [token]);
 
   const detectServiceType = (num: string) => {
     if (num.toLowerCase().startsWith("p")) return "broadband";
@@ -180,12 +188,29 @@ export default function RepairTicketScreen() {
 
         {/* المهندس المعين */}
         <View style={styles.card}>
-          <Text style={styles.label}>إسناد إلى (اسم المهندس)</Text>
-          <TextInput
-            style={styles.inputFull} placeholder="اترك فارغاً لإسناد للكل"
-            placeholderTextColor={Colors.textMuted} value={assignedToName}
-            onChangeText={setAssignedToName} textAlign="right"
-          />
+          <Text style={styles.label}>إسناد إلى</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.engineerRow}>
+            <TouchableOpacity
+              style={[styles.engChip, assignedToId === null && styles.engChipActive]}
+              onPress={() => { setAssignedToId(null); setAssignedToName(""); }}
+            >
+              <Text style={[styles.engChipText, assignedToId === null && styles.engChipTextActive]}>الكل</Text>
+            </TouchableOpacity>
+            {engineers.map(eng => (
+              <TouchableOpacity
+                key={eng.id}
+                style={[styles.engChip, assignedToId === eng.id && styles.engChipActive]}
+                onPress={() => { setAssignedToId(eng.id); setAssignedToName(eng.name); }}
+              >
+                <Text style={[styles.engChipText, assignedToId === eng.id && styles.engChipTextActive]}>
+                  {eng.name.trim()}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          {assignedToId !== null && (
+            <Text style={styles.selectedHint}>سيُسند للمهندس: {assignedToName}</Text>
+          )}
           <Text style={[styles.label, { marginTop: 12 }]}>رابط الموقع (اختياري)</Text>
           <TextInput
             style={styles.inputFull} placeholder="https://maps.google.com/..."
@@ -234,4 +259,13 @@ const styles = StyleSheet.create({
   priorityBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: "500" },
   submitButton: { backgroundColor: Colors.success, borderRadius: 12, padding: 16, alignItems: "center", marginTop: 16 },
   submitButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
+  engineerRow: { flexDirection: "row-reverse", gap: 8, paddingBottom: 4 },
+  engChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
+  },
+  engChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  engChipText: { fontSize: 13, color: Colors.textSecondary },
+  engChipTextActive: { color: "#FFF", fontWeight: "bold" },
+  selectedHint: { fontSize: 12, color: Colors.success, textAlign: "right", marginTop: 8 },
 });

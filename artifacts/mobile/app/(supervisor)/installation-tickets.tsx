@@ -35,8 +35,16 @@ export default function InstallationTicketsScreen() {
 
   const [formData, setFormData] = useState({
     clientName: "", clientPhone: "", serviceType: "hotspot_internal",
-    locationUrl: "", address: "", notes: "",
+    locationUrl: "", address: "", notes: "", assignedToName: "",
   });
+  const [assignedToId, setAssignedToId] = useState<number | null>(null);
+  const [engineers, setEngineers] = useState<{ id: number; name: string }[]>([]);
+
+  useEffect(() => {
+    apiGet("/users/engineers", token)
+      .then(setEngineers)
+      .catch(() => {});
+  }, [token]);
 
   const fetchTickets = useCallback(async () => {
     try {
@@ -61,7 +69,8 @@ export default function InstallationTicketsScreen() {
       const ticket = await apiPost("/tickets/installation", token, formData);
       setTickets(prev => [ticket, ...prev]);
       setActiveTab("new");
-      setFormData({ clientName: "", clientPhone: "", serviceType: "hotspot_internal", locationUrl: "", address: "", notes: "" });
+      setAssignedToId(null);
+      setFormData({ clientName: "", clientPhone: "", serviceType: "hotspot_internal", locationUrl: "", address: "", notes: "", assignedToName: "" });
       Alert.alert("تم", "تم إنشاء تذكرة التركيب بنجاح");
     } catch (e: any) {
       Alert.alert("خطأ", e.message);
@@ -208,6 +217,33 @@ export default function InstallationTicketsScreen() {
             />
           </View>
 
+          {/* إسناد المهندس */}
+          <View style={styles.card}>
+            <Text style={styles.label}>إسناد إلى</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.engRow}>
+              <TouchableOpacity
+                style={[styles.engChip, assignedToId === null && styles.engChipActive]}
+                onPress={() => { setAssignedToId(null); setFormData(f => ({ ...f, assignedToName: "" })); }}
+              >
+                <Text style={[styles.engChipText, assignedToId === null && styles.engChipTextActive]}>الكل</Text>
+              </TouchableOpacity>
+              {engineers.map(eng => (
+                <TouchableOpacity
+                  key={eng.id}
+                  style={[styles.engChip, assignedToId === eng.id && styles.engChipActive]}
+                  onPress={() => { setAssignedToId(eng.id); setFormData(f => ({ ...f, assignedToName: eng.name })); }}
+                >
+                  <Text style={[styles.engChipText, assignedToId === eng.id && styles.engChipTextActive]}>
+                    {eng.name.trim()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            {assignedToId !== null && (
+              <Text style={styles.selectedHint}>سيُسند للمهندس: {formData.assignedToName}</Text>
+            )}
+          </View>
+
           <TouchableOpacity style={[styles.submitBtn, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
             {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.submitBtnText}>إنشاء تذكرة التركيب</Text>}
           </TouchableOpacity>
@@ -269,4 +305,10 @@ const styles = StyleSheet.create({
   actionBtnText: { fontSize: 12, fontWeight: "bold" },
   emptyContainer: { alignItems: "center", marginTop: 60, gap: 12 },
   emptyText: { color: Colors.textMuted, fontSize: 15 },
+  engRow: { flexDirection: "row-reverse", gap: 8, paddingBottom: 4 },
+  engChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
+  engChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  engChipText: { fontSize: 13, color: Colors.textSecondary },
+  engChipTextActive: { color: "#FFF", fontWeight: "bold" },
+  selectedHint: { fontSize: 12, color: Colors.success, textAlign: "right", marginTop: 8 },
 });
