@@ -22,15 +22,31 @@ const CARD_PRICES: Record<number, number> = {
 
 router.post("/transactions/sell", requireAuth, async (req, res) => {
   try {
-    const { cardType, denomination, quantity, paymentType, customerName, notes } = req.body;
-    const unitPrice = CARD_PRICES[denomination] ?? denomination * 0.9;
-    const totalAmount = unitPrice * quantity;
+    const { cardType, denomination, quantity, amount, paymentType, customerName, notes } = req.body;
+
+    let totalAmount: number;
+    let description: string;
+
+    if (amount !== undefined && amount !== null) {
+      // Finance Manager flow: direct amount entry
+      totalAmount = parseFloat(amount);
+      description = `بيع ${cardType === "broadband" ? "باقات برودباند" : "كروت هوتسبوت"} - ${customerName}`;
+    } else {
+      // Owner flow: denomination + quantity
+      const unitPrice = CARD_PRICES[denomination] ?? denomination * 0.9;
+      totalAmount = unitPrice * quantity;
+      description = `بيع ${quantity} كرت ${denomination} ريال - ${cardType === "broadband" ? "باقات" : "هوتسبوت"}`;
+    }
+
+    if (!totalAmount || totalAmount <= 0) {
+      return res.status(400).json({ error: "المبلغ غير صحيح" });
+    }
 
     await db.insert(financialTransactionsTable).values({
       type: "sale",
       category: cardType === "broadband" ? "broadband" : "hotspot",
       amount: String(totalAmount),
-      description: `بيع ${quantity} كرت ${denomination} ريال - ${cardType === "broadband" ? "باقات" : "هوت سبوت"}`,
+      description,
       role: req.currentUser!.role,
       personName: customerName ?? req.currentUser!.name,
       referenceId: `SELL-${Date.now()}`,
@@ -46,12 +62,12 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
         amount: String(totalAmount),
         paidAmount: "0",
         status: "pending",
-        notes: notes ?? `مبيع بالدين - ${quantity} كرت ${denomination}`,
+        notes: notes ?? description,
         userId: req.currentUser!.id,
       });
     }
 
-    res.json({ success: true, totalAmount, unitPrice, quantity });
+    res.json({ success: true, amount: totalAmount });
   } catch (error) {
     res.status(500).json({ error: "فشل في إتمام البيع", details: String(error) });
   }
