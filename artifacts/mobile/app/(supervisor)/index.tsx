@@ -8,7 +8,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
-import { apiGet } from "@/utils/api";
+import { apiGet, formatCurrency } from "@/utils/api";
+
+const ROLE_COLOR = "#00BCD4";
 
 export default function SupervisorDashboard() {
   const insets = useSafeAreaInsets();
@@ -17,59 +19,73 @@ export default function SupervisorDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [stats, setStats] = useState({
-    pending_tasks: 0, in_progress_tasks: 0,
-    hotspot_count: 0, broadband_count: 0,
-    repair_tickets: 0, install_tickets: 0,
-    purchase_requests: 0,
-  });
-  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
-  const [recentTasks, setRecentTasks] = useState<any[]>([]);
 
-  const today = new Date().toLocaleDateString("ar-EG", {
-    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  const [kpi, setKpi] = useState({
+    ownerTasks: 0,
+    withdrawalTasks: 0,
+    repairOpen: 0,
+    installPending: 0,
   });
+  const [subscriptionValue, setSubscriptionValue] = useState(0);
+  const [purchaseRequests, setPurchaseRequests] = useState<any[]>([]);
+  const [ownerTasksList, setOwnerTasksList] = useState<any[]>([]);
+  const [recentTasks, setRecentTasks] = useState<any[]>([]);
+  const [withdrawalTasks, setWithdrawalTasks] = useState<any[]>([]);
 
   const fetchData = useCallback(async () => {
     try {
-      const [tasks, hotspot, broadband, reqs] = await Promise.all([
-        apiGet("/tasks?targetRole=tech_engineer", token),
-        apiGet("/network/hotspot-points", token),
-        apiGet("/network/broadband-points", token),
-        apiGet("/purchase-requests", token),
-      ]);
+      const [tasks, fieldTasks, repairTickets, installTickets, purchaseReqs, deliveries] =
+        await Promise.all([
+          apiGet("/tasks", token).catch(() => []),
+          apiGet("/field-tasks", token).catch(() => []),
+          apiGet("/tickets/repair", token).catch(() => []),
+          apiGet("/tickets/installation", token).catch(() => []),
+          apiGet("/purchase-requests", token).catch(() => []),
+          apiGet("/subscription-deliveries", token).catch(() => []),
+        ]);
 
-      setStats({
-        pending_tasks: tasks.filter((t: any) => t.status === "pending").length,
-        in_progress_tasks: tasks.filter((t: any) => t.status === "in_progress").length,
-        hotspot_count: hotspot.length,
-        broadband_count: broadband.length,
-        repair_tickets: tasks.filter((t: any) => t.type === "repair").length,
-        install_tickets: tasks.filter((t: any) => t.type === "installation").length,
-        purchase_requests: reqs.filter((r: any) => r.status === "pending").length,
+      const ownerTasks = (tasks as any[]).filter(
+        (t: any) => t.assignedByRole === "owner" || t.targetRole === "supervisor"
+      );
+      const withdrawal = (fieldTasks as any[]).filter(
+        (t: any) => t.taskType === "withdrawal" || t.type === "withdrawal"
+      );
+      const openRepair = (repairTickets as any[]).filter(
+        (t: any) => t.status !== "completed" && t.status !== "archived"
+      );
+      const pendingInstall = (installTickets as any[]).filter(
+        (t: any) => t.status !== "completed" && t.status !== "archived"
+      );
+
+      // قيمة الاشتراكات = مجموع التسليمات النقدية غير المؤكدة
+      // نعرض آخر قيمة كراتب إجمالي بشكل تقريبي
+      const cashDeliveries = (deliveries as any[]).filter((d: any) => d.cardType === "cash_delivery");
+      const totalDelivered = cashDeliveries.reduce((s: number, d: any) => s + parseFloat(d.totalValue ?? "0"), 0);
+      setSubscriptionValue(totalDelivered);
+
+      setKpi({
+        ownerTasks: ownerTasks.length,
+        withdrawalTasks: withdrawal.length,
+        repairOpen: openRepair.length,
+        installPending: pendingInstall.length,
       });
-      setPendingRequests(reqs.filter((r: any) => r.status === "pending").slice(0, 3));
-      setRecentTasks(tasks.filter((t: any) => t.status !== "completed").slice(0, 3));
-    } catch {} finally {
-      setLoading(false); setRefreshing(false);
-    }
+
+      setPurchaseRequests((purchaseReqs as any[]).filter((r: any) => r.status === "pending").slice(0, 5));
+      setOwnerTasksList(ownerTasks.slice(0, 5));
+      setRecentTasks((fieldTasks as any[]).slice(0, 5));
+      setWithdrawalTasks(withdrawal.slice(0, 5));
+    } catch {}
+    finally { setLoading(false); setRefreshing(false); }
   }, [token]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const renderButton = (label: string, icon: string, onPress: () => void, color = Colors.primaryLight) => (
-    <TouchableOpacity style={styles.actionButton} onPress={onPress}>
-      <View style={[styles.iconCircle, { borderColor: color + "44" }]}>
-        <Ionicons name={icon as any} size={22} color={color} />
-      </View>
-      <Text style={styles.buttonLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
+  const onRefresh = useCallback(() => { setRefreshing(true); fetchData(); }, [fetchData]);
 
   if (loading) {
     return (
       <View style={[styles.container, { paddingTop: insets.top, justifyContent: "center", alignItems: "center" }]}>
-        <ActivityIndicator size="large" color={Colors.roles.supervisor} />
+        <ActivityIndicator size="large" color={ROLE_COLOR} />
       </View>
     );
   }
@@ -79,114 +95,135 @@ export default function SupervisorDashboard() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[ROLE_COLOR]} />}
       >
-        {/* رأس الصفحة */}
+        {/* ─── رأس الصفحة ─── */}
         <View style={styles.header}>
           <View style={{ alignItems: "flex-end" }}>
             <Text style={styles.welcomeText}>المشرف — {user?.name}</Text>
-            <Text style={styles.dateText}>{today}</Text>
+            {/* مؤشر قيمة الاشتراكات */}
+            <TouchableOpacity
+              style={styles.subscriptionPill}
+              onPress={() => router.push("/(supervisor)/subscription-delivery")}
+            >
+              <Ionicons name="cash-outline" size={14} color={ROLE_COLOR} />
+              <Text style={styles.subscriptionPillText}>
+                قيمة الاشتراكات: {formatCurrency(subscriptionValue)}
+              </Text>
+              <Ionicons name="chevron-forward" size={12} color={ROLE_COLOR} />
+            </TouchableOpacity>
           </View>
           <TouchableOpacity onPress={() => router.push("/(supervisor)/profile")}>
-            <Ionicons name="person-circle" size={40} color={Colors.roles.supervisor} />
+            <Ionicons name="person-circle" size={42} color={ROLE_COLOR} />
           </TouchableOpacity>
         </View>
 
-        {/* مؤشر الشبكة */}
-        <View style={styles.networkRow}>
-          <View style={[styles.networkCard, { borderColor: Colors.primary + "44" }]}>
-            <Ionicons name="wifi" size={22} color={Colors.primary} />
-            <Text style={[styles.networkCount, { color: Colors.primary }]}>{stats.hotspot_count}</Text>
-            <Text style={styles.networkLabel}>هوتسبوت</Text>
-          </View>
-          <View style={[styles.networkCard, { borderColor: Colors.info + "44" }]}>
-            <Ionicons name="globe" size={22} color={Colors.info} />
-            <Text style={[styles.networkCount, { color: Colors.info }]}>{stats.broadband_count}</Text>
-            <Text style={styles.networkLabel}>برودباند</Text>
-          </View>
-          <View style={[styles.networkCard, { borderColor: Colors.warning + "44" }]}>
-            <Ionicons name="time" size={22} color={Colors.warning} />
-            <Text style={[styles.networkCount, { color: Colors.warning }]}>{stats.pending_tasks}</Text>
-            <Text style={styles.networkLabel}>مهام معلقة</Text>
-          </View>
-          <View style={[styles.networkCard, { borderColor: Colors.success + "44" }]}>
-            <Ionicons name="construct" size={22} color={Colors.success} />
-            <Text style={[styles.networkCount, { color: Colors.success }]}>{stats.in_progress_tasks}</Text>
-            <Text style={styles.networkLabel}>قيد التنفيذ</Text>
-          </View>
+        {/* ─── بطاقات KPI ─── */}
+        <View style={styles.kpiRow}>
+          <KpiCard label="مهام المالك"      value={kpi.ownerTasks}    icon="person"    color="#FF9800" onPress={() => router.push("/(supervisor)/tasks")} />
+          <KpiCard label="مهام السحب"       value={kpi.withdrawalTasks} icon="arrow-down-circle" color="#F44336" onPress={() => router.push("/(supervisor)/tasks")} />
+        </View>
+        <View style={styles.kpiRow}>
+          <KpiCard label="الإصلاح"           value={kpi.repairOpen}    icon="build"     color="#4CAF50" onPress={() => router.push("/(supervisor)/repair-ticket")} />
+          <KpiCard label="التركيبات الجديدة" value={kpi.installPending} icon="add-circle" color="#2196F3" onPress={() => router.push("/(supervisor)/installation-tickets")} />
         </View>
 
-        {/* إضافة المهام */}
-        <Text style={styles.sectionHeader}>إضافة مهام</Text>
+        {/* ─── قسم إضافة المهام ─── */}
+        <SectionHeader title="إضافة مهام" />
         <View style={styles.buttonRow}>
-          {renderButton("إصلاح", "build", () => router.push("/(supervisor)/repair-ticket"), Colors.error)}
-          {renderButton("تركيب جديد", "add-circle", () => router.push("/(supervisor)/installation-tickets"), Colors.success)}
-          {renderButton("شراء", "cart", () => router.push("/(supervisor)/purchase-request"), Colors.warning)}
+          <ActionBtn label="إصلاح"     icon="build"       color="#F44336" onPress={() => router.push("/(supervisor)/repair-ticket")} />
+          <ActionBtn label="تركيب جديد" icon="add-circle"  color="#4CAF50" onPress={() => router.push("/(supervisor)/installation-tickets")} />
+          <ActionBtn label="شراء"      icon="cart"        color="#FF9800" onPress={() => router.push("/(supervisor)/purchase-request")} />
         </View>
 
-        {/* الإدارة */}
-        <Text style={styles.sectionHeader}>الإدارة</Text>
+        {/* ─── قسم الإدارة ─── */}
+        <SectionHeader title="الإدارة" />
         <View style={styles.buttonRow}>
-          {renderButton("قاعدة البيانات", "server", () => router.push("/(supervisor)/database"), Colors.primary)}
-          {renderButton("إدارة المهندسين", "people", () => router.push("/(supervisor)/engineer-management"), Colors.info)}
-          {renderButton("متابعة المهام", "list", () => router.push("/(supervisor)/tasks"), Colors.roles.supervisor)}
+          <ActionBtn label="قاعدة البيانات"     icon="server"   color="#2196F3" onPress={() => router.push("/(supervisor)/database")} />
+          <ActionBtn label="إدارة المهندسين"    icon="people"   color="#9C27B0" onPress={() => router.push("/(supervisor)/engineer-management")} />
+          <ActionBtn label="متابعة المهام"      icon="list"     color={ROLE_COLOR} onPress={() => router.push("/(supervisor)/tasks")} />
         </View>
 
-        {/* خاص بالمسؤول المالي */}
-        <Text style={styles.sectionHeader}>التسليمات المالية</Text>
+        {/* ─── قسم المسؤول المالي ─── */}
+        <SectionHeader title="المسؤول المالي" />
         <View style={styles.buttonRow}>
-          {renderButton("تسليم الاشتراكات", "cash", () => router.push("/(supervisor)/subscription-delivery"), "#00BCD4")}
-          {renderButton("جرد مالي", "calculator", () => router.push("/(supervisor)/finance-audit"), "#9C27B0")}
+          <ActionBtn label="تسليم الاشتراكات" icon="cash"       color="#00BCD4" onPress={() => router.push("/(supervisor)/subscription-delivery")} />
+          <ActionBtn label="جرد مالي"          icon="calculator" color="#673AB7" onPress={() => router.push("/(supervisor)/finance-audit")} />
         </View>
 
-        {/* طلبات الشراء */}
-        {pendingRequests.length > 0 && (
-          <>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionHeader}>طلبات الشراء المعلقة</Text>
-              <View style={styles.countBadge}>
-                <Text style={styles.countBadgeText}>{pendingRequests.length}</Text>
+        {/* ─── طلبات الشراء ─── */}
+        <ListSection
+          title="طلبات الشراء"
+          badge={purchaseRequests.length}
+          badgeColor="#FF9800"
+          empty="لا توجد طلبات شراء معلقة"
+          onMore={() => router.push("/(supervisor)/purchase-request")}
+        >
+          {purchaseRequests.map((r) => (
+            <ListCard key={r.id} onPress={() => router.push("/(supervisor)/purchase-request")}>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardTitle}>{r.description ?? r.itemName ?? "طلب شراء"}</Text>
+                <StatusPill status={r.status} />
               </View>
-            </View>
-            {pendingRequests.map(req => (
-              <TouchableOpacity
-                key={req.id} style={styles.listCard}
-                onPress={() => router.push("/(supervisor)/purchase-request")}
-              >
-                <Text style={styles.cardTitle}>{req.description}</Text>
-                <Text style={styles.cardSubText}>
-                  {new Date(req.createdAt).toLocaleDateString("ar-SA")}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </>
-        )}
+              <Text style={styles.cardSub}>الكمية: {r.quantity ?? "—"} • الأولوية: {PRIORITY_AR[r.priority] ?? r.priority}</Text>
+            </ListCard>
+          ))}
+        </ListSection>
 
-        {/* آخر المهام */}
-        {recentTasks.length > 0 && (
-          <>
-            <Text style={[styles.sectionHeader, { marginTop: 16 }]}>آخر المهام النشطة</Text>
-            {recentTasks.map(task => (
-              <View key={task.id} style={styles.listCard}>
-                <View style={styles.cardHeader}>
-                  <Text style={styles.cardTitle}>{task.title}</Text>
-                  <View style={[styles.statusBadge, {
-                    backgroundColor: task.status === "in_progress" ? Colors.warning + "22" : Colors.error + "22"
-                  }]}>
-                    <Text style={[styles.statusText, {
-                      color: task.status === "in_progress" ? Colors.warning : Colors.error
-                    }]}>
-                      {task.status === "in_progress" ? "جاري" : "معلق"}
-                    </Text>
-                  </View>
-                </View>
-                {task.targetPersonName && (
-                  <Text style={styles.cardSubText}>{task.targetPersonName}</Text>
-                )}
+        {/* ─── مهام المالك ─── */}
+        <ListSection
+          title="مهام المالك"
+          badge={ownerTasksList.length}
+          badgeColor="#FF9800"
+          empty="لا توجد مهام من المالك"
+          onMore={() => router.push("/(supervisor)/tasks")}
+        >
+          {ownerTasksList.map((t) => (
+            <ListCard key={t.id} onPress={() => router.push("/(supervisor)/tasks")}>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardTitle}>{t.title ?? t.description ?? "مهمة"}</Text>
+                <StatusPill status={t.status} />
               </View>
-            ))}
-          </>
-        )}
+              {t.assigneeName && <Text style={styles.cardSub}>{t.assigneeName}</Text>}
+            </ListCard>
+          ))}
+        </ListSection>
+
+        {/* ─── آخر 5 مهام ─── */}
+        <ListSection
+          title="آخر 5 مهام"
+          empty="لا توجد مهام"
+          onMore={() => router.push("/(supervisor)/tasks")}
+        >
+          {recentTasks.map((t) => (
+            <ListCard key={t.id} onPress={() => router.push("/(supervisor)/tasks")}>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardTitle}>{t.title ?? t.description ?? "مهمة"}</Text>
+                <StatusPill status={t.status} />
+              </View>
+              {t.assigneeName && <Text style={styles.cardSub}>{t.assigneeName}</Text>}
+            </ListCard>
+          ))}
+        </ListSection>
+
+        {/* ─── مهام السحب ─── */}
+        <ListSection
+          title="مهام السحب"
+          badge={withdrawalTasks.length}
+          badgeColor="#F44336"
+          empty="لا توجد مهام سحب"
+          onMore={() => router.push("/(supervisor)/tasks")}
+        >
+          {withdrawalTasks.map((t) => (
+            <ListCard key={t.id} onPress={() => router.push("/(supervisor)/tasks")}>
+              <View style={styles.cardRow}>
+                <Text style={styles.cardTitle}>{t.title ?? t.description ?? "مهمة سحب"}</Text>
+                <StatusPill status={t.status} />
+              </View>
+              {t.assigneeName && <Text style={styles.cardSub}>{t.assigneeName}</Text>}
+            </ListCard>
+          ))}
+        </ListSection>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -194,38 +231,226 @@ export default function SupervisorDashboard() {
   );
 }
 
+/* ──────────────────────────────────────────
+   مكونات مساعدة
+────────────────────────────────────────── */
+const PRIORITY_AR: Record<string, string> = {
+  low: "منخفض", medium: "متوسط", high: "عالي", urgent: "عاجل",
+};
+
+const STATUS_MAP: Record<string, { label: string; color: string }> = {
+  pending:     { label: "معلق",       color: "#FF9800" },
+  in_progress: { label: "جاري",       color: "#2196F3" },
+  completed:   { label: "مكتملة",     color: "#4CAF50" },
+  approved:    { label: "موافقة",      color: "#4CAF50" },
+  rejected:    { label: "مرفوض",      color: "#F44336" },
+  new:         { label: "جديد",       color: "#9C27B0" },
+  preparing:   { label: "تجهيز",      color: "#FF9800" },
+  archived:    { label: "مؤرشف",     color: Colors.textSecondary },
+};
+
+function StatusPill({ status }: { status?: string }) {
+  const info = STATUS_MAP[status ?? ""] ?? { label: status ?? "", color: Colors.textSecondary };
+  return (
+    <View style={[styles.pill, { backgroundColor: info.color + "22" }]}>
+      <Text style={[styles.pillText, { color: info.color }]}>{info.label}</Text>
+    </View>
+  );
+}
+
+function KpiCard({
+  label, value, icon, color, onPress,
+}: { label: string; value: number; icon: string; color: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={[styles.kpiCard, { borderColor: color + "44" }]} onPress={onPress}>
+      <View style={[styles.kpiIconCircle, { backgroundColor: color + "22" }]}>
+        <Ionicons name={icon as any} size={22} color={color} />
+      </View>
+      <Text style={[styles.kpiValue, { color }]}>{value}</Text>
+      <Text style={styles.kpiLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function SectionHeader({ title }: { title: string }) {
+  return <Text style={styles.sectionTitle}>{title}</Text>;
+}
+
+function ActionBtn({
+  label, icon, color, onPress,
+}: { label: string; icon: string; color: string; onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
+      <View style={[styles.actionCircle, { borderColor: color + "44" }]}>
+        <Ionicons name={icon as any} size={22} color={color} />
+      </View>
+      <Text style={styles.actionLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+function ListSection({
+  title, badge, badgeColor, empty, children, onMore,
+}: {
+  title: string; badge?: number; badgeColor?: string;
+  empty: string; children?: React.ReactNode; onMore?: () => void;
+}) {
+  const hasItems = React.Children.count(children) > 0;
+  return (
+    <View style={styles.listSection}>
+      <View style={styles.listSectionHeader}>
+        <TouchableOpacity onPress={onMore}>
+          <Text style={styles.moreText}>عرض الكل</Text>
+        </TouchableOpacity>
+        <View style={{ flexDirection: "row-reverse", alignItems: "center", gap: 8 }}>
+          <Text style={styles.listSectionTitle}>{title}</Text>
+          {!!badge && badge > 0 && (
+            <View style={[styles.badge, { backgroundColor: (badgeColor ?? "#FF9800") + "33" }]}>
+              <Text style={[styles.badgeText, { color: badgeColor ?? "#FF9800" }]}>{badge}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+      {hasItems ? children : (
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyText}>{empty}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function ListCard({ children, onPress }: { children: React.ReactNode; onPress?: () => void }) {
+  return (
+    <TouchableOpacity style={styles.listCard} onPress={onPress}>
+      {children}
+    </TouchableOpacity>
+  );
+}
+
+/* ──────────────────────────────────────────
+   Styles
+────────────────────────────────────────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
+  container:    { flex: 1, backgroundColor: Colors.background },
   scrollContent: { padding: 20 },
-  header: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-  welcomeText: { fontSize: 18, fontWeight: "bold", color: Colors.text, textAlign: "right" },
-  dateText: { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
-  networkRow: { flexDirection: "row-reverse", gap: 8, marginBottom: 20 },
-  networkCard: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: 12,
-    padding: 10, alignItems: "center", borderWidth: 1, gap: 4,
+
+  header: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 20,
   },
-  networkCount: { fontSize: 18, fontWeight: "bold" },
-  networkLabel: { fontSize: 10, color: Colors.textSecondary, textAlign: "center" },
-  sectionHeader: { fontSize: 15, fontWeight: "bold", color: Colors.text, textAlign: "right", marginBottom: 10 },
-  sectionHeaderRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginBottom: 10 },
-  countBadge: { backgroundColor: Colors.warning + "33", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  countBadgeText: { fontSize: 12, color: Colors.warning, fontWeight: "bold" },
-  buttonRow: { flexDirection: "row-reverse", gap: 12, marginBottom: 20, flexWrap: "wrap" },
-  actionButton: { alignItems: "center", width: 76 },
-  iconCircle: {
-    width: 54, height: 54, borderRadius: 27, backgroundColor: Colors.surface,
-    justifyContent: "center", alignItems: "center", marginBottom: 6,
+  welcomeText: { fontSize: 18, fontWeight: "bold", color: Colors.text, textAlign: "right" },
+
+  subscriptionPill: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+    backgroundColor: "#00BCD422",
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: "#00BCD444",
+  },
+  subscriptionPillText: {
+    fontSize: 12,
+    color: "#00BCD4",
+    fontWeight: "600",
+  },
+
+  kpiRow: {
+    flexDirection: "row-reverse",
+    gap: 12,
+    marginBottom: 12,
+  },
+  kpiCard: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    alignItems: "center",
+    gap: 6,
     borderWidth: 1,
   },
-  buttonLabel: { fontSize: 10, color: Colors.textSecondary, textAlign: "center" },
-  listCard: {
-    backgroundColor: Colors.surface, borderRadius: 12, padding: 14,
-    marginBottom: 8, borderWidth: 1, borderColor: Colors.border,
+  kpiIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  cardHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  cardTitle: { fontSize: 14, fontWeight: "bold", color: Colors.text, textAlign: "right", flex: 1 },
-  cardSubText: { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  statusText: { fontSize: 11, fontWeight: "bold" },
+  kpiValue: { fontSize: 24, fontWeight: "bold" },
+  kpiLabel: { fontSize: 12, color: Colors.textSecondary, textAlign: "center" },
+
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "bold",
+    color: Colors.text,
+    textAlign: "right",
+    marginTop: 8,
+    marginBottom: 10,
+  },
+  buttonRow: {
+    flexDirection: "row-reverse",
+    gap: 12,
+    marginBottom: 18,
+    flexWrap: "wrap",
+  },
+  actionBtn:    { alignItems: "center", width: 76 },
+  actionCircle: {
+    width: 54, height: 54, borderRadius: 27,
+    backgroundColor: Colors.surface,
+    justifyContent: "center", alignItems: "center",
+    marginBottom: 6, borderWidth: 1,
+  },
+  actionLabel:  { fontSize: 10, color: Colors.textSecondary, textAlign: "center" },
+
+  listSection:  { marginBottom: 16 },
+  listSectionHeader: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  listSectionTitle: { fontSize: 15, fontWeight: "bold", color: Colors.text },
+  moreText:     { fontSize: 12, color: ROLE_COLOR },
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  badgeText:    { fontSize: 12, fontWeight: "bold" },
+
+  listCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cardRow: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  cardTitle: { fontSize: 14, fontWeight: "bold", color: Colors.text, textAlign: "right", flex: 1, marginLeft: 8 },
+  cardSub:   { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
+
+  emptyBox: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  emptyText: { fontSize: 13, color: Colors.textSecondary },
+
+  pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  pillText: { fontSize: 11, fontWeight: "600" },
 });

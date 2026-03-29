@@ -8,35 +8,32 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost, formatCurrency, formatDate, DENOMINATIONS, CARD_PRICES } from "@/utils/api";
+import { apiGet, apiPost, formatCurrency, formatDate } from "@/utils/api";
+
+type Tab = "new" | "history";
 
 export default function SubscriptionDeliveryScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { token, user } = useAuth();
+  const { token } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<"new" | "history">("new");
+  const [activeTab, setActiveTab] = useState<Tab>("new");
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success });
-  const showModal = (title: string, message: string, color = Colors.error) =>
-    setModal({ visible: true, title, message, color });
 
-  // Form state
-  const [cardType, setCardType] = useState<"hotspot" | "broadband">("hotspot");
-  const [denomination, setDenomination] = useState(500);
-  const [quantity, setQuantity] = useState("1");
-  const [recipientName, setRecipientName] = useState("");
+  const [amount, setAmount] = useState("");
   const [notes, setNotes] = useState("");
 
-  const totalValue = (CARD_PRICES[denomination] ?? denomination) * (parseInt(quantity) || 0);
+  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success, goBack: false });
+  const showModal = (title: string, message: string, color = Colors.error, goBack = false) =>
+    setModal({ visible: true, title, message, color, goBack });
 
   const fetchHistory = useCallback(async () => {
     try {
       const data = await apiGet("/subscription-deliveries", token);
-      setHistory(data);
+      setHistory((data as any[]).filter((d: any) => d.cardType === "cash_delivery"));
     } catch {} finally {
       setLoading(false); setRefreshing(false);
     }
@@ -44,27 +41,27 @@ export default function SubscriptionDeliveryScreen() {
 
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
+  const totalDelivered = history.reduce((s, d) => s + parseFloat(d.totalValue ?? "0"), 0);
+
   const handleSubmit = async () => {
-    const qty = parseInt(quantity);
-    if (!qty || qty <= 0) { showModal("خطأ", "أدخل كمية صحيحة"); return; }
-    if (!recipientName) { showModal("خطأ", "أدخل اسم مستلم الكروت"); return; }
+    const parsedAmount = parseFloat(amount);
+    if (!parsedAmount || parsedAmount <= 0) {
+      showModal("خطأ", "أدخل مبلغاً صحيحاً أكبر من الصفر");
+      return;
+    }
 
     setSubmitting(true);
     try {
-      await apiPost("/subscription-deliveries", token, {
-        engineerName: user?.name ?? "المشرف",
-        cardType,
-        denomination,
-        cardCount: qty,
-        deliveredToName: recipientName,
-        notes,
+      await apiPost("/subscription-deliveries/to-finance", token, {
+        amount: parsedAmount,
+        notes: notes.trim() || null,
       });
-      setQuantity("1"); setRecipientName(""); setNotes("");
-      await fetchHistory();
-      setActiveTab("history");
-      showModal("تم", `تم تسجيل تسليم ${qty} كرت بقيمة ${formatCurrency(totalValue)}`, Colors.success);
+      setAmount("");
+      setNotes("");
+      showModal("تم التسليم", `تم تسليم ${formatCurrency(parsedAmount)} للمسؤول المالي بنجاح`, Colors.success, false);
+      fetchHistory();
     } catch (e: any) {
-      showModal("خطأ", e.message);
+      showModal("خطأ", e?.message ?? "حدث خطأ أثناء التسليم");
     } finally {
       setSubmitting(false);
     }
@@ -72,160 +69,153 @@ export default function SubscriptionDeliveryScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
-      <View style={styles.header}>
+      {/* ── رأس الصفحة ── */}
+      <View style={styles.topBar}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-forward" size={24} color={Colors.text} />
+          <Ionicons name="arrow-back" size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>تسليم قيمة الاشتراكات</Text>
+        <Text style={styles.pageTitle}>تسليم قيمة الاشتراكات</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        {[
-          { key: "new", label: "تسليم جديد" },
-          { key: "history", label: `السجل (${history.length})` },
-        ].map(t => (
+      {/* ── ملخص الإجمالي ── */}
+      <View style={styles.summaryCard}>
+        <Ionicons name="cash" size={28} color="#00BCD4" />
+        <View style={{ alignItems: "flex-end", flex: 1, marginRight: 12 }}>
+          <Text style={styles.summaryLabel}>إجمالي ما تم تسليمه</Text>
+          <Text style={styles.summaryValue}>{formatCurrency(totalDelivered)}</Text>
+        </View>
+      </View>
+
+      {/* ── تبويب ── */}
+      <View style={styles.tabRow}>
+        {(["new", "history"] as Tab[]).map((t) => (
           <TouchableOpacity
-            key={t.key}
-            style={[styles.tab, activeTab === t.key && styles.tabActive]}
-            onPress={() => setActiveTab(t.key as any)}
+            key={t}
+            style={[styles.tab, activeTab === t && styles.tabActive]}
+            onPress={() => setActiveTab(t)}
           >
-            <Text style={[styles.tabText, activeTab === t.key && styles.tabTextActive]}>{t.label}</Text>
+            <Text style={[styles.tabText, activeTab === t && styles.tabTextActive]}>
+              {t === "new" ? "تسليم جديد" : "السجل"}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {activeTab === "new" ? (
-        <ScrollView contentContainerStyle={styles.content}>
-          {/* نوع الكرت */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>نوع الكرت</Text>
-            <View style={styles.typeRow}>
-              <TouchableOpacity
-                style={[styles.typeBtn, cardType === "hotspot" && styles.typeBtnActive]}
-                onPress={() => setCardType("hotspot")}
-              >
-                <Ionicons name="wifi" size={20} color={cardType === "hotspot" ? "#FFF" : Colors.textSecondary} />
-                <Text style={[styles.typeBtnText, cardType === "hotspot" && { color: "#FFF" }]}>هوت سبوت</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeBtn, cardType === "broadband" && styles.typeBtnActive]}
-                onPress={() => setCardType("broadband")}
-              >
-                <Ionicons name="globe" size={20} color={cardType === "broadband" ? "#FFF" : Colors.textSecondary} />
-                <Text style={[styles.typeBtnText, cardType === "broadband" && { color: "#FFF" }]}>باقات</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          activeTab === "history"
+            ? <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchHistory(); }} />
+            : undefined
+        }
+      >
+        {activeTab === "new" ? (
+          /* ───── نموذج التسليم ───── */
+          <View>
+            <Text style={styles.formNote}>
+              أدخل المبلغ النقدي الذي جمعته من الاشتراكات (هوتسبوت / برودباند)
+              وستسلّمه الآن للمسؤول المالي.
+            </Text>
 
-          {/* الفئة */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>الفئة (ريال)</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.denomRow}>
-              {DENOMINATIONS.map(d => (
-                <TouchableOpacity
-                  key={d}
-                  style={[styles.denomChip, denomination === d && styles.denomChipActive]}
-                  onPress={() => setDenomination(d)}
-                >
-                  <Text style={[styles.denomText, denomination === d && { color: "#FFF" }]}>{d}</Text>
-                  <Text style={[styles.denomPrice, denomination === d && { color: "rgba(255,255,255,0.7)" }]}>
-                    {CARD_PRICES[d] ?? d} ر.س
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-
-          {/* الكمية والمستلم */}
-          <View style={styles.card}>
-            <Text style={styles.label}>الكمية</Text>
+            <Text style={styles.fieldLabel}>المبلغ (ريال)</Text>
             <TextInput
-              style={styles.input} value={quantity}
-              onChangeText={v => setQuantity(v.replace(/[^0-9]/g, ""))}
-              keyboardType="numeric" textAlign="right" placeholder="1"
-              placeholderTextColor={Colors.textMuted}
+              style={styles.input}
+              value={amount}
+              onChangeText={setAmount}
+              placeholder="0.00"
+              placeholderTextColor={Colors.textSecondary}
+              keyboardType="decimal-pad"
+              textAlign="right"
             />
 
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>إجمالي القيمة:</Text>
-              <Text style={styles.totalValue}>{formatCurrency(totalValue)}</Text>
-            </View>
-
-            <Text style={[styles.label, { marginTop: 16 }]}>تسليم إلى (المسؤول المالي)</Text>
+            <Text style={styles.fieldLabel}>ملاحظات (اختياري)</Text>
             <TextInput
-              style={styles.input} value={recipientName}
-              onChangeText={setRecipientName} textAlign="right"
-              placeholder="اسم المسؤول المالي" placeholderTextColor={Colors.textMuted}
+              style={[styles.input, styles.inputMulti]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="مثال: اشتراكات يناير..."
+              placeholderTextColor={Colors.textSecondary}
+              multiline
+              textAlign="right"
+              textAlignVertical="top"
             />
 
-            <Text style={[styles.label, { marginTop: 12 }]}>ملاحظات</Text>
-            <TextInput
-              style={[styles.input, { height: 70, textAlignVertical: "top" }]}
-              value={notes} onChangeText={setNotes} textAlign="right" multiline
-              placeholder="اختياري..." placeholderTextColor={Colors.textMuted}
-            />
+            {/* معاينة */}
+            {!!parseFloat(amount) && (
+              <View style={styles.previewCard}>
+                <View style={styles.previewRow}>
+                  <Text style={styles.previewValue}>{formatCurrency(parseFloat(amount) || 0)}</Text>
+                  <Text style={styles.previewLabel}>المبلغ المسلَّم</Text>
+                </View>
+                <View style={styles.previewRow}>
+                  <Text style={[styles.previewValue, { color: Colors.success }]}>المسؤول المالي</Text>
+                  <Text style={styles.previewLabel}>يُضاف إلى</Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
+                  <Ionicons name="send" size={18} color="#fff" />
+                  <Text style={styles.submitText}>تسليم المبلغ</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
-
-          <TouchableOpacity
-            style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
-            onPress={handleSubmit} disabled={submitting}
-          >
-            {submitting
-              ? <ActivityIndicator color="#FFF" />
-              : <Text style={styles.submitBtnText}>تأكيد التسليم</Text>
-            }
-          </TouchableOpacity>
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchHistory(); }} />}
-        >
-          {loading ? (
-            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
+        ) : (
+          /* ───── السجل ───── */
+          loading ? (
+            <ActivityIndicator size="large" color="#00BCD4" style={{ marginTop: 40 }} />
           ) : history.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
-              <Text style={styles.emptyText}>لا يوجد سجل تسليم</Text>
+            <View style={styles.emptyBox}>
+              <Ionicons name="document-text-outline" size={40} color={Colors.textSecondary} />
+              <Text style={styles.emptyText}>لا توجد تسليمات سابقة</Text>
             </View>
           ) : (
-            history.map(item => (
-              <View key={item.id} style={styles.historyCard}>
-                <View style={styles.historyHeader}>
-                  <Text style={styles.historyEngineer}>{item.engineerName ?? "—"}</Text>
-                  <Text style={[styles.historyAmount, { color: Colors.success }]}>
-                    {formatCurrency(parseFloat(item.totalValue ?? 0))}
-                  </Text>
-                </View>
+            history.map((d) => (
+              <View key={d.id} style={styles.historyCard}>
                 <View style={styles.historyRow}>
-                  <Text style={styles.historyDetail}>
-                    {item.cardCount} كرت × {item.denomination} ريال
-                  </Text>
-                  <Text style={styles.historyType}>
-                    {item.cardType === "hotspot" ? "هوت سبوت" : "باقات"}
-                  </Text>
+                  <Text style={styles.historyAmount}>{formatCurrency(parseFloat(d.totalValue ?? "0"))}</Text>
+                  <View>
+                    <Text style={styles.historyDate}>{formatDate(d.createdAt)}</Text>
+                    <Text style={styles.historyTo}>➜ {d.deliveredToName}</Text>
+                  </View>
                 </View>
-                {item.deliveredToName && (
-                  <Text style={styles.historyDetail}>إلى: {item.deliveredToName}</Text>
-                )}
-                <Text style={styles.historyDate}>{formatDate(item.createdAt)}</Text>
+                {!!d.notes && <Text style={styles.historyNotes}>{d.notes}</Text>}
               </View>
             ))
-          )}
-        </ScrollView>
-      )}
+          )
+        )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
 
+      {/* ── مودال ── */}
       <Modal visible={modal.visible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalBox}>
-            <Ionicons name={modal.color === Colors.success ? "checkmark-circle" : "alert-circle"} size={48} color={modal.color} />
+          <View style={styles.modalCard}>
+            <Ionicons
+              name={modal.color === Colors.success ? "checkmark-circle" : "close-circle"}
+              size={48}
+              color={modal.color}
+            />
             <Text style={styles.modalTitle}>{modal.title}</Text>
-            {modal.message ? <Text style={styles.modalMsg}>{modal.message}</Text> : null}
-            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: modal.color }]} onPress={() => setModal(m => ({ ...m, visible: false }))}>
+            <Text style={styles.modalMsg}>{modal.message}</Text>
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: modal.color }]}
+              onPress={() => {
+                setModal((m) => ({ ...m, visible: false }));
+                if (modal.goBack) router.back();
+              }}
+            >
               <Text style={styles.modalBtnText}>حسناً</Text>
             </TouchableOpacity>
           </View>
@@ -237,46 +227,109 @@ export default function SubscriptionDeliveryScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  title: { fontSize: 20, fontWeight: "bold", color: Colors.text },
-  tabs: { flexDirection: "row-reverse", padding: 14, gap: 8 },
-  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
-  tabActive: { backgroundColor: Colors.roles.supervisor, borderColor: Colors.roles.supervisor },
-  tabText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
-  tabTextActive: { color: "#FFF" },
-  content: { padding: 14, paddingTop: 4 },
-  card: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.border },
-  cardTitle: { fontSize: 14, fontWeight: "bold", color: Colors.text, textAlign: "right", marginBottom: 12 },
-  typeRow: { flexDirection: "row-reverse", gap: 10 },
-  typeBtn: { flex: 1, flexDirection: "row-reverse", justifyContent: "center", alignItems: "center", gap: 6, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
-  typeBtnActive: { backgroundColor: Colors.roles.supervisor, borderColor: Colors.roles.supervisor },
-  typeBtnText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
-  denomRow: { flexDirection: "row-reverse", gap: 8, paddingBottom: 4 },
-  denomChip: { alignItems: "center", paddingHorizontal: 10, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
-  denomChipActive: { backgroundColor: Colors.roles.supervisor, borderColor: Colors.roles.supervisor },
-  denomText: { fontSize: 14, fontWeight: "bold", color: Colors.text },
-  denomPrice: { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
-  label: { fontSize: 13, color: Colors.textSecondary, textAlign: "right", marginBottom: 8 },
-  input: { backgroundColor: Colors.background, borderRadius: 10, padding: 12, color: Colors.text, borderWidth: 1, borderColor: Colors.border },
-  totalRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
-  totalLabel: { fontSize: 14, color: Colors.textSecondary },
-  totalValue: { fontSize: 18, fontWeight: "bold", color: Colors.success },
-  submitBtn: { backgroundColor: Colors.roles.supervisor, borderRadius: 14, paddingVertical: 16, alignItems: "center" },
-  submitBtnText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
-  emptyContainer: { alignItems: "center", marginTop: 60, gap: 12 },
-  emptyText: { color: Colors.textMuted, fontSize: 15 },
-  historyCard: { backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Colors.border },
-  historyHeader: { flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 6 },
-  historyEngineer: { fontSize: 14, fontWeight: "bold", color: Colors.text },
-  historyAmount: { fontSize: 15, fontWeight: "bold" },
-  historyRow: { flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 4 },
-  historyDetail: { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
-  historyType: { fontSize: 11, color: Colors.textMuted },
-  historyDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right", marginTop: 6 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 30 },
-  modalBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10 },
-  modalTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
-  modalMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
-  modalBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
-  modalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
+  topBar: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  pageTitle: { fontSize: 18, fontWeight: "bold", color: Colors.text },
+
+  summaryCard: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    backgroundColor: "#00BCD422",
+    margin: 16,
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#00BCD444",
+  },
+  summaryLabel: { fontSize: 13, color: Colors.textSecondary, textAlign: "right" },
+  summaryValue: { fontSize: 22, fontWeight: "bold", color: "#00BCD4", textAlign: "right" },
+
+  tabRow: { flexDirection: "row-reverse", marginHorizontal: 16, marginBottom: 8 },
+  tab: {
+    flex: 1, paddingVertical: 10, alignItems: "center",
+    borderBottomWidth: 2, borderBottomColor: "transparent",
+  },
+  tabActive:     { borderBottomColor: "#00BCD4" },
+  tabText:       { fontSize: 14, color: Colors.textSecondary },
+  tabTextActive: { color: "#00BCD4", fontWeight: "bold" },
+
+  scrollContent: { padding: 16 },
+
+  formNote: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    textAlign: "right",
+    marginBottom: 16,
+    lineHeight: 20,
+    backgroundColor: Colors.surface,
+    padding: 12,
+    borderRadius: 10,
+  },
+  fieldLabel: { fontSize: 13, color: Colors.textSecondary, textAlign: "right", marginBottom: 6, marginTop: 12 },
+  input: {
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    padding: 12,
+    color: Colors.text,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  inputMulti: { height: 80 },
+
+  previewCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 8,
+  },
+  previewRow:  { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  previewLabel: { fontSize: 13, color: Colors.textSecondary },
+  previewValue: { fontSize: 16, fontWeight: "bold", color: Colors.text },
+
+  submitBtn: {
+    backgroundColor: "#00BCD4",
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: "row-reverse",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 20,
+  },
+  submitText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+
+  historyCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  historyRow:   { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  historyAmount: { fontSize: 18, fontWeight: "bold", color: "#00BCD4" },
+  historyDate:  { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
+  historyTo:    { fontSize: 12, color: Colors.success, textAlign: "right" },
+  historyNotes: { fontSize: 12, color: Colors.textSecondary, textAlign: "right", marginTop: 6 },
+
+  emptyBox: { alignItems: "center", paddingVertical: 60, gap: 12 },
+  emptyText: { fontSize: 14, color: Colors.textSecondary },
+
+  modalOverlay: { flex: 1, backgroundColor: "#00000088", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalCard:    { backgroundColor: Colors.surface, borderRadius: 16, padding: 24, alignItems: "center", width: "100%", gap: 12 },
+  modalTitle:   { fontSize: 18, fontWeight: "bold", color: Colors.text },
+  modalMsg:     { fontSize: 14, color: Colors.textSecondary, textAlign: "center" },
+  modalBtn:     { borderRadius: 10, paddingVertical: 10, paddingHorizontal: 32, marginTop: 8 },
+  modalBtnText: { color: "#fff", fontWeight: "bold", fontSize: 15 },
 });
