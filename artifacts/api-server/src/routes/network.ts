@@ -6,17 +6,32 @@ import { eq } from "drizzle-orm";
 
 const router = Router();
 
+const HOTSPOT_FIELDS = [
+  "name", "location", "status", "notes", "supervisorId",
+  "hotspotType", "flashNumber", "deviceName",
+  "clientName", "clientPhone", "subscriptionFee",
+  "ipAddress", "isClientOwned", "locationUrl",
+];
+
+const BROADBAND_FIELDS = [
+  "name", "location", "status", "notes", "supervisorId", "speed",
+  "flashNumber", "subscriptionName", "clientName", "clientPhone",
+  "subscriptionFee", "locationUrl",
+];
+
 router.get("/hotspot-points", requireAuth, async (_req, res) => {
-  const points = await db.select().from(hotspotPointsTable).orderBy(hotspotPointsTable.name);
+  const points = await db.select().from(hotspotPointsTable).orderBy(hotspotPointsTable.flashNumber);
   res.json(points);
 });
 
 router.post("/hotspot-points", requireAuth, async (req, res) => {
   try {
-    const { name, location, status, supervisorId, notes } = req.body;
-    const [row] = await db.insert(hotspotPointsTable)
-      .values({ name, location, status: status ?? "empty", supervisorId, notes })
-      .returning();
+    const vals: any = { status: "active" };
+    for (const f of HOTSPOT_FIELDS) {
+      if (req.body[f] !== undefined) vals[f] = req.body[f];
+    }
+    if (!vals.name && vals.flashNumber) vals.name = `فلاش ${vals.flashNumber}`;
+    const [row] = await db.insert(hotspotPointsTable).values(vals).returning();
     res.json(row);
   } catch (error) {
     res.status(500).json({ error: "فشل في إضافة النقطة", details: String(error) });
@@ -27,8 +42,7 @@ router.put("/hotspot-points/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const updates: any = { updatedAt: new Date() };
-    const fields = ["name", "location", "status", "notes", "supervisorId"];
-    for (const f of fields) {
+    for (const f of HOTSPOT_FIELDS) {
       if (req.body[f] !== undefined) updates[f] = req.body[f];
     }
     const [row] = await db.update(hotspotPointsTable).set(updates)
@@ -39,17 +53,29 @@ router.put("/hotspot-points/:id", requireAuth, async (req, res) => {
   }
 });
 
+router.delete("/hotspot-points/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(hotspotPointsTable).where(eq(hotspotPointsTable.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حذف النقطة", details: String(error) });
+  }
+});
+
 router.get("/broadband-points", requireAuth, async (_req, res) => {
-  const points = await db.select().from(broadbandPointsTable).orderBy(broadbandPointsTable.name);
+  const points = await db.select().from(broadbandPointsTable).orderBy(broadbandPointsTable.flashNumber);
   res.json(points);
 });
 
 router.post("/broadband-points", requireAuth, async (req, res) => {
   try {
-    const { name, location, status, supervisorId, speed, notes } = req.body;
-    const [row] = await db.insert(broadbandPointsTable)
-      .values({ name, location, status: status ?? "empty", supervisorId, speed, notes })
-      .returning();
+    const vals: any = { status: "active" };
+    for (const f of BROADBAND_FIELDS) {
+      if (req.body[f] !== undefined) vals[f] = req.body[f];
+    }
+    if (!vals.name && vals.flashNumber) vals.name = `فلاش P${vals.flashNumber}`;
+    const [row] = await db.insert(broadbandPointsTable).values(vals).returning();
     res.json(row);
   } catch (error) {
     res.status(500).json({ error: "فشل في إضافة نقطة الباقات", details: String(error) });
@@ -60,8 +86,7 @@ router.put("/broadband-points/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const updates: any = { updatedAt: new Date() };
-    const fields = ["name", "location", "status", "notes", "speed", "supervisorId"];
-    for (const f of fields) {
+    for (const f of BROADBAND_FIELDS) {
       if (req.body[f] !== undefined) updates[f] = req.body[f];
     }
     const [row] = await db.update(broadbandPointsTable).set(updates)
@@ -72,6 +97,16 @@ router.put("/broadband-points/:id", requireAuth, async (req, res) => {
   }
 });
 
+router.delete("/broadband-points/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(broadbandPointsTable).where(eq(broadbandPointsTable.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حذف النقطة", details: String(error) });
+  }
+});
+
 router.get("/sales-points", requireAuth, async (_req, res) => {
   const points = await db.select().from(salesPointsTable).orderBy(salesPointsTable.name);
   res.json(points);
@@ -79,9 +114,9 @@ router.get("/sales-points", requireAuth, async (_req, res) => {
 
 router.post("/sales-points", requireAuth, async (req, res) => {
   try {
-    const { name, location, managerId, notes } = req.body;
+    const { name, location, managerId, notes, ownerName, phoneNumber, oldDebt } = req.body;
     const [row] = await db.insert(salesPointsTable)
-      .values({ name, location, managerId, notes })
+      .values({ name, location, managerId, notes, ownerName: ownerName ?? "", phoneNumber: phoneNumber ?? "", oldDebt })
       .returning();
     res.json(row);
   } catch (error) {
@@ -93,8 +128,7 @@ router.put("/sales-points/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const updates: any = { updatedAt: new Date() };
-    const fields = ["name", "location", "managerId", "notes"];
-    for (const f of fields) {
+    for (const f of ["name", "location", "managerId", "notes", "ownerName", "phoneNumber", "oldDebt"]) {
       if (req.body[f] !== undefined) updates[f] = req.body[f];
     }
     const [row] = await db.update(salesPointsTable).set(updates)

@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, pgEnum, integer, decimal, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, pgEnum, integer, decimal, numeric, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -17,6 +17,16 @@ export const hotspotPointsTable = pgTable("hotspot_points", {
   status: pointStatusEnum("status").notNull().default("empty"),
   supervisorId: integer("supervisor_id"),
   notes: text("notes"),
+  // New fields
+  hotspotType: text("hotspot_type").default("internal"),   // "internal" | "external"
+  flashNumber: integer("flash_number"),                    // e.g. 1, 3, 5
+  deviceName: text("device_name"),                         // e.g. "LG", "Huawei"
+  clientName: text("client_name"),
+  clientPhone: text("client_phone"),
+  subscriptionFee: numeric("subscription_fee", { precision: 10, scale: 2 }),
+  ipAddress: text("ip_address"),
+  isClientOwned: boolean("is_client_owned").default(false),
+  locationUrl: text("location_url"),                       // Google Maps URL
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -29,6 +39,13 @@ export const broadbandPointsTable = pgTable("broadband_points", {
   supervisorId: integer("supervisor_id"),
   speed: text("speed"),
   notes: text("notes"),
+  // New fields
+  flashNumber: integer("flash_number"),                    // e.g. 3 → displayed as P3
+  subscriptionName: text("subscription_name"),             // e.g. "andls123"
+  clientName: text("client_name"),
+  clientPhone: text("client_phone"),
+  subscriptionFee: numeric("subscription_fee", { precision: 10, scale: 2 }),
+  locationUrl: text("location_url"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -57,25 +74,16 @@ export const salesPointLoansTable = pgTable("sales_point_loans", {
 });
 
 export const insertHotspotPointSchema = createInsertSchema(hotspotPointsTable).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 export const insertBroadbandPointSchema = createInsertSchema(broadbandPointsTable).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
 export const insertSalesPointSchema = createInsertSchema(salesPointsTable).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+  id: true, createdAt: true, updatedAt: true,
 });
-
 export const insertSalesPointLoanSchema = createInsertSchema(salesPointLoansTable).omit({
-  id: true,
-  createdAt: true,
-  recordedAt: true,
+  id: true, createdAt: true, recordedAt: true,
 });
 
 export type InsertHotspotPoint = z.infer<typeof insertHotspotPointSchema>;
