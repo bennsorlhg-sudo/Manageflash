@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, pgEnum, integer, numeric } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, pgEnum, integer, numeric, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -164,8 +164,8 @@ export const repairTicketsTable = pgTable("repair_tickets", {
 
 export const installationTicketsTable = pgTable("installation_tickets", {
   id: serial("id").primaryKey(),
-  clientName: text("client_name").notNull(),
-  clientPhone: text("client_phone").notNull(),
+  clientName: text("client_name"),
+  clientPhone: text("client_phone"),
   serviceType: text("service_type").notNull().default("hotspot_internal"),
   locationUrl: text("location_url"),
   address: text("address"),
@@ -178,6 +178,20 @@ export const installationTicketsTable = pgTable("installation_tickets", {
   archivedAt: timestamp("archived_at"),
   archiveNotes: text("archive_notes"),
   createdById: integer("created_by_id"),
+  /* ─── حقول التجهيز ─── */
+  subscriptionFee: numeric("subscription_fee", { precision: 10, scale: 2 }),
+  deviceName: text("device_name"),
+  deviceSerial: text("device_serial"),
+  subscriptionName: text("subscription_name"),
+  internetFee: numeric("internet_fee", { precision: 10, scale: 2 }),
+  contractImageUrl: text("contract_image_url"),
+  engineerNotes: text("engineer_notes"),
+  /* ─── نقاط البث الوسيطة ─── */
+  relayPointsJson: text("relay_points_json"),
+  hasRelayPoints: boolean("has_relay_points").default(false),
+  /* ─── ربط بالجدول الفرعي ─── */
+  parentTicketId: integer("parent_ticket_id"),
+  isRelayPoint: boolean("is_relay_point").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

@@ -11,10 +11,6 @@ import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { apiPost, apiPut, apiFetch } from "@/utils/api";
 
-const BASE_URL = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`
-  : "http://localhost:3000/api";
-
 const PAGE_SIZE = 50;
 
 /* ─── Types ─── */
@@ -132,15 +128,11 @@ export default function DatabaseScreen() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
 
-  /* ─── Fetch function ─── */
-  const authHeaders = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
-
+  /* ─── Fetch functions ─── */
   const fetchHotspot = useCallback(async (off = 0, append = false, s = debouncedSearch, f = hotspotFilter) => {
     const typeParam = f === "all" ? "" : `&type=${f === "internal" ? "internal" : "external"}`;
     const searchParam = s ? `&search=${encodeURIComponent(s)}` : "";
-    const url = `${BASE_URL}/network/hotspot-points?limit=${PAGE_SIZE}&offset=${off}${typeParam}${searchParam}`;
-    const res = await fetch(url, { headers: authHeaders });
-    const json = await res.json();
+    const json = await apiFetch(`/network/hotspot-points?limit=${PAGE_SIZE}&offset=${off}${typeParam}${searchParam}`, token);
     const data: HotspotPoint[] = json.data ?? [];
     setHotspotTotal(json.total ?? 0);
     setHotspotOffset(off + data.length);
@@ -149,9 +141,7 @@ export default function DatabaseScreen() {
 
   const fetchBroadband = useCallback(async (off = 0, append = false, s = debouncedSearch) => {
     const searchParam = s ? `&search=${encodeURIComponent(s)}` : "";
-    const url = `${BASE_URL}/network/broadband-points?limit=${PAGE_SIZE}&offset=${off}${searchParam}`;
-    const res = await fetch(url, { headers: authHeaders });
-    const json = await res.json();
+    const json = await apiFetch(`/network/broadband-points?limit=${PAGE_SIZE}&offset=${off}${searchParam}`, token);
     const data: BroadbandPoint[] = json.data ?? [];
     setBroadbandTotal(json.total ?? 0);
     setBroadbandOffset(off + data.length);
@@ -191,8 +181,7 @@ export default function DatabaseScreen() {
     setShowEmpty(true);
     try {
       const endpoint = tab === "hotspot" ? "hotspot-points" : "broadband-points";
-      const res = await fetch(`${BASE_URL}/network/${endpoint}/flash-numbers`, { headers: authHeaders });
-      const nums: number[] = await res.json();
+      const nums: number[] = await apiFetch(`/network/${endpoint}/flash-numbers`, token);
       const used = new Set(nums);
       const max = nums.length ? Math.max(...nums) : 0;
       const empty: number[] = [];
