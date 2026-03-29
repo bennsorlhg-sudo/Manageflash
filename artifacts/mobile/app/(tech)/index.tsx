@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, Modal, TextInput, ActivityIndicator, RefreshControl, Alert, Platform,
+  Linking, Modal, TextInput, ActivityIndicator, RefreshControl, Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,9 +9,36 @@ import { useRouter } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
-import { apiGet, apiPatch, apiPost, formatDate } from "@/utils/api";
+import { apiGet, apiPost, apiPatch, formatDate } from "@/utils/api";
 
 type TabKey = "new" | "pending" | "completed";
+
+interface RepairTicket {
+  id: number;
+  serviceNumber: string;
+  clientName: string | null;
+  serviceType: string;
+  problemDescription: string | null;
+  status: string;
+  assignedToName: string | null;
+  locationUrl: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+interface InstallationTicket {
+  id: number;
+  clientName: string | null;
+  clientPhone: string | null;
+  serviceType: string;
+  address: string | null;
+  locationUrl: string | null;
+  notes: string | null;
+  status: string;
+  assignedToName: string | null;
+  scheduledAt: string | null;
+  createdAt: string;
+}
 
 interface FieldTask {
   id: number;
@@ -24,30 +51,22 @@ interface FieldTask {
   assignedEngineerName: string | null;
   notes: string | null;
   createdAt: string;
-  updatedAt: string;
 }
 
 interface GeneralTask {
   id: number;
-  title?: string;
   description: string;
   status: string;
-  priority?: string;
   targetRole: string;
-  assignedByRole?: string;
   createdAt: string;
 }
 
-const TASK_TYPE_LABELS: Record<string, string> = {
-  repair: "صيانة",
-  installation: "تركيب",
-  maintenance: "صيانة دورية",
-};
-
-const TASK_TYPE_ICONS: Record<string, string> = {
-  repair: "build",
-  installation: "add-circle",
-  maintenance: "construct",
+const SERVICE_TYPE_LABELS: Record<string, string> = {
+  hotspot: "هوت سبوت",
+  hotspot_internal: "هوت سبوت داخلي",
+  hotspot_external: "هوت سبوت خارجي",
+  broadband: "برودباند",
+  broadband_fiber: "فايبر",
 };
 
 export default function TechEngineerHomeScreen() {
@@ -56,6 +75,8 @@ export default function TechEngineerHomeScreen() {
   const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<TabKey>("new");
+  const [repairTickets, setRepairTickets] = useState<RepairTicket[]>([]);
+  const [installTickets, setInstallTickets] = useState<InstallationTicket[]>([]);
   const [fieldTasks, setFieldTasks] = useState<FieldTask[]>([]);
   const [generalTasks, setGeneralTasks] = useState<GeneralTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,25 +87,45 @@ export default function TechEngineerHomeScreen() {
   const [isCompleteModal, setIsCompleteModal] = useState(false);
   const [updating, setUpdating] = useState(false);
 
+  const myName = user?.name?.trim() ?? "";
+
+  const isMyTicket = (assignedName: string | null) => {
+    if (!assignedName || assignedName.trim() === "") return true;
+    return assignedName.trim() === myName;
+  };
+
   const fetchAll = useCallback(async () => {
     try {
-      const [ft, gt] = await Promise.all([
+      const [repairRaw, installRaw, ftRaw, gtRaw] = await Promise.all([
+        apiGet("/tickets/repair", token).catch(() => []),
+        apiGet("/tickets/installation", token).catch(() => []),
         apiGet("/field-tasks", token).catch(() => []),
         apiGet("/tasks?targetRole=tech_engineer", token).catch(() => []),
       ]);
-      const myName = user?.name ?? "";
-      const filtered = Array.isArray(ft)
-        ? ft.filter((t: FieldTask) => !t.assignedEngineerName || t.assignedEngineerName === myName)
-        : [];
-      setFieldTasks(filtered);
-      setGeneralTasks(Array.isArray(gt) ? gt : []);
+
+      setRepairTickets(
+        Array.isArray(repairRaw)
+          ? repairRaw.filter((t: RepairTicket) => isMyTicket(t.assignedToName) && t.status !== "archived")
+          : []
+      );
+      setInstallTickets(
+        Array.isArray(installRaw)
+          ? installRaw.filter((t: InstallationTicket) => isMyTicket(t.assignedToName) && t.status !== "archived")
+          : []
+      );
+      setFieldTasks(
+        Array.isArray(ftRaw)
+          ? ftRaw.filter((t: FieldTask) => isMyTicket(t.assignedEngineerName))
+          : []
+      );
+      setGeneralTasks(Array.isArray(gtRaw) ? gtRaw : []);
     } catch {
       // silent
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [token, user?.name]);
+  }, [token, myName]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -94,16 +135,43 @@ export default function TechEngineerHomeScreen() {
     return "completed";
   };
 
-  const filteredField = fieldTasks.filter(t => mapStatus(t.status) === activeTab);
-  const filteredGeneral = generalTasks.filter(t => mapStatus(t.status) === activeTab);
+  const allNew = [
+    ...repairTickets.filter(t => mapStatus(t.status) === "new"),
+    ...installTickets.filter(t => mapStatus(t.status) === "new"),
+    ...fieldTasks.filter(t => mapStatus(t.status) === "new"),
+    ...generalTasks.filter(t => mapStatus(t.status) === "new"),
+  ];
+  const allPending = [
+    ...repairTickets.filter(t => mapStatus(t.status) === "pending"),
+    ...installTickets.filter(t => mapStatus(t.status) === "pending"),
+    ...fieldTasks.filter(t => mapStatus(t.status) === "pending"),
+    ...generalTasks.filter(t => mapStatus(t.status) === "pending"),
+  ];
+  const allCompleted = [
+    ...repairTickets.filter(t => mapStatus(t.status) === "completed"),
+    ...installTickets.filter(t => mapStatus(t.status) === "completed"),
+    ...fieldTasks.filter(t => mapStatus(t.status) === "completed"),
+    ...generalTasks.filter(t => mapStatus(t.status) === "completed"),
+  ];
 
-  const counts = {
-    new: fieldTasks.filter(t => mapStatus(t.status) === "new").length
-      + generalTasks.filter(t => mapStatus(t.status) === "new").length,
-    pending: fieldTasks.filter(t => mapStatus(t.status) === "pending").length
-      + generalTasks.filter(t => mapStatus(t.status) === "pending").length,
-    completed: fieldTasks.filter(t => mapStatus(t.status) === "completed").length
-      + generalTasks.filter(t => mapStatus(t.status) === "completed").length,
+  const counts = { new: allNew.length, pending: allPending.length, completed: allCompleted.length };
+
+  const updateRepairStatus = async (id: number, status: string) => {
+    try {
+      await apiPatch(`/tickets/repair/${id}`, token, { status });
+      setRepairTickets(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    } catch (e: any) {
+      showAlert("خطأ", e.message ?? "فشل التحديث");
+    }
+  };
+
+  const updateInstallStatus = async (id: number, status: string) => {
+    try {
+      await apiPatch(`/tickets/installation/${id}`, token, { status });
+      setInstallTickets(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    } catch (e: any) {
+      showAlert("خطأ", e.message ?? "فشل التحديث");
+    }
   };
 
   const updateFieldStatus = async (id: number, status: string, notes?: string) => {
@@ -113,14 +181,12 @@ export default function TechEngineerHomeScreen() {
         await apiPost(`/field-tasks/${id}/start`, token, {});
       } else if (status === "completed") {
         await apiPost(`/field-tasks/${id}/complete`, token, notes ? { notes } : {});
-      } else {
-        await apiPatch(`/field-tasks/${id}`, token, { notes: notes ?? "" });
       }
       setFieldTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
       setIsCompleteModal(false);
       setCompletionNotes("");
     } catch (e: any) {
-      Alert.alert("خطأ", e.message ?? "فشل التحديث");
+      showAlert("خطأ", e.message ?? "فشل التحديث");
     } finally {
       setUpdating(false);
     }
@@ -131,18 +197,29 @@ export default function TechEngineerHomeScreen() {
       await apiPatch(`/tasks/${id}`, token, { status });
       setGeneralTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
     } catch (e: any) {
-      Alert.alert("خطأ", e.message ?? "فشل التحديث");
+      showAlert("خطأ", e.message ?? "فشل التحديث");
     }
+  };
+
+  const [alertVisible, setAlertVisible] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMsg, setAlertMsg] = useState("");
+  const showAlert = (title: string, msg: string) => {
+    setAlertTitle(title); setAlertMsg(msg); setAlertVisible(true);
   };
 
   const copyText = async (text: string) => {
     await Clipboard.setStringAsync(text);
-    Alert.alert("تم النسخ", "تم نسخ الموقع");
+    showAlert("تم النسخ", "تم نسخ الموقع");
   };
 
   const callPhone = (phone: string) => {
     const cleaned = phone.replace(/\D/g, "");
     Linking.openURL(`tel:${cleaned}`);
+  };
+
+  const openMap = (url: string) => {
+    Linking.openURL(url);
   };
 
   if (loading) {
@@ -153,7 +230,213 @@ export default function TechEngineerHomeScreen() {
     );
   }
 
-  const isEmpty = filteredField.length === 0 && filteredGeneral.length === 0;
+  const activeItems =
+    activeTab === "new" ? allNew :
+    activeTab === "pending" ? allPending :
+    allCompleted;
+
+  const isEmpty = activeItems.length === 0;
+
+  const renderRepairCard = (ticket: RepairTicket) => (
+    <View key={`repair-${ticket.id}`} style={[styles.taskCard, { borderLeftColor: Colors.error, borderLeftWidth: 3 }]}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.typeBadge, { backgroundColor: Colors.error + "20" }]}>
+          <Ionicons name="build" size={14} color={Colors.error} />
+          <Text style={[styles.typeText, { color: Colors.error }]}>صيانة</Text>
+        </View>
+        <Text style={styles.refText}>#{ticket.serviceNumber}</Text>
+      </View>
+
+      {ticket.clientName ? <Text style={styles.clientName}>{ticket.clientName}</Text> : null}
+      {ticket.problemDescription ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="alert-circle-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.infoText}>{ticket.problemDescription}</Text>
+        </View>
+      ) : null}
+      <View style={styles.infoRow}>
+        <Ionicons name="wifi-outline" size={16} color={Colors.textMuted} />
+        <Text style={styles.infoText}>{SERVICE_TYPE_LABELS[ticket.serviceType] ?? ticket.serviceType}</Text>
+      </View>
+      {ticket.notes ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="document-text-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.infoText}>{ticket.notes}</Text>
+        </View>
+      ) : null}
+      <Text style={styles.dateText}>{formatDate(ticket.createdAt)}</Text>
+
+      <View style={styles.actionRow}>
+        {ticket.locationUrl ? (
+          <TouchableOpacity style={styles.actionBtn} onPress={() => openMap(ticket.locationUrl!)}>
+            <Ionicons name="location" size={20} color={Colors.primaryLight} />
+            <Text style={[styles.actionBtnText, { color: Colors.primaryLight }]}>الموقع</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity style={styles.actionBtn} onPress={() => copyText(ticket.locationUrl ?? ticket.serviceNumber)}>
+          <Ionicons name="copy-outline" size={20} color={Colors.textSecondary} />
+          <Text style={[styles.actionBtnText, { color: Colors.textSecondary }]}>نسخ</Text>
+        </TouchableOpacity>
+      </View>
+
+      {mapStatus(ticket.status) === "new" && (
+        <TouchableOpacity style={styles.mainBtn} onPress={() => updateRepairStatus(ticket.id, "in_progress")}>
+          <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
+        </TouchableOpacity>
+      )}
+      {mapStatus(ticket.status) === "pending" && (
+        <TouchableOpacity style={[styles.mainBtn, { backgroundColor: Colors.success }]} onPress={() => updateRepairStatus(ticket.id, "completed")}>
+          <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const renderInstallCard = (ticket: InstallationTicket) => (
+    <View key={`install-${ticket.id}`} style={[styles.taskCard, { borderLeftColor: Colors.primary, borderLeftWidth: 3 }]}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.typeBadge, { backgroundColor: Colors.primary + "20" }]}>
+          <Ionicons name="add-circle" size={14} color={Colors.primary} />
+          <Text style={[styles.typeText, { color: Colors.primary }]}>تركيب</Text>
+        </View>
+        <Text style={styles.refText}>#{ticket.id}</Text>
+      </View>
+
+      {ticket.clientName ? <Text style={styles.clientName}>{ticket.clientName}</Text> : null}
+      {ticket.clientPhone ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="call-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.infoText}>{ticket.clientPhone}</Text>
+        </View>
+      ) : null}
+      <View style={styles.infoRow}>
+        <Ionicons name="wifi-outline" size={16} color={Colors.textMuted} />
+        <Text style={styles.infoText}>{SERVICE_TYPE_LABELS[ticket.serviceType] ?? ticket.serviceType}</Text>
+      </View>
+      {ticket.address ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="home-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.infoText}>{ticket.address}</Text>
+        </View>
+      ) : null}
+      {ticket.notes ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="document-text-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.infoText}>{ticket.notes}</Text>
+        </View>
+      ) : null}
+      {ticket.scheduledAt ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="calendar-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.infoText}>موعد: {formatDate(ticket.scheduledAt)}</Text>
+        </View>
+      ) : null}
+      <Text style={styles.dateText}>{formatDate(ticket.createdAt)}</Text>
+
+      <View style={styles.actionRow}>
+        {ticket.clientPhone ? (
+          <TouchableOpacity style={styles.actionBtn} onPress={() => callPhone(ticket.clientPhone!)}>
+            <Ionicons name="call" size={20} color={Colors.success} />
+            <Text style={[styles.actionBtnText, { color: Colors.success }]}>اتصال</Text>
+          </TouchableOpacity>
+        ) : null}
+        {ticket.locationUrl ? (
+          <TouchableOpacity style={styles.actionBtn} onPress={() => openMap(ticket.locationUrl!)}>
+            <Ionicons name="location" size={20} color={Colors.primaryLight} />
+            <Text style={[styles.actionBtnText, { color: Colors.primaryLight }]}>الموقع</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      {mapStatus(ticket.status) === "new" && (
+        <TouchableOpacity style={styles.mainBtn} onPress={() => updateInstallStatus(ticket.id, "in_progress")}>
+          <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
+        </TouchableOpacity>
+      )}
+      {mapStatus(ticket.status) === "pending" && (
+        <TouchableOpacity style={[styles.mainBtn, { backgroundColor: Colors.success }]} onPress={() => updateInstallStatus(ticket.id, "completed")}>
+          <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const renderFieldCard = (task: FieldTask) => (
+    <View key={`ft-${task.id}`} style={[styles.taskCard, { borderLeftColor: Colors.warning, borderLeftWidth: 3 }]}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.typeBadge, { backgroundColor: Colors.warning + "20" }]}>
+          <Ionicons name="construct" size={14} color={Colors.warning} />
+          <Text style={[styles.typeText, { color: Colors.warning }]}>مهمة ميدانية</Text>
+        </View>
+        <Text style={styles.refText}>#{task.serviceNumber}</Text>
+      </View>
+
+      {task.clientName ? <Text style={styles.clientName}>{task.clientName}</Text> : null}
+      <View style={styles.infoRow}>
+        <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
+        <Text style={styles.infoText}>{task.location}</Text>
+      </View>
+      <View style={styles.infoRow}>
+        <Ionicons name="call-outline" size={16} color={Colors.textMuted} />
+        <Text style={styles.infoText}>{task.phoneNumber}</Text>
+      </View>
+      {task.notes ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="document-text-outline" size={16} color={Colors.textMuted} />
+          <Text style={styles.infoText}>{task.notes}</Text>
+        </View>
+      ) : null}
+      <Text style={styles.dateText}>{formatDate(task.createdAt)}</Text>
+
+      <View style={styles.actionRow}>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => callPhone(task.phoneNumber)}>
+          <Ionicons name="call" size={20} color={Colors.success} />
+          <Text style={[styles.actionBtnText, { color: Colors.success }]}>اتصال</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => copyText(task.location)}>
+          <Ionicons name="copy-outline" size={20} color={Colors.primaryLight} />
+          <Text style={[styles.actionBtnText, { color: Colors.primaryLight }]}>نسخ الموقع</Text>
+        </TouchableOpacity>
+      </View>
+
+      {mapStatus(task.status) === "new" && (
+        <TouchableOpacity style={styles.mainBtn} onPress={() => updateFieldStatus(task.id, "in_progress")}>
+          <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
+        </TouchableOpacity>
+      )}
+      {mapStatus(task.status) === "pending" && (
+        <TouchableOpacity style={[styles.mainBtn, { backgroundColor: Colors.success }]}
+          onPress={() => { setSelectedFieldTask(task); setIsCompleteModal(true); }}>
+          <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const renderGeneralCard = (task: GeneralTask) => (
+    <View key={`gt-${task.id}`} style={[styles.taskCard, { borderLeftColor: Colors.roles.supervisor, borderLeftWidth: 3 }]}>
+      <View style={styles.cardHeader}>
+        <View style={[styles.typeBadge, { backgroundColor: Colors.roles.supervisor + "20" }]}>
+          <Ionicons name="clipboard-outline" size={14} color={Colors.roles.supervisor} />
+          <Text style={[styles.typeText, { color: Colors.roles.supervisor }]}>مهمة إدارية</Text>
+        </View>
+        <Text style={styles.refText}>#{task.id}</Text>
+      </View>
+      <Text style={styles.clientName}>{task.description}</Text>
+      <Text style={styles.dateText}>{formatDate(task.createdAt)}</Text>
+
+      {mapStatus(task.status) === "new" && (
+        <TouchableOpacity style={styles.mainBtn} onPress={() => updateGeneralStatus(task.id, "in_progress")}>
+          <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
+        </TouchableOpacity>
+      )}
+      {mapStatus(task.status) === "pending" && (
+        <TouchableOpacity style={[styles.mainBtn, { backgroundColor: Colors.success }]} onPress={() => updateGeneralStatus(task.id, "completed")}>
+          <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -218,130 +501,24 @@ export default function TechEngineerHomeScreen() {
           </View>
         ) : (
           <>
-            {/* Field Tasks */}
-            {filteredField.map(task => (
-              <View key={`ft-${task.id}`} style={styles.taskCard}>
-                <View style={styles.cardHeader}>
-                  <View style={[
-                    styles.typeBadge,
-                    { backgroundColor: task.taskType === "repair" ? Colors.error + "20" : Colors.primary + "20" }
-                  ]}>
-                    <Ionicons
-                      name={(TASK_TYPE_ICONS[task.taskType] ?? "build") as any}
-                      size={14}
-                      color={task.taskType === "repair" ? Colors.error : Colors.primary}
-                    />
-                    <Text style={[
-                      styles.typeText,
-                      { color: task.taskType === "repair" ? Colors.error : Colors.primary }
-                    ]}>
-                      {TASK_TYPE_LABELS[task.taskType] ?? task.taskType}
-                    </Text>
-                  </View>
-                  <Text style={styles.refText}>#{task.serviceNumber}</Text>
-                </View>
-
-                {task.clientName ? (
-                  <Text style={styles.clientName}>{task.clientName}</Text>
-                ) : null}
-
-                <View style={styles.infoRow}>
-                  <Ionicons name="location-outline" size={16} color={Colors.textMuted} />
-                  <Text style={styles.infoText}>{task.location}</Text>
-                </View>
-
-                <View style={styles.infoRow}>
-                  <Ionicons name="call-outline" size={16} color={Colors.textMuted} />
-                  <Text style={styles.infoText}>{task.phoneNumber}</Text>
-                </View>
-
-                {task.notes ? (
-                  <View style={styles.infoRow}>
-                    <Ionicons name="document-text-outline" size={16} color={Colors.textMuted} />
-                    <Text style={styles.infoText}>{task.notes}</Text>
-                  </View>
-                ) : null}
-
-                <Text style={styles.dateText}>{formatDate(task.createdAt)}</Text>
-
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => callPhone(task.phoneNumber)}
-                  >
-                    <Ionicons name="call" size={20} color={Colors.success} />
-                    <Text style={[styles.actionBtnText, { color: Colors.success }]}>اتصال</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => copyText(task.location)}
-                  >
-                    <Ionicons name="copy-outline" size={20} color={Colors.primaryLight} />
-                    <Text style={[styles.actionBtnText, { color: Colors.primaryLight }]}>نسخ الموقع</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {(task.status === "new" || task.status === "pending") && activeTab === "new" && (
-                  <TouchableOpacity
-                    style={styles.mainBtn}
-                    onPress={() => updateFieldStatus(task.id, "in_progress")}
-                  >
-                    <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
-                  </TouchableOpacity>
-                )}
-                {task.status === "in_progress" && activeTab === "pending" && (
-                  <TouchableOpacity
-                    style={[styles.mainBtn, { backgroundColor: Colors.success }]}
-                    onPress={() => { setSelectedFieldTask(task); setIsCompleteModal(true); }}
-                  >
-                    <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
-
-            {/* General Tasks */}
-            {filteredGeneral.map(task => (
-              <View key={`gt-${task.id}`} style={[styles.taskCard, { borderLeftWidth: 3, borderLeftColor: Colors.warning }]}>
-                <View style={styles.cardHeader}>
-                  <View style={[styles.typeBadge, { backgroundColor: Colors.warning + "20" }]}>
-                    <Ionicons name="clipboard-outline" size={14} color={Colors.warning} />
-                    <Text style={[styles.typeText, { color: Colors.warning }]}>مهمة إدارية</Text>
-                  </View>
-                  <Text style={styles.refText}>#{task.id}</Text>
-                </View>
-
-                <Text style={styles.clientName}>{task.description}</Text>
-                <Text style={styles.dateText}>{formatDate(task.createdAt)}</Text>
-
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.actionBtn}
-                    onPress={() => copyText(task.description)}
-                  >
-                    <Ionicons name="copy-outline" size={20} color={Colors.primaryLight} />
-                    <Text style={[styles.actionBtnText, { color: Colors.primaryLight }]}>نسخ</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {task.status === "pending" && activeTab === "new" && (
-                  <TouchableOpacity
-                    style={styles.mainBtn}
-                    onPress={() => updateGeneralStatus(task.id, "in_progress")}
-                  >
-                    <Text style={styles.mainBtnText}>▶ بدء التنفيذ</Text>
-                  </TouchableOpacity>
-                )}
-                {task.status === "in_progress" && activeTab === "pending" && (
-                  <TouchableOpacity
-                    style={[styles.mainBtn, { backgroundColor: Colors.success }]}
-                    onPress={() => updateGeneralStatus(task.id, "completed")}
-                  >
-                    <Text style={styles.mainBtnText}>✓ إكمال المهمة</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+            {activeTab === "new" && [
+              ...repairTickets.filter(t => mapStatus(t.status) === "new").map(renderRepairCard),
+              ...installTickets.filter(t => mapStatus(t.status) === "new").map(renderInstallCard),
+              ...fieldTasks.filter(t => mapStatus(t.status) === "new").map(renderFieldCard),
+              ...generalTasks.filter(t => mapStatus(t.status) === "new").map(renderGeneralCard),
+            ]}
+            {activeTab === "pending" && [
+              ...repairTickets.filter(t => mapStatus(t.status) === "pending").map(renderRepairCard),
+              ...installTickets.filter(t => mapStatus(t.status) === "pending").map(renderInstallCard),
+              ...fieldTasks.filter(t => mapStatus(t.status) === "pending").map(renderFieldCard),
+              ...generalTasks.filter(t => mapStatus(t.status) === "pending").map(renderGeneralCard),
+            ]}
+            {activeTab === "completed" && [
+              ...repairTickets.filter(t => mapStatus(t.status) === "completed").map(renderRepairCard),
+              ...installTickets.filter(t => mapStatus(t.status) === "completed").map(renderInstallCard),
+              ...fieldTasks.filter(t => mapStatus(t.status) === "completed").map(renderFieldCard),
+              ...generalTasks.filter(t => mapStatus(t.status) === "completed").map(renderGeneralCard),
+            ]}
           </>
         )}
         <View style={{ height: 60 }} />
@@ -354,7 +531,7 @@ export default function TechEngineerHomeScreen() {
             <Text style={styles.modalTitle}>إكمال المهمة الميدانية</Text>
             {selectedFieldTask && (
               <Text style={styles.modalSubtitle}>
-                {TASK_TYPE_LABELS[selectedFieldTask.taskType] ?? selectedFieldTask.taskType} — {selectedFieldTask.serviceNumber}
+                {selectedFieldTask.serviceNumber}
               </Text>
             )}
             <Text style={styles.label}>ملاحظات الإكمال (اختياري)</Text>
@@ -382,6 +559,19 @@ export default function TechEngineerHomeScreen() {
                 }
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Custom Alert Modal */}
+      <Modal visible={alertVisible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { padding: 24 }]}>
+            <Text style={[styles.modalTitle, { marginBottom: 8 }]}>{alertTitle}</Text>
+            <Text style={{ color: Colors.textSecondary, textAlign: "right", marginBottom: 16 }}>{alertMsg}</Text>
+            <TouchableOpacity style={styles.confirmBtn} onPress={() => setAlertVisible(false)}>
+              <Text style={styles.confirmBtnText}>حسناً</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -429,10 +619,7 @@ const styles = StyleSheet.create({
   typeText: { fontSize: 12, fontWeight: "bold" },
   refText: { color: Colors.textMuted, fontSize: 12 },
   clientName: { color: Colors.text, fontSize: 16, fontWeight: "bold", textAlign: "right", marginBottom: 8 },
-  infoRow: {
-    flexDirection: "row-reverse", alignItems: "center", gap: 8,
-    marginBottom: 5,
-  },
+  infoRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginBottom: 5 },
   infoText: { color: Colors.textSecondary, fontSize: 13, flex: 1, textAlign: "right" },
   dateText: { color: Colors.textMuted, fontSize: 11, textAlign: "right", marginTop: 6 },
   actionRow: {
