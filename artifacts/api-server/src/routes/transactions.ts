@@ -380,8 +380,10 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
         COALESCE(SUM(CASE WHEN from_role = 'owner' AND type = 'cash' THEN amount::numeric ELSE 0 END), 0) AS owner_cash,
         /* كروت استُلمت من المالك */
         COALESCE(SUM(CASE WHEN from_role = 'owner' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS owner_cards,
-        /* كروت مسلّمة للمندوبين */
-        COALESCE(SUM(CASE WHEN from_role = 'finance_manager' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS agent_custody
+        /* كروت مسلّمة للمندوبين (ما أُرسل) */
+        COALESCE(SUM(CASE WHEN from_role = 'finance_manager' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS agent_sent,
+        /* ما استُلم من المندوبين (نقد + كروت مرتجعة) */
+        COALESCE(SUM(CASE WHEN from_role = 'tech_engineer' AND to_role = 'finance_manager' THEN amount::numeric ELSE 0 END), 0) AS agent_received
       FROM custody_records
     `);
 
@@ -399,12 +401,15 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
     const cr: any = (summaryResult as any).rows?.[0] ?? (Array.isArray(summaryResult) ? summaryResult[0] : {});
     const tx: any = (txResult as any).rows?.[0] ?? (Array.isArray(txResult) ? txResult[0] : {});
 
-    const ownerCash    = parseFloat(cr.owner_cash ?? "0");
-    const ownerCards   = parseFloat(cr.owner_cards ?? "0");
-    const agentCustody = parseFloat(cr.agent_custody ?? "0");
+    const ownerCash      = parseFloat(cr.owner_cash     ?? "0");
+    const ownerCards     = parseFloat(cr.owner_cards    ?? "0");
+    const agentSent      = parseFloat(cr.agent_sent     ?? "0");
+    const agentReceived  = parseFloat(cr.agent_received ?? "0");
+    /* العهدة الفعلية عند المندوبين = ما أُرسل − ما استُلم */
+    const agentCustody   = Math.max(0, agentSent - agentReceived);
     const broadbandSales = parseFloat(tx.broadband_sales ?? "0");
-    const hotspotSales   = parseFloat(tx.hotspot_sales ?? "0");
-    const cashExpenses   = parseFloat(tx.cash_expenses ?? "0");
+    const hotspotSales   = parseFloat(tx.hotspot_sales   ?? "0");
+    const cashExpenses   = parseFloat(tx.cash_expenses   ?? "0");
 
     /* 5. السلف — debts table (مبالغ يستحق تحصيلها) */
     const loansResult = await db.execute(sql`
