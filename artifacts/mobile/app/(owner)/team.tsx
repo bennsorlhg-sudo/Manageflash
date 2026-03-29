@@ -17,7 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors, ROLE_LABELS, type UserRole } from "@/constants/colors";
 import { RoleBadge } from "@/components/RoleBadge";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost, apiPut } from "@/utils/api";
+import { apiGet, apiPost, apiPut, apiFetch } from "@/utils/api";
 
 interface UserProfile {
   id: number;
@@ -135,6 +135,24 @@ export default function TeamScreen() {
     ]);
   };
 
+  const handleDelete = (id: number, name: string) => {
+    Alert.alert("حذف المستخدم", `هل أنت متأكد من حذف "${name}" نهائياً؟ لا يمكن التراجع.`, [
+      { text: "إلغاء", style: "cancel" },
+      {
+        text: "حذف",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await apiFetch(`/users/${id}`, token, { method: "DELETE" });
+            fetchUsers();
+          } catch (e: any) {
+            Alert.alert("خطأ", e?.message ?? "فشل الحذف");
+          }
+        },
+      },
+    ]);
+  };
+
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
       <View style={styles.header}>
@@ -197,6 +215,12 @@ export default function TeamScreen() {
                       size={18}
                       color={u.isActive ? Colors.success : Colors.error}
                     />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => handleDelete(u.id, u.name)}
+                    style={styles.deleteBtn}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={Colors.error} />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.cardInfo}>
@@ -410,6 +434,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.primary + "22",
+  },
+  deleteBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.error + "22",
   },
   cardInfo: { flex: 1, gap: 4, alignItems: "flex-end" },
   userName: { fontSize: 16, fontFamily: "Inter_600SemiBold", color: Colors.text },

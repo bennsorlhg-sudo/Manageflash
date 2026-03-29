@@ -212,4 +212,31 @@ router.post("/:id/toggle-active", requireAuth, requireRole("owner"), async (req,
   res.json(user);
 });
 
+router.delete("/:id", requireAuth, requireRole("owner"), async (req, res) => {
+  const id = parseInt(req.params["id"] as string, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: "bad_request", message: "Invalid user ID" });
+    return;
+  }
+
+  const [existing] = await db
+    .select({ id: usersTable.id, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, id))
+    .limit(1);
+
+  if (!existing) {
+    res.status(404).json({ error: "not_found", message: "User not found" });
+    return;
+  }
+
+  if (existing.role === "owner") {
+    res.status(403).json({ error: "forbidden", message: "Cannot delete owner accounts" });
+    return;
+  }
+
+  await db.delete(usersTable).where(eq(usersTable.id, id));
+  res.json({ success: true });
+});
+
 export default router;
