@@ -86,9 +86,10 @@ export default function DatabaseScreen() {
   const [hotspotOffset, setHotspotOffset] = useState(0);
   const [broadbandOffset, setBroadbandOffset] = useState(0);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Add modal
   const [showAdd, setShowAdd] = useState(false);
@@ -128,40 +129,55 @@ export default function DatabaseScreen() {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
 
-  /* ─── Fetch functions ─── */
-  const fetchHotspot = useCallback(async (off = 0, append = false, s = debouncedSearch, f = hotspotFilter) => {
-    const typeParam = f === "all" ? "" : `&type=${f === "internal" ? "internal" : "external"}`;
+  /* ─── Fetch helpers (plain async functions, not callbacks) ─── */
+  const doFetchHotspot = async (off: number, append: boolean, tok: string, s: string, f: HotspotFilter) => {
+    const typeParam = f === "all" ? "" : `&type=${f}`;
     const searchParam = s ? `&search=${encodeURIComponent(s)}` : "";
-    const json = await apiFetch(`/network/hotspot-points?limit=${PAGE_SIZE}&offset=${off}${typeParam}${searchParam}`, token);
-    const data: HotspotPoint[] = json.data ?? [];
-    setHotspotTotal(json.total ?? 0);
+    const json = await apiFetch(`/network/hotspot-points?limit=${PAGE_SIZE}&offset=${off}${typeParam}${searchParam}`, tok);
+    const data: HotspotPoint[] = Array.isArray(json.data) ? json.data : [];
+    setHotspotTotal(Number(json.total) || 0);
     setHotspotOffset(off + data.length);
     setHotspotPoints(prev => append ? [...prev, ...data] : data);
-  }, [token, debouncedSearch, hotspotFilter]);
+    return data.length;
+  };
 
-  const fetchBroadband = useCallback(async (off = 0, append = false, s = debouncedSearch) => {
+  const doFetchBroadband = async (off: number, append: boolean, tok: string, s: string) => {
     const searchParam = s ? `&search=${encodeURIComponent(s)}` : "";
-    const json = await apiFetch(`/network/broadband-points?limit=${PAGE_SIZE}&offset=${off}${searchParam}`, token);
-    const data: BroadbandPoint[] = json.data ?? [];
-    setBroadbandTotal(json.total ?? 0);
+    const json = await apiFetch(`/network/broadband-points?limit=${PAGE_SIZE}&offset=${off}${searchParam}`, tok);
+    const data: BroadbandPoint[] = Array.isArray(json.data) ? json.data : [];
+    setBroadbandTotal(Number(json.total) || 0);
     setBroadbandOffset(off + data.length);
     setBroadbandPoints(prev => append ? [...prev, ...data] : data);
-  }, [token, debouncedSearch]);
+    return data.length;
+  };
 
-  /* ─── Initial load & filter/search changes ─── */
+  /* ─── Helper refs so loadMore can call latest values ─── */
+  const fetchHotspotRef = useRef(doFetchHotspot);
+  const fetchBroadbandRef = useRef(doFetchBroadband);
+  fetchHotspotRef.current = doFetchHotspot;
+  fetchBroadbandRef.current = doFetchBroadband;
+
+  /* ─── Initial load: re-runs whenever token / tab / filter / search changes ─── */
   useEffect(() => {
     if (!token) return;
+    let cancelled = false;
     setLoading(true);
-    const run = async () => {
+    setFetchError(null);
+    (async () => {
       try {
-        if (tab === "hotspot") await fetchHotspot(0, false, debouncedSearch, hotspotFilter);
-        else await fetchBroadband(0, false, debouncedSearch);
-      } catch { }
-      setLoading(false);
-      setRefreshing(false);
-    };
-    run();
-  }, [tab, hotspotFilter, debouncedSearch, token]);
+        if (tab === "hotspot") {
+          await doFetchHotspot(0, false, token, debouncedSearch, hotspotFilter);
+        } else {
+          await doFetchBroadband(0, false, token, debouncedSearch);
+        }
+      } catch (e: any) {
+        if (!cancelled) setFetchError(e?.message ?? "خطأ في تحميل البيانات");
+      }
+      if (!cancelled) { setLoading(false); setRefreshing(false); }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, tab, hotspotFilter, debouncedSearch]);
 
   /* ─── Load more ─── */
   const loadMore = async () => {
@@ -169,9 +185,9 @@ export default function DatabaseScreen() {
     setLoadingMore(true);
     try {
       if (tab === "hotspot" && hotspotOffset < hotspotTotal) {
-        await fetchHotspot(hotspotOffset, true);
+        await fetchHotspotRef.current(hotspotOffset, true, token!, debouncedSearch, hotspotFilter);
       } else if (tab === "broadband" && broadbandOffset < broadbandTotal) {
-        await fetchBroadband(broadbandOffset, true);
+        await fetchBroadbandRef.current(broadbandOffset, true, token!, debouncedSearch);
       }
     } catch { }
     setLoadingMore(false);
@@ -395,6 +411,13 @@ export default function DatabaseScreen() {
         ))}
       </View>
 
+      {/* DEBUG BAR - temporary */}
+      <View style={{ backgroundColor: "#1A0A0A", padding: 6, marginHorizontal: 12, borderRadius: 8, marginTop: 6 }}>
+        <Text style={{ color: "#FF6B6B", fontSize: 10, textAlign: "center" }}>
+          {`token:${token ? "✓" : "✗"} | loading:${loading} | total:${hotspotTotal}/${broadbandTotal} | pts:${hotspotPoints.length}/${broadbandPoints.length} | err:${fetchError ?? "none"}`}
+        </Text>
+      </View>
+
       {/* Hotspot sub-filter */}
       {tab === "hotspot" && (
         <View style={styles.subFilter}>
@@ -424,15 +447,38 @@ export default function DatabaseScreen() {
       </View>
 
       {/* List */}
-      {loading ? (
+      {!token ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={{ color: Colors.textMuted, marginTop: 12 }}>جاري التحقق من الجلسة...</Text>
+        </View>
+      ) : loading ? (
         <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
           <ActivityIndicator size="large" color={Colors.primary} />
           <Text style={{ color: Colors.textMuted, marginTop: 12 }}>جاري تحميل البيانات...</Text>
         </View>
+      ) : fetchError ? (
+        <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+          <Ionicons name="warning-outline" size={48} color={Colors.error} />
+          <Text style={{ color: Colors.error, marginTop: 12, textAlign: "center", fontSize: 15 }}>{fetchError}</Text>
+          <TouchableOpacity style={{ marginTop: 16, backgroundColor: Colors.primary, paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8 }}
+            onPress={async () => { if (!token) return; setFetchError(null); setLoading(true); try { if (tab === "hotspot") await fetchHotspotRef.current(0, false, token, debouncedSearch, hotspotFilter); else await fetchBroadbandRef.current(0, false, token, debouncedSearch); } catch(e:any){setFetchError(e?.message);} setLoading(false); }}>
+            <Text style={{ color: "#FFF" }}>إعادة المحاولة</Text>
+          </TouchableOpacity>
+        </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.list}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); tab === "hotspot" ? fetchHotspot(0, false) : fetchBroadband(0, false); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => {
+            if (!token) return;
+            setRefreshing(true);
+            setFetchError(null);
+            try {
+              if (tab === "hotspot") await fetchHotspotRef.current(0, false, token, debouncedSearch, hotspotFilter);
+              else await fetchBroadbandRef.current(0, false, token, debouncedSearch);
+            } catch (e: any) { setFetchError(e?.message ?? "خطأ"); }
+            setRefreshing(false);
+          }} />}
         >
           {list.length === 0 ? (
             <View style={styles.empty}><Ionicons name="search-outline" size={48} color={Colors.textMuted} /><Text style={styles.emptyText}>لا توجد نتائج</Text></View>
