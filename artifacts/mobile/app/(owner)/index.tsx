@@ -11,7 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPost, formatCurrency, DENOMINATIONS, CARD_PRICES } from "@/utils/api";
 
 /* ─────────────────────────────────────────────────────
-   بطاقة KPI — نفس تصميم المسؤول المالي تماماً
+   بطاقة KPI — نفس تصميم المسؤول المالي
 ───────────────────────────────────────────────────── */
 function KPICard({
   title, value, icon, color, subtitle,
@@ -34,7 +34,7 @@ function KPICard({
 }
 
 /* ─────────────────────────────────────────────────────
-   Alert Modal (بديل عن Alert.alert)
+   Alert Modal
 ───────────────────────────────────────────────────── */
 function AlertModal({ visible, title, message, color, onClose }: {
   visible: boolean; title: string; message: string; color: string; onClose: () => void;
@@ -80,14 +80,14 @@ function ActionBtn({ label, icon, onPress, color }: {
    الواجهة الرئيسية للمالك
 ═══════════════════════════════════════════════════ */
 export default function OwnerDashboard() {
-  const insets   = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
-  const router   = useRouter();
+  const router = useRouter();
 
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  /* ─── الأرقام الست (نفس المسؤول المالي) ─── */
+  /* ─── الأرقام الست ─── */
   const [totalCustody, setTotalCustody] = useState(0);
   const [cashBalance,  setCashBalance]  = useState(0);
   const [cardsValue,   setCardsValue]   = useState(0);
@@ -95,11 +95,9 @@ export default function OwnerDashboard() {
   const [totalLoans,   setTotalLoans]   = useState(0);
   const [totalDebts,   setTotalDebts]   = useState(0);
 
-  /* ─── Modal إضافة عهدة ─── */
+  /* ─── Modals ─── */
   const [showCustodyModal, setShowCustodyModal] = useState(false);
-
-  /* ─── Modal إضافة مهمة ─── */
-  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [showTaskModal,    setShowTaskModal]    = useState(false);
 
   /* ─── Alert ─── */
   const [alert, setAlert] = useState({ visible: false, title: "", message: "", color: Colors.success });
@@ -152,69 +150,40 @@ export default function OwnerDashboard() {
       >
 
         {/* ══════════════════════════════════════════════
-            6 بطاقات KPI — نفس تصميم المسؤول المالي
+            6 بطاقات KPI — نفس المسؤول المالي
         ══════════════════════════════════════════════ */}
         <View style={styles.kpiGrid}>
-          {/* صف 1 */}
           <View style={styles.kpiRow}>
-            <KPICard
-              title="إجمالي العهدة"  value={totalCustody}
-              icon="briefcase"       color={Colors.primary}
-              subtitle="نقد + كروت + برودباند"
-            />
-            <KPICard
-              title="الصندوق النقدي" value={cashBalance}
-              icon="wallet"          color={Colors.success}
-              subtitle="النقد الفعلي"
-            />
+            <KPICard title="إجمالي العهدة"  value={totalCustody}  icon="briefcase"    color={Colors.primary}  subtitle="نقد + كروت + برودباند" />
+            <KPICard title="الصندوق النقدي" value={cashBalance}   icon="wallet"        color={Colors.success}  subtitle="النقد الفعلي" />
           </View>
-
-          {/* صف 2 */}
           <View style={styles.kpiRow}>
-            <KPICard
-              title="إجمالي الكروت" value={cardsValue}
-              icon="card"            color={Colors.info}
-              subtitle="قيمة إجمالية"
-            />
-            <KPICard
-              title="عند المندوبين" value={agentCustody}
-              icon="people"          color="#9C27B0"
-              subtitle="كروت مسلّمة"
-            />
+            <KPICard title="إجمالي الكروت" value={cardsValue}    icon="card"          color={Colors.info}     subtitle="قيمة إجمالية" />
+            <KPICard title="عند المندوبين" value={agentCustody}  icon="people"        color="#9C27B0"          subtitle="كروت مسلّمة" />
           </View>
-
-          {/* صف 3 */}
           <View style={styles.kpiRow}>
-            <KPICard
-              title="السلف"          value={totalLoans}
-              icon="trending-up"     color={Colors.warning}
-              subtitle="مبيعات بسلفة"
-            />
-            <KPICard
-              title="الديون"         value={totalDebts}
-              icon="trending-down"   color={Colors.error}
-              subtitle="التزامات الشبكة"
-            />
+            <KPICard title="السلف"          value={totalLoans}    icon="trending-up"   color={Colors.warning}  subtitle="مبيعات بسلفة" />
+            <KPICard title="الديون"         value={totalDebts}    icon="trending-down" color={Colors.error}    subtitle="التزامات الشبكة" />
           </View>
         </View>
 
         {/* ══════════════════════════════════════════════
-            التقارير
+            التقارير والمتابعة
         ══════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionDot, { backgroundColor: Colors.success }]} />
-          <Text style={styles.sectionTitle}>التقارير</Text>
+          <Text style={styles.sectionTitle}>المتابعة</Text>
         </View>
 
         <View style={styles.actionsBlock}>
           <View style={styles.actionRow}>
             <ActionBtn
               label="المبيعات"   icon="bar-chart"   color={Colors.success}
-              onPress={() => router.push({ pathname: "/(owner)/report", params: { type: "sales" } })}
+              onPress={() => router.push("/(owner)/sales")}
             />
             <ActionBtn
               label="المصروفات"  icon="receipt"     color={Colors.error}
-              onPress={() => router.push({ pathname: "/(owner)/report", params: { type: "expenses" } })}
+              onPress={() => router.push("/(owner)/expenses")}
             />
             <ActionBtn
               label="الربح"      icon="trending-up" color={Colors.primary}
@@ -224,7 +193,7 @@ export default function OwnerDashboard() {
         </View>
 
         {/* ══════════════════════════════════════════════
-            إجراءات المالك
+            إجراءات
         ══════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionDot, { backgroundColor: Colors.warning }]} />
@@ -234,15 +203,15 @@ export default function OwnerDashboard() {
         <View style={styles.actionsBlock}>
           <View style={styles.actionRow}>
             <ActionBtn
-              label="إضافة عهدة" icon="gift"    color={Colors.warning}
+              label="إضافة عهدة" icon="gift"        color={Colors.warning}
               onPress={() => setShowCustodyModal(true)}
             />
             <ActionBtn
-              label="إضافة مهمة" icon="add-circle" color={Colors.primary}
+              label="إضافة مهمة" icon="add-circle"  color={Colors.primary}
               onPress={() => setShowTaskModal(true)}
             />
             <ActionBtn
-              label="الفريق"     icon="people"  color={Colors.roles.supervisor}
+              label="الفريق"     icon="people"      color={Colors.roles.supervisor}
               onPress={() => router.push("/(owner)/team")}
             />
           </View>
@@ -255,7 +224,11 @@ export default function OwnerDashboard() {
         visible={showCustodyModal}
         token={token}
         onClose={() => setShowCustodyModal(false)}
-        onSuccess={() => { setShowCustodyModal(false); fetchData(); showAlert("تم ✓", "تم إضافة العهدة بنجاح"); }}
+        onSuccess={() => {
+          setShowCustodyModal(false);
+          fetchData();
+          showAlert("تم ✓", "تم إضافة العهدة بنجاح");
+        }}
         onError={(msg) => showAlert("خطأ", msg, Colors.error)}
         insets={insets}
       />
@@ -265,7 +238,10 @@ export default function OwnerDashboard() {
         visible={showTaskModal}
         token={token}
         onClose={() => setShowTaskModal(false)}
-        onSuccess={() => { setShowTaskModal(false); showAlert("تم ✓", "تم إضافة المهمة بنجاح"); }}
+        onSuccess={() => {
+          setShowTaskModal(false);
+          showAlert("تم ✓", "تم إضافة المهمة بنجاح");
+        }}
         onError={(msg) => showAlert("خطأ", msg, Colors.error)}
       />
 
@@ -279,7 +255,7 @@ export default function OwnerDashboard() {
 }
 
 /* ═══════════════════════════════════════════════════
-   Modal إضافة عهدة
+   Modal إضافة عهدة — مُصلح بالكامل
 ═══════════════════════════════════════════════════ */
 function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }: {
   visible: boolean; token: string | null;
@@ -287,37 +263,63 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
   onError: (msg: string) => void; insets: any;
 }) {
   const [type,         setType]         = useState<"cash" | "cards">("cash");
-  const [amount,       setAmount]       = useState("");
-  const [denomination, setDenomination] = useState(1000);
-  const [cardCount,    setCardCount]    = useState("");
-  const [toRole,       setToRole]       = useState<"finance_manager" | "supervisor">("finance_manager");
+  const [amount,       setAmount]       = useState("");        /* نقد */
+  const [denomination, setDenomination] = useState(1000);     /* فئة الكرت */
+  const [cardCount,    setCardCount]    = useState("");        /* عدد الكروت */
+  const [cardsAmount,  setCardsAmount]  = useState("");        /* مبلغ الكروت (يدوي أو تلقائي) */
   const [notes,        setNotes]        = useState("");
   const [saving,       setSaving]       = useState(false);
 
-  const calcValue = type === "cards" && cardCount
-    ? (CARD_PRICES[denomination] ?? 0) * parseInt(cardCount || "0")
-    : 0;
+  /* ─── حساب تلقائي عند تغيير الفئة أو العدد ─── */
+  const autoCalc = (count: string, denom: number) => {
+    const n = parseInt(count || "0");
+    if (n > 0) {
+      const val = (CARD_PRICES[denom] ?? denom) * n;
+      setCardsAmount(String(val));
+    }
+  };
+
+  const handleDenominationChange = (d: number) => {
+    setDenomination(d);
+    autoCalc(cardCount, d);
+  };
+
+  const handleCardCountChange = (v: string) => {
+    setCardCount(v);
+    autoCalc(v, denomination);
+  };
 
   const handleSubmit = async () => {
-    setSaving(true);
-    try {
-      const body = type === "cash"
-        ? { type, amount: parseFloat(amount), toRole, notes }
-        : { type, denomination, cardCount: parseInt(cardCount), toRole, notes };
-      await apiPost("/custody", token, body);
-      setAmount(""); setCardCount(""); setNotes("");
-      onSuccess();
-    } catch (e: any) {
-      onError(e?.message ?? "فشل إضافة العهدة");
-    } finally {
-      setSaving(false);
+    if (type === "cash") {
+      const parsedAmt = parseFloat(amount.replace(/[^0-9.]/g, ""));
+      if (!parsedAmt || parsedAmt <= 0) return onError("أدخل مبلغاً صحيحاً");
+      setSaving(true);
+      try {
+        await apiPost("/custody", token, { type: "cash", amount: parsedAmt, notes: notes.trim() || undefined });
+        setAmount(""); setNotes("");
+        onSuccess();
+      } catch (e: any) {
+        onError(e?.message ?? "فشل إضافة العهدة");
+      } finally { setSaving(false); }
+
+    } else {
+      const parsedAmt = parseFloat(cardsAmount.replace(/[^0-9.]/g, ""));
+      if (!parsedAmt || parsedAmt <= 0) return onError("أدخل مبلغاً أو عدداً صحيحاً للكروت");
+      setSaving(true);
+      try {
+        await apiPost("/custody", token, { type: "cards", amount: parsedAmt, notes: notes.trim() || undefined });
+        setCardCount(""); setCardsAmount(""); setNotes("");
+        onSuccess();
+      } catch (e: any) {
+        onError(e?.message ?? "فشل إضافة العهدة");
+      } finally { setSaving(false); }
     }
   };
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.modalOverlay}>
-        <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 20) + 16 }]}>
+        <View style={[styles.modalContent, { paddingBottom: Math.max(insets.bottom, 16) + 20 }]}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>إضافة عهدة</Text>
             <TouchableOpacity onPress={onClose}>
@@ -325,33 +327,54 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
             </TouchableOpacity>
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* نوع العهدة */}
+
+            {/* ── نوع العهدة ── */}
             <Text style={styles.fieldLabel}>نوع العهدة</Text>
             <View style={styles.segRow}>
-              {([["cash", "نقد"], ["cards", "كروت"]] as const).map(([v, l]) => (
-                <TouchableOpacity key={v} style={[styles.segBtn, type === v && styles.segBtnActive]} onPress={() => setType(v)}>
+              {([["cards", "كروت"], ["cash", "نقد"]] as const).map(([v, l]) => (
+                <TouchableOpacity
+                  key={v}
+                  style={[styles.segBtn, type === v && styles.segBtnActive]}
+                  onPress={() => setType(v)}
+                >
+                  <Ionicons
+                    name={v === "cards" ? "card" : "cash"}
+                    size={16}
+                    color={type === v ? Colors.primary : Colors.textSecondary}
+                  />
                   <Text style={[styles.segBtnTxt, type === v && styles.segBtnTxtActive]}>{l}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            {type === "cash" ? (
+            {/* ══════ نقد ══════ */}
+            {type === "cash" && (
               <>
-                <Text style={[styles.fieldLabel, { marginTop: 14 }]}>المبلغ (ر.س)</Text>
+                <Text style={[styles.fieldLabel, { marginTop: 16 }]}>المبلغ (ر.س)</Text>
                 <TextInput
-                  style={styles.fieldInput} value={amount} onChangeText={setAmount}
-                  keyboardType="numeric" textAlign="right" placeholder="0" placeholderTextColor={Colors.textMuted}
+                  style={styles.fieldInput}
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="numeric"
+                  textAlign="right"
+                  placeholder="0"
+                  placeholderTextColor={Colors.textMuted}
                 />
               </>
-            ) : (
+            )}
+
+            {/* ══════ كروت ══════ */}
+            {type === "cards" && (
               <>
-                <Text style={[styles.fieldLabel, { marginTop: 14 }]}>فئة الكرت</Text>
+                {/* الفئة */}
+                <Text style={[styles.fieldLabel, { marginTop: 16 }]}>الفئة</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={{ flexDirection: "row-reverse", gap: 8 }}>
                     {DENOMINATIONS.map(d => (
                       <TouchableOpacity
-                        key={d} style={[styles.denomBtn, denomination === d && styles.denomBtnActive]}
-                        onPress={() => setDenomination(d)}
+                        key={d}
+                        style={[styles.denomBtn, denomination === d && styles.denomBtnActive]}
+                        onPress={() => handleDenominationChange(d)}
                       >
                         <Text style={[styles.denomBtnTxt, denomination === d && styles.denomBtnTxtActive]}>{d}</Text>
                         <Text style={[styles.denomPrice, denomination === d && styles.denomPriceActive]}>
@@ -361,47 +384,54 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
                     ))}
                   </View>
                 </ScrollView>
-                <Text style={[styles.fieldLabel, { marginTop: 14 }]}>عدد الكروت</Text>
+
+                {/* العدد */}
+                <Text style={[styles.fieldLabel, { marginTop: 16 }]}>العدد</Text>
                 <TextInput
-                  style={styles.fieldInput} value={cardCount} onChangeText={setCardCount}
-                  keyboardType="numeric" textAlign="right" placeholder="0" placeholderTextColor={Colors.textMuted}
+                  style={styles.fieldInput}
+                  value={cardCount}
+                  onChangeText={handleCardCountChange}
+                  keyboardType="numeric"
+                  textAlign="right"
+                  placeholder="0"
+                  placeholderTextColor={Colors.textMuted}
                 />
-                {calcValue > 0 && (
-                  <View style={styles.calcRow}>
-                    <Text style={styles.calcVal}>{formatCurrency(calcValue)}</Text>
-                    <Text style={styles.calcLbl}>القيمة المحتسبة:</Text>
-                  </View>
-                )}
+
+                {/* المبلغ — يدوي أو تلقائي */}
+                <View style={styles.amountLabelRow}>
+                  <Text style={styles.amountHint}>
+                    {cardCount && parseInt(cardCount) > 0 ? "محسوب تلقائياً — يمكن التعديل" : "أدخل المبلغ يدوياً"}
+                  </Text>
+                  <Text style={styles.fieldLabel}>المبلغ (ر.س)</Text>
+                </View>
+                <TextInput
+                  style={[styles.fieldInput, { borderColor: Colors.primary + "80" }]}
+                  value={cardsAmount}
+                  onChangeText={setCardsAmount}
+                  keyboardType="numeric"
+                  textAlign="right"
+                  placeholder="0"
+                  placeholderTextColor={Colors.textMuted}
+                />
               </>
             )}
 
-            {/* الجهة */}
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>الجهة المستلمة</Text>
-            <View style={styles.segRow}>
-              {([
-                ["finance_manager", "المسؤول المالي"],
-                ["supervisor",      "المشرف"],
-              ] as const).map(([v, l]) => (
-                <TouchableOpacity
-                  key={v} style={[styles.segBtn, toRole === v && styles.segBtnActive]}
-                  onPress={() => setToRole(v)}
-                >
-                  <Text style={[styles.segBtnTxt, toRole === v && styles.segBtnTxtActive]}>{l}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
             {/* ملاحظات */}
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>ملاحظات (اختياري)</Text>
+            <Text style={[styles.fieldLabel, { marginTop: 16 }]}>ملاحظات (اختياري)</Text>
             <TextInput
               style={[styles.fieldInput, { height: 70 }]}
-              value={notes} onChangeText={setNotes}
-              textAlign="right" multiline placeholder="أي ملاحظات..." placeholderTextColor={Colors.textMuted}
+              value={notes}
+              onChangeText={setNotes}
+              textAlign="right"
+              multiline
+              placeholder="أي ملاحظات..."
+              placeholderTextColor={Colors.textMuted}
             />
 
             <TouchableOpacity
               style={[styles.saveBtn, saving && { opacity: 0.5 }]}
-              onPress={handleSubmit} disabled={saving}
+              onPress={handleSubmit}
+              disabled={saving}
             >
               {saving
                 ? <ActivityIndicator color="#fff" />
@@ -422,9 +452,9 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
   visible: boolean; token: string | null;
   onClose: () => void; onSuccess: () => void; onError: (msg: string) => void;
 }) {
-  const [targetRole,   setTargetRole]   = useState<"finance_manager" | "supervisor" | "tech_engineer">("finance_manager");
-  const [description,  setDescription]  = useState("");
-  const [saving,       setSaving]       = useState(false);
+  const [targetRole,  setTargetRole]  = useState<"finance_manager" | "supervisor" | "tech_engineer">("finance_manager");
+  const [description, setDescription] = useState("");
+  const [saving,      setSaving]      = useState(false);
 
   const roles = [
     { v: "finance_manager" as const, l: "المسؤول المالي" },
@@ -446,9 +476,7 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
       onSuccess();
     } catch (e: any) {
       onError(e?.message ?? "فشل إضافة المهمة");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (
@@ -466,7 +494,8 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
           <View style={styles.segRow}>
             {roles.map(r => (
               <TouchableOpacity
-                key={r.v} style={[styles.segBtn, targetRole === r.v && styles.segBtnActive]}
+                key={r.v}
+                style={[styles.segBtn, targetRole === r.v && styles.segBtnActive]}
                 onPress={() => setTargetRole(r.v)}
               >
                 <Text style={[styles.segBtnTxt, targetRole === r.v && styles.segBtnTxtActive]}>{r.l}</Text>
@@ -474,16 +503,21 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
             ))}
           </View>
 
-          <Text style={[styles.fieldLabel, { marginTop: 14 }]}>وصف المهمة</Text>
+          <Text style={[styles.fieldLabel, { marginTop: 16 }]}>وصف المهمة</Text>
           <TextInput
             style={[styles.fieldInput, { height: 110 }]}
-            value={description} onChangeText={setDescription}
-            textAlign="right" multiline placeholder="اكتب وصف المهمة..." placeholderTextColor={Colors.textMuted}
+            value={description}
+            onChangeText={setDescription}
+            textAlign="right"
+            multiline
+            placeholder="اكتب وصف المهمة..."
+            placeholderTextColor={Colors.textMuted}
           />
 
           <TouchableOpacity
             style={[styles.saveBtn, saving && { opacity: 0.5 }]}
-            onPress={handleSubmit} disabled={saving}
+            onPress={handleSubmit}
+            disabled={saving}
           >
             {saving
               ? <ActivityIndicator color="#fff" />
@@ -503,7 +537,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   center:    { justifyContent: "center", alignItems: "center" },
 
-  /* Header */
   header: {
     flexDirection: "row-reverse",
     justifyContent: "space-between",
@@ -514,45 +547,28 @@ const styles = StyleSheet.create({
     borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: 18, fontWeight: "bold", color: Colors.text },
-
-  /* Scroll */
   content: { padding: 14, gap: 14 },
 
-  /* ── KPI Cards (نفس تصميم المسؤول المالي) ── */
+  /* KPI */
   kpiGrid: { gap: 10 },
   kpiRow:  { flexDirection: "row-reverse", gap: 10 },
   kpiCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    padding: 14,
-    gap: 6,
-    alignItems: "flex-end",
+    flex: 1, backgroundColor: Colors.surface,
+    borderRadius: 14, borderWidth: 1.5,
+    padding: 14, gap: 6, alignItems: "flex-end",
   },
-  kpiTop: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: 8,
-    width: "100%",
-  },
-  kpiIcon: {
-    width: 32, height: 32, borderRadius: 10,
-    alignItems: "center", justifyContent: "center",
-  },
-  kpiTitle: {
-    flex: 1, fontSize: 12, fontWeight: "600",
-    color: Colors.textSecondary, textAlign: "right",
-  },
+  kpiTop: { flexDirection: "row-reverse", alignItems: "center", gap: 8, width: "100%" },
+  kpiIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  kpiTitle: { flex: 1, fontSize: 12, fontWeight: "600", color: Colors.textSecondary, textAlign: "right" },
   kpiValue: { fontSize: 18, fontWeight: "800", textAlign: "right" },
   kpiSub:   { fontSize: 10, color: Colors.textMuted, textAlign: "right" },
 
-  /* Section Header */
+  /* Section */
   sectionHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
   sectionDot:    { width: 4, height: 18, borderRadius: 2 },
   sectionTitle:  { fontSize: 15, fontWeight: "700", color: Colors.text },
 
-  /* Action Buttons */
+  /* Actions */
   actionsBlock: { gap: 10 },
   actionRow:    { flexDirection: "row-reverse", gap: 10 },
   actionBtn: {
@@ -560,13 +576,10 @@ const styles = StyleSheet.create({
     borderRadius: 14, borderWidth: 1,
     paddingVertical: 14, alignItems: "center", gap: 8,
   },
-  actionIcon: {
-    width: 44, height: 44, borderRadius: 14,
-    alignItems: "center", justifyContent: "center",
-  },
+  actionIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   actionLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, textAlign: "center" },
 
-  /* Modals */
+  /* Modal */
   modalOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "flex-end",
@@ -574,7 +587,7 @@ const styles = StyleSheet.create({
   modalContent: {
     backgroundColor: Colors.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, maxHeight: "88%",
+    padding: 24, maxHeight: "90%",
   },
   modalHeader: {
     flexDirection: "row-reverse", justifyContent: "space-between",
@@ -582,40 +595,39 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
 
-  fieldLabel: {
-    fontSize: 13, fontWeight: "600", color: Colors.textSecondary,
-    textAlign: "right", marginBottom: 8,
-  },
+  fieldLabel: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary, textAlign: "right", marginBottom: 8 },
   fieldInput: {
     backgroundColor: Colors.background, borderRadius: 12, padding: 13,
     color: Colors.text, fontSize: 15, borderWidth: 1, borderColor: Colors.border,
   },
+
   segRow: { flexDirection: "row-reverse", gap: 8 },
   segBtn: {
-    flex: 1, paddingVertical: 11, alignItems: "center", borderRadius: 10,
-    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.background,
+    flex: 1, paddingVertical: 11, flexDirection: "row-reverse",
+    alignItems: "center", justifyContent: "center", gap: 6,
+    borderRadius: 10, borderWidth: 1.5,
+    borderColor: Colors.border, backgroundColor: Colors.background,
   },
-  segBtnActive:   { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
-  segBtnTxt:      { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  segBtnTxtActive:{ color: Colors.primary },
+  segBtnActive:    { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
+  segBtnTxt:       { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
+  segBtnTxtActive: { color: Colors.primary },
 
   denomBtn: {
     paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
     alignItems: "center", gap: 2,
   },
-  denomBtnActive:   { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
-  denomBtnTxt:      { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  denomBtnTxtActive:{ color: Colors.primary },
-  denomPrice:       { fontSize: 10, color: Colors.textMuted },
-  denomPriceActive: { color: Colors.primary },
+  denomBtnActive:    { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
+  denomBtnTxt:       { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
+  denomBtnTxtActive: { color: Colors.primary },
+  denomPrice:        { fontSize: 10, color: Colors.textMuted },
+  denomPriceActive:  { color: Colors.primary },
 
-  calcRow: {
-    flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
-    backgroundColor: Colors.primary + "12", borderRadius: 10, padding: 12, marginTop: 10,
+  amountLabelRow: {
+    flexDirection: "row-reverse", justifyContent: "space-between",
+    alignItems: "center", marginTop: 16,
   },
-  calcLbl: { fontSize: 13, color: Colors.textSecondary },
-  calcVal: { fontSize: 16, fontWeight: "800", color: Colors.primary },
+  amountHint: { fontSize: 11, color: Colors.textMuted, fontStyle: "italic" },
 
   saveBtn: {
     backgroundColor: Colors.primary, borderRadius: 14,
@@ -623,7 +635,7 @@ const styles = StyleSheet.create({
   },
   saveBtnTxt: { color: "#fff", fontWeight: "800", fontSize: 15 },
 
-  /* Alert Modal */
+  /* Alert */
   alertOverlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
     justifyContent: "center", alignItems: "center", padding: 24,

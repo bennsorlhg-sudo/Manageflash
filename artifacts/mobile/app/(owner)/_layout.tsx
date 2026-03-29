@@ -96,10 +96,15 @@ export default function OwnerTabLayout() {
       />
       <Tabs.Screen
         name="report"
-        options={{
-          href: null,
-          headerShown: false,
-        }}
+        options={{ href: null, headerShown: false }}
+      />
+      <Tabs.Screen
+        name="sales"
+        options={{ href: null, headerShown: false }}
+      />
+      <Tabs.Screen
+        name="expenses"
+        options={{ href: null, headerShown: false }}
       />
     </Tabs>
   );
