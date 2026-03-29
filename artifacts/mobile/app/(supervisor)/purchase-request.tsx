@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, RefreshControl, Platform,
+  ActivityIndicator, RefreshControl, Platform, Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,6 +34,9 @@ export default function PurchaseRequestScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success });
+  const showModal = (title: string, message: string, color = Colors.error) =>
+    setModal({ visible: true, title, message, color });
 
   const [formData, setFormData] = useState({
     description: "", quantity: "", unit: "", notes: "", priority: "medium", estimatedCost: "",
@@ -51,7 +54,7 @@ export default function PurchaseRequestScreen() {
   useEffect(() => { fetchRequests(); }, [fetchRequests]);
 
   const handleSubmit = async () => {
-    if (!formData.description) { Alert.alert("خطأ", "أدخل وصف الصنف المطلوب"); return; }
+    if (!formData.description) { showModal("خطأ", "أدخل وصف الصنف المطلوب"); return; }
     setSubmitting(true);
     try {
       const req = await apiPost("/purchase-requests", token, {
@@ -65,9 +68,9 @@ export default function PurchaseRequestScreen() {
       setRequests(prev => [req, ...prev]);
       setFormData({ description: "", quantity: "", unit: "", notes: "", priority: "medium", estimatedCost: "" });
       setShowForm(false);
-      Alert.alert("تم", "تم إرسال طلب الشراء بنجاح");
+      showModal("تم", "تم إرسال طلب الشراء بنجاح", Colors.success);
     } catch (e: any) {
-      Alert.alert("خطأ", e.message);
+      showModal("خطأ", e.message);
     } finally {
       setSubmitting(false);
     }
@@ -199,6 +202,19 @@ export default function PurchaseRequestScreen() {
           );
         })}
       </ScrollView>
+
+      <Modal visible={modal.visible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name={modal.color === Colors.success ? "checkmark-circle" : "alert-circle"} size={48} color={modal.color} />
+            <Text style={styles.modalTitle}>{modal.title}</Text>
+            {modal.message ? <Text style={styles.modalMsg}>{modal.message}</Text> : null}
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: modal.color }]} onPress={() => setModal(m => ({ ...m, visible: false }))}>
+              <Text style={styles.modalBtnText}>حسناً</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -235,4 +251,10 @@ const styles = StyleSheet.create({
   requestFooter: { flexDirection: "row-reverse", justifyContent: "space-between", marginTop: 10, paddingTop: 8, borderTopWidth: 1, borderTopColor: Colors.border },
   requestDate: { color: Colors.textMuted, fontSize: 11 },
   requestPriority: { color: Colors.textMuted, fontSize: 11 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 30 },
+  modalBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10 },
+  modalTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
+  modalMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  modalBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
+  modalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
 });

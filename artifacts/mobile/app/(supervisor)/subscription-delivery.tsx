@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, RefreshControl, Platform,
+  ActivityIndicator, RefreshControl, Platform, Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,6 +20,9 @@ export default function SubscriptionDeliveryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success });
+  const showModal = (title: string, message: string, color = Colors.error) =>
+    setModal({ visible: true, title, message, color });
 
   // Form state
   const [cardType, setCardType] = useState<"hotspot" | "broadband">("hotspot");
@@ -43,8 +46,8 @@ export default function SubscriptionDeliveryScreen() {
 
   const handleSubmit = async () => {
     const qty = parseInt(quantity);
-    if (!qty || qty <= 0) { Alert.alert("خطأ", "أدخل كمية صحيحة"); return; }
-    if (!recipientName) { Alert.alert("خطأ", "أدخل اسم مستلم الكروت"); return; }
+    if (!qty || qty <= 0) { showModal("خطأ", "أدخل كمية صحيحة"); return; }
+    if (!recipientName) { showModal("خطأ", "أدخل اسم مستلم الكروت"); return; }
 
     setSubmitting(true);
     try {
@@ -59,9 +62,9 @@ export default function SubscriptionDeliveryScreen() {
       setQuantity("1"); setRecipientName(""); setNotes("");
       await fetchHistory();
       setActiveTab("history");
-      Alert.alert("تم", `تم تسجيل تسليم ${qty} كرت بقيمة ${formatCurrency(totalValue)}`);
+      showModal("تم", `تم تسجيل تسليم ${qty} كرت بقيمة ${formatCurrency(totalValue)}`, Colors.success);
     } catch (e: any) {
-      Alert.alert("خطأ", e.message);
+      showModal("خطأ", e.message);
     } finally {
       setSubmitting(false);
     }
@@ -215,6 +218,19 @@ export default function SubscriptionDeliveryScreen() {
           )}
         </ScrollView>
       )}
+
+      <Modal visible={modal.visible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name={modal.color === Colors.success ? "checkmark-circle" : "alert-circle"} size={48} color={modal.color} />
+            <Text style={styles.modalTitle}>{modal.title}</Text>
+            {modal.message ? <Text style={styles.modalMsg}>{modal.message}</Text> : null}
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: modal.color }]} onPress={() => setModal(m => ({ ...m, visible: false }))}>
+              <Text style={styles.modalBtnText}>حسناً</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -257,4 +273,10 @@ const styles = StyleSheet.create({
   historyDetail: { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
   historyType: { fontSize: 11, color: Colors.textMuted },
   historyDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right", marginTop: 6 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 30 },
+  modalBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10 },
+  modalTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
+  modalMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  modalBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
+  modalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
 });

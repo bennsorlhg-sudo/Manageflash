@@ -10,17 +10,20 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPost, formatCurrency, formatDate } from "@/utils/api";
 
-type CustodyType = "cash" | "cards";
-
-/* ─── Alert Modal ─── */
-function AlertModal({ title, msg, visible, onClose }: { title: string; msg: string; visible: boolean; onClose: () => void }) {
+/* ─── مودال تأكيد بسيط (بديل عن Alert) ─── */
+function ConfirmModal({
+  visible, title, message, color, onClose,
+}: { visible: boolean; title: string; message: string; color: string; onClose: () => void }) {
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.alertOverlay}>
         <View style={styles.alertBox}>
+          <View style={[styles.alertIcon, { backgroundColor: color + "20" }]}>
+            <Ionicons name="checkmark-circle" size={40} color={color} />
+          </View>
           <Text style={styles.alertTitle}>{title}</Text>
-          {msg ? <Text style={styles.alertMsg}>{msg}</Text> : null}
-          <TouchableOpacity style={styles.alertBtn} onPress={onClose}>
+          {message ? <Text style={styles.alertMsg}>{message}</Text> : null}
+          <TouchableOpacity style={[styles.alertBtn, { backgroundColor: color }]} onPress={onClose}>
             <Text style={styles.alertBtnText}>حسناً</Text>
           </TouchableOpacity>
         </View>
@@ -29,236 +32,449 @@ function AlertModal({ title, msg, visible, onClose }: { title: string; msg: stri
   );
 }
 
+/* ─── حقل إدخال موحّد ─── */
+function Field({
+  label, value, onChange, placeholder, keyboard, hint,
+}: {
+  label: string; value: string; onChange: (v: string) => void;
+  placeholder?: string; keyboard?: any; hint?: string;
+}) {
+  return (
+    <View style={styles.fieldWrap}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <TextInput
+        style={styles.fieldInput}
+        value={value} onChangeText={onChange}
+        placeholder={placeholder ?? ""}
+        placeholderTextColor={Colors.textMuted}
+        keyboardType={keyboard ?? "default"}
+        textAlign="right"
+      />
+      {hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
+    </View>
+  );
+}
+
+type Tab = "send" | "receive" | "list";
+
 export default function CustodyScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { token } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<"send" | "history">("send");
-  const [custodyType, setCustodyType] = useState<CustodyType>("cash");
+  const [tab, setTab] = useState<Tab>("send");
 
-  // مشترك بين النوعين
-  const [amount, setAmount] = useState("");
-  const [recipient, setRecipient] = useState("");
-  const [notes, setNotes] = useState("");
+  /* ─── تسليم عهدة ─── */
+  const [sendAgent,  setSendAgent]  = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendNotes,  setSendNotes]  = useState("");
+  const [sending,    setSending]    = useState(false);
 
-  // History
-  const [history, setHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  /* ─── استلام عهدة ─── */
+  const [recAgent,    setRecAgent]    = useState("");
+  const [recCash,     setRecCash]     = useState("");
+  const [recCards,    setRecCards]    = useState("");
+  const [recNotes,    setRecNotes]    = useState("");
+  const [receiving,   setReceiving]   = useState(false);
+
+  /* ─── قائمة العهد ─── */
+  const [agents,    setAgents]    = useState<any[]>([]);
+  const [listLoad,  setListLoad]  = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
-  // Summary
-  const [summary, setSummary] = useState({ total: 0, cardsTotal: 0, cashTotal: 0 });
+  /* ─── مودال نتيجة ─── */
+  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success });
 
-  // Alert
-  const [alertVis, setAlertVis] = useState(false);
-  const [alertTitle, setAlertTitle] = useState("");
-  const [alertMsg, setAlertMsg] = useState("");
-  const showAlert = (t: string, m = "") => { setAlertTitle(t); setAlertMsg(m); setAlertVis(true); };
+  const showOk  = (title: string, msg: string, color = Colors.success) =>
+    setModal({ visible: true, title, message: msg, color });
 
-  const parsedAmount = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
-  const isValid = parsedAmount > 0 && recipient.trim().length > 0;
-
-  const fetchHistory = useCallback(async () => {
-    setLoading(true);
+  const fetchAgents = useCallback(async () => {
+    setListLoad(true);
     try {
-      const [data, sum] = await Promise.all([
-        apiGet("/custody", token),
-        apiGet("/custody/summary", token),
-      ]);
-      setHistory(data);
-      setSummary(sum);
+      const data = await apiGet("/custody/agents", token);
+      setAgents(Array.isArray(data) ? data : []);
     } catch {} finally {
-      setLoading(false); setRefreshing(false);
+      setListLoad(false); setRefreshing(false);
     }
   }, [token]);
 
-  useEffect(() => { fetchHistory(); }, [fetchHistory]);
+  useEffect(() => { fetchAgents(); }, [fetchAgents]);
 
+  /* ═══════════════════════════════════════════
+     تسليم عهدة
+  ═══════════════════════════════════════════ */
   const handleSend = async () => {
-    if (!isValid) { showAlert("خطأ", "أدخل المبلغ واسم المستلم"); return; }
-    setSubmitting(true);
+    const amount = parseFloat(sendAmount.replace(/[^0-9.]/g, "")) || 0;
+    if (!sendAgent.trim()) return showOk("خطأ", "أدخل اسم المندوب", Colors.error);
+    if (amount <= 0)       return showOk("خطأ", "أدخل قيمة الكروت", Colors.error);
+    setSending(true);
     try {
-      await apiPost("/custody", token, {
-        type: custodyType,
-        amount: parsedAmount,
-        personName: recipient.trim(),
-        notes: notes.trim() || undefined,
+      await apiPost("/custody/send", token, {
+        agentName: sendAgent.trim(),
+        amount,
+        notes: sendNotes.trim() || undefined,
       });
-      setAmount(""); setRecipient(""); setNotes("");
-      await fetchHistory();
-      setActiveTab("history");
-      showAlert("تم ✓", "تم تسجيل العهدة بنجاح");
+      setSendAgent(""); setSendAmount(""); setSendNotes("");
+      await fetchAgents();
+      showOk(
+        "تم تسليم العهدة ✓",
+        `تم تسليم ${formatCurrency(amount)} كروت للمندوب ${sendAgent.trim()}\nتم تحديث العهدة عند المندوبين`
+      );
     } catch (e: any) {
-      showAlert("خطأ", e.message ?? "فشل تسجيل العهدة");
+      showOk("خطأ", e?.message ?? "فشل التسليم", Colors.error);
     } finally {
-      setSubmitting(false);
+      setSending(false);
     }
   };
 
+  /* ═══════════════════════════════════════════
+     استلام عهدة
+  ═══════════════════════════════════════════ */
+  const handleReceive = async () => {
+    const cash  = parseFloat(recCash.replace(/[^0-9.]/g, ""))  || 0;
+    const cards = parseFloat(recCards.replace(/[^0-9.]/g, "")) || 0;
+    if (!recAgent.trim())      return showOk("خطأ", "أدخل اسم المندوب", Colors.error);
+    if (cash <= 0 && cards <= 0) return showOk("خطأ", "أدخل مبلغ النقد أو قيمة الكروت المرتجعة", Colors.error);
+    setReceiving(true);
+    try {
+      await apiPost("/custody/receive", token, {
+        agentName:     recAgent.trim(),
+        cashReceived:  cash  > 0 ? cash  : undefined,
+        cardsReturned: cards > 0 ? cards : undefined,
+        notes: recNotes.trim() || undefined,
+      });
+      const parts: string[] = [];
+      if (cash  > 0) parts.push(`${formatCurrency(cash)} نقد → أُضيف للصندوق`);
+      if (cards > 0) parts.push(`${formatCurrency(cards)} كروت مرتجعة`);
+      setRecAgent(""); setRecCash(""); setRecCards(""); setRecNotes("");
+      await fetchAgents();
+      showOk("تم الاستلام ✓", `من المندوب ${recAgent.trim()}\n${parts.join("\n")}`);
+    } catch (e: any) {
+      showOk("خطأ", e?.message ?? "فشل الاستلام", Colors.error);
+    } finally {
+      setReceiving(false);
+    }
+  };
+
+  /* ══════════════════════════════════════════════════
+     RENDER
+  ══════════════════════════════════════════════════ */
+  const sendValid = !!sendAgent.trim() && parseFloat(sendAmount || "0") > 0;
+  const recValid  = !!recAgent.trim() && (parseFloat(recCash || "0") > 0 || parseFloat(recCards || "0") > 0);
+
+  const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
+    { key: "send",    label: "تسليم",       icon: "arrow-up-circle",   color: Colors.warning },
+    { key: "receive", label: "استلام",       icon: "arrow-down-circle", color: Colors.success },
+    { key: "list",    label: "قائمة العهد", icon: "list",              color: Colors.info    },
+  ];
+
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
-      {/* Header */}
+      {/* ─── Header ─── */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-forward" size={24} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>إدارة العهدة</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "history" && styles.tabActive]}
-          onPress={() => setActiveTab("history")}
-        >
-          <Text style={[styles.tabText, activeTab === "history" && styles.tabTextActive]}>السجل</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === "send" && styles.tabActive]}
-          onPress={() => setActiveTab("send")}
-        >
-          <Text style={[styles.tabText, activeTab === "send" && styles.tabTextActive]}>إرسال عهدة</Text>
-        </TouchableOpacity>
+      {/* ─── Tabs ─── */}
+      <View style={styles.tabBar}>
+        {TABS.map(t => (
+          <TouchableOpacity
+            key={t.key}
+            style={[styles.tab, tab === t.key && { backgroundColor: t.color + "20", borderColor: t.color }]}
+            onPress={() => setTab(t.key)}
+          >
+            <Ionicons name={t.icon} size={18} color={tab === t.key ? t.color : Colors.textSecondary} />
+            <Text style={[styles.tabText, tab === t.key && { color: t.color }]}>{t.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {activeTab === "send" ? (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* نوع العهدة */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>نوع العهدة</Text>
-            <View style={styles.typeRow}>
-              <TouchableOpacity
-                style={[styles.typeBtn, custodyType === "cash" && styles.typeBtnActive]}
-                onPress={() => setCustodyType("cash")}
-              >
-                <Ionicons name="cash-outline" size={22} color={custodyType === "cash" ? "#FFF" : Colors.textSecondary} />
-                <Text style={[styles.typeBtnText, custodyType === "cash" && { color: "#FFF" }]}>نقدية</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.typeBtn, custodyType === "cards" && styles.typeBtnActive]}
-                onPress={() => setCustodyType("cards")}
-              >
-                <Ionicons name="card-outline" size={22} color={custodyType === "cards" ? "#FFF" : Colors.textSecondary} />
-                <Text style={[styles.typeBtnText, custodyType === "cards" && { color: "#FFF" }]}>كروت</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* المبلغ */}
-          <View style={styles.card}>
-            <Text style={styles.label}>
-              {custodyType === "cash" ? "المبلغ النقدي (ر.س)" : "قيمة الكروت (ر.س)"}
+      {/* ══════════════ تسليم عهدة ══════════════ */}
+      {tab === "send" && (
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {/* بطاقة شرح */}
+          <View style={styles.infoCard}>
+            <Ionicons name="information-circle" size={18} color={Colors.warning} />
+            <Text style={styles.infoText}>
+              تسليم كروت للمندوب يُنقص من إجمالي الكروت ويُضيف للعهدة عند المندوبين
             </Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={v => setAmount(v.replace(/[^0-9.]/g, ""))}
-              keyboardType="decimal-pad"
-              textAlign="right"
-              placeholder="0"
-              placeholderTextColor={Colors.textMuted}
-            />
-            {custodyType === "cash" && parsedAmount > 0 && (
-              <Text style={styles.hint}>سيُضاف للصندوق النقدي تلقائياً</Text>
-            )}
-            {custodyType === "cards" && parsedAmount > 0 && (
-              <Text style={[styles.hint, { color: Colors.info }]}>سيُضاف لمخزون الكروت</Text>
-            )}
           </View>
 
-          {/* المستلم والملاحظات */}
           <View style={styles.card}>
-            <Text style={styles.label}>اسم المستلم</Text>
-            <TextInput
-              style={styles.input}
-              value={recipient}
-              onChangeText={setRecipient}
-              textAlign="right"
-              placeholder="أدخل اسم المستلم"
-              placeholderTextColor={Colors.textMuted}
+            <Field
+              label="اسم المندوب *"
+              value={sendAgent}
+              onChange={setSendAgent}
+              placeholder="مثال: مشعل"
             />
-            <Text style={[styles.label, { marginTop: 14 }]}>ملاحظات (اختياري)</Text>
-            <TextInput
-              style={[styles.input, { height: 70, textAlignVertical: "top" }]}
-              value={notes}
-              onChangeText={setNotes}
-              textAlign="right"
-              multiline
-              placeholder="اختياري..."
-              placeholderTextColor={Colors.textMuted}
+            <Field
+              label="قيمة الكروت المُسلَّمة (ر.س) *"
+              value={sendAmount}
+              onChange={v => setSendAmount(v.replace(/[^0-9.]/g, ""))}
+              placeholder="0"
+              keyboard="decimal-pad"
+              hint="يُدخَل المبلغ الإجمالي مباشرة بدون تحديد الفئات"
+            />
+            <Field
+              label="ملاحظات (اختياري)"
+              value={sendNotes}
+              onChange={setSendNotes}
+              placeholder="أي ملاحظات..."
             />
           </View>
+
+          {/* ملخص */}
+          {sendValid && (
+            <View style={[styles.summaryBox, { borderColor: Colors.warning + "55" }]}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>المندوب</Text>
+                <Text style={styles.summaryValue}>{sendAgent}</Text>
+              </View>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>قيمة الكروت</Text>
+                <Text style={[styles.summaryValue, { color: Colors.warning }]}>
+                  {formatCurrency(parseFloat(sendAmount))}
+                </Text>
+              </View>
+              <View style={[styles.summaryRow, styles.effectRow]}>
+                <View style={styles.effectItem}>
+                  <Ionicons name="arrow-down" size={12} color={Colors.error} />
+                  <Text style={[styles.effectText, { color: Colors.error }]}>إجمالي الكروت</Text>
+                </View>
+                <View style={styles.effectItem}>
+                  <Ionicons name="arrow-up" size={12} color={Colors.warning} />
+                  <Text style={[styles.effectText, { color: Colors.warning }]}>عهدة المندوبين</Text>
+                </View>
+              </View>
+            </View>
+          )}
 
           <TouchableOpacity
-            style={[styles.submitBtn, (!isValid || submitting) && styles.submitBtnDisabled]}
+            style={[styles.submitBtn, { backgroundColor: Colors.warning }, (!sendValid || sending) && { opacity: 0.45 }]}
             onPress={handleSend}
-            disabled={!isValid || submitting}
+            disabled={!sendValid || sending}
           >
-            {submitting
+            {sending
               ? <ActivityIndicator color="#FFF" />
-              : <Text style={styles.submitBtnText}>تسجيل العهدة</Text>}
+              : <>
+                  <Ionicons name="arrow-up-circle" size={20} color="#FFF" />
+                  <Text style={styles.submitBtnText}>تسليم العهدة</Text>
+                </>}
           </TouchableOpacity>
-        </ScrollView>
-      ) : (
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchHistory(); }} />}
-        >
-          {/* ملخص */}
-          <View style={styles.summaryRow}>
-            <View style={[styles.summaryCard, { borderColor: Colors.primary + "40" }]}>
-              <Text style={styles.summaryLabel}>الإجمالي</Text>
-              <Text style={[styles.summaryValue, { color: Colors.primary }]}>{formatCurrency(summary.total)}</Text>
-            </View>
-            <View style={[styles.summaryCard, { borderColor: Colors.info + "40" }]}>
-              <Text style={styles.summaryLabel}>الكروت</Text>
-              <Text style={[styles.summaryValue, { color: Colors.info }]}>{formatCurrency(summary.cardsTotal)}</Text>
-            </View>
-            <View style={[styles.summaryCard, { borderColor: Colors.success + "40" }]}>
-              <Text style={styles.summaryLabel}>النقد</Text>
-              <Text style={[styles.summaryValue, { color: Colors.success }]}>{formatCurrency(summary.cashTotal)}</Text>
-            </View>
-          </View>
 
-          {loading ? (
-            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
-          ) : history.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="briefcase-outline" size={48} color={Colors.textMuted} />
-              <Text style={styles.emptyText}>لا توجد سجلات عهدة</Text>
-            </View>
-          ) : (
-            history.map(item => (
-              <View key={item.id} style={[styles.historyCard, { borderLeftWidth: 3, borderLeftColor: item.type === "cash" ? Colors.success : Colors.info }]}>
-                <View style={styles.historyHeader}>
-                  <Text style={[styles.historyAmount, { color: item.type === "cash" ? Colors.success : Colors.info }]}>
-                    {formatCurrency(parseFloat(item.amount))}
-                  </Text>
-                  <Text style={styles.historyName}>{item.toPersonName ?? "—"}</Text>
-                </View>
-                <View style={styles.historyFooter}>
-                  <View style={[styles.typePill, { backgroundColor: item.type === "cash" ? Colors.success + "20" : Colors.info + "20" }]}>
-                    <Text style={[styles.typePillText, { color: item.type === "cash" ? Colors.success : Colors.info }]}>
-                      {item.type === "cash" ? "نقدي" : "كروت"}
-                    </Text>
-                  </View>
-                  <Text style={styles.historyDate}>{formatDate(item.createdAt)}</Text>
-                </View>
-                {item.notes && <Text style={styles.historyNotes}>{item.notes}</Text>}
-              </View>
-            ))
-          )}
+          <View style={{ height: 40 }} />
         </ScrollView>
       )}
 
-      <AlertModal title={alertTitle} msg={alertMsg} visible={alertVis} onClose={() => setAlertVis(false)} />
+      {/* ══════════════ استلام عهدة ══════════════ */}
+      {tab === "receive" && (
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          {/* بطاقة شرح */}
+          <View style={[styles.infoCard, { borderColor: Colors.success + "40" }]}>
+            <Ionicons name="information-circle" size={18} color={Colors.success} />
+            <Text style={styles.infoText}>
+              النقد المستلم يُضاف للصندوق ويُسجَّل كمبيعات. الكروت المرتجعة تُضاف لإجمالي الكروت.
+              وكلاهما يُنقص العهدة عند المندوبين.
+            </Text>
+          </View>
+
+          <View style={styles.card}>
+            <Field
+              label="اسم المندوب *"
+              value={recAgent}
+              onChange={setRecAgent}
+              placeholder="مثال: مشعل"
+            />
+
+            {/* نقد */}
+            <View style={styles.receiveSection}>
+              <View style={styles.receiveSectionHeader}>
+                <Ionicons name="cash" size={16} color={Colors.success} />
+                <Text style={[styles.receiveSectionTitle, { color: Colors.success }]}>النقد المستلم</Text>
+              </View>
+              <TextInput
+                style={styles.fieldInput}
+                value={recCash}
+                onChangeText={v => setRecCash(v.replace(/[^0-9.]/g, ""))}
+                placeholder="0 — اتركه فارغاً إن لم يكن هناك نقد"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="decimal-pad"
+                textAlign="right"
+              />
+              {parseFloat(recCash || "0") > 0 && (
+                <Text style={[styles.fieldHint, { color: Colors.success }]}>
+                  ✓ يُضاف للصندوق النقدي + يُسجَّل كمبيعات
+                </Text>
+              )}
+            </View>
+
+            {/* كروت */}
+            <View style={styles.receiveSection}>
+              <View style={styles.receiveSectionHeader}>
+                <Ionicons name="card" size={16} color={Colors.info} />
+                <Text style={[styles.receiveSectionTitle, { color: Colors.info }]}>الكروت المرتجعة</Text>
+              </View>
+              <TextInput
+                style={styles.fieldInput}
+                value={recCards}
+                onChangeText={v => setRecCards(v.replace(/[^0-9.]/g, ""))}
+                placeholder="0 — اتركه فارغاً إن لم تكن هناك كروت"
+                placeholderTextColor={Colors.textMuted}
+                keyboardType="decimal-pad"
+                textAlign="right"
+              />
+              {parseFloat(recCards || "0") > 0 && (
+                <Text style={[styles.fieldHint, { color: Colors.info }]}>
+                  ✓ تُضاف لإجمالي الكروت لدى المسؤول المالي
+                </Text>
+              )}
+            </View>
+
+            <Field
+              label="ملاحظات (اختياري)"
+              value={recNotes}
+              onChange={setRecNotes}
+              placeholder="أي ملاحظات..."
+            />
+          </View>
+
+          {/* ملخص الأثر */}
+          {recValid && (
+            <View style={[styles.summaryBox, { borderColor: Colors.success + "55" }]}>
+              <Text style={[styles.summaryValue, { textAlign: "right", marginBottom: 8 }]}>
+                من المندوب: {recAgent}
+              </Text>
+              {parseFloat(recCash || "0") > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>نقد مستلم</Text>
+                  <Text style={[styles.summaryValue, { color: Colors.success }]}>
+                    {formatCurrency(parseFloat(recCash))}
+                  </Text>
+                </View>
+              )}
+              {parseFloat(recCards || "0") > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>كروت مرتجعة</Text>
+                  <Text style={[styles.summaryValue, { color: Colors.info }]}>
+                    {formatCurrency(parseFloat(recCards))}
+                  </Text>
+                </View>
+              )}
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>ينقص من عهدة المندوبين</Text>
+                <Text style={[styles.summaryValue, { color: Colors.error }]}>
+                  {formatCurrency((parseFloat(recCash || "0") + parseFloat(recCards || "0")))}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[styles.submitBtn, { backgroundColor: Colors.success }, (!recValid || receiving) && { opacity: 0.45 }]}
+            onPress={handleReceive}
+            disabled={!recValid || receiving}
+          >
+            {receiving
+              ? <ActivityIndicator color="#FFF" />
+              : <>
+                  <Ionicons name="arrow-down-circle" size={20} color="#FFF" />
+                  <Text style={styles.submitBtnText}>تأكيد الاستلام</Text>
+                </>}
+          </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
+
+      {/* ══════════════ قائمة العهد ══════════════ */}
+      {tab === "list" && (
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAgents(); }} />}
+        >
+          {listLoad ? (
+            <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 60 }} />
+          ) : agents.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Ionicons name="checkmark-circle" size={60} color={Colors.success} />
+              <Text style={styles.emptyTitle}>لا توجد عهد مفتوحة</Text>
+              <Text style={styles.emptyHint}>جميع العهد تم تصفيتها بالكامل</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.listCount}>{agents.length} عهدة مفتوحة</Text>
+              {agents.map((a, idx) => {
+                const pct = a.totalSent > 0 ? ((a.totalSent - a.remaining) / a.totalSent) * 100 : 0;
+                return (
+                  <View key={`${a.agentName}-${idx}`} style={styles.agentCard}>
+                    {/* رأس البطاقة */}
+                    <View style={styles.agentHeader}>
+                      <View style={styles.agentAvatar}>
+                        <Text style={styles.agentAvatarText}>{a.agentName?.charAt(0) ?? "م"}</Text>
+                      </View>
+                      <View style={styles.agentInfo}>
+                        <Text style={styles.agentName}>{a.agentName}</Text>
+                        <Text style={styles.agentSub}>عهدة مفتوحة</Text>
+                      </View>
+                      <View style={styles.agentRemaining}>
+                        <Text style={styles.agentRemainingLabel}>المتبقي</Text>
+                        <Text style={styles.agentRemainingValue}>{formatCurrency(a.remaining)}</Text>
+                      </View>
+                    </View>
+
+                    {/* شريط التقدم */}
+                    <View style={styles.progressWrap}>
+                      <View style={[styles.progressBar, { width: `${Math.min(100, pct)}%` as any }]} />
+                    </View>
+
+                    {/* تفاصيل */}
+                    <View style={styles.agentDetails}>
+                      <View style={styles.agentDetailItem}>
+                        <Text style={styles.agentDetailLabel}>إجمالي المُسلَّم</Text>
+                        <Text style={[styles.agentDetailValue, { color: Colors.warning }]}>
+                          {formatCurrency(a.totalSent)}
+                        </Text>
+                      </View>
+                      <View style={styles.agentDetailItem}>
+                        <Text style={styles.agentDetailLabel}>المستلم حتى الآن</Text>
+                        <Text style={[styles.agentDetailValue, { color: Colors.success }]}>
+                          {formatCurrency(a.totalReceived)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* زر استلام سريع */}
+                    <TouchableOpacity
+                      style={styles.quickReceiveBtn}
+                      onPress={() => {
+                        setRecAgent(a.agentName);
+                        setTab("receive");
+                      }}
+                    >
+                      <Ionicons name="arrow-down-circle" size={16} color={Colors.success} />
+                      <Text style={styles.quickReceiveBtnText}>استلام من {a.agentName}</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </>
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
+
+      {/* ─── مودال النتيجة ─── */}
+      <ConfirmModal
+        visible={modal.visible}
+        title={modal.title}
+        message={modal.message}
+        color={modal.color}
+        onClose={() => setModal(m => ({ ...m, visible: false }))}
+      />
     </View>
   );
 }
@@ -266,67 +482,122 @@ export default function CustodyScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   header: {
-    flexDirection: "row-reverse", justifyContent: "space-between",
-    alignItems: "center", paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: Colors.text },
-  backButton: { padding: 4 },
 
-  tabs: { flexDirection: "row-reverse", padding: 14, gap: 8 },
-  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
-  tabActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
-  tabTextActive: { color: "#FFF" },
-
-  content: { padding: 16, paddingTop: 4 },
-
-  card: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.border },
-  cardTitle: { fontSize: 15, fontWeight: "600", color: Colors.text, marginBottom: 14, textAlign: "right" },
-
-  typeRow: { flexDirection: "row-reverse", gap: 12 },
-  typeBtn: { flex: 1, alignItems: "center", padding: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, gap: 8 },
-  typeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  typeBtnText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
-
-  label: { fontSize: 14, color: Colors.textSecondary, textAlign: "right", marginBottom: 8 },
-  input: {
-    backgroundColor: Colors.background, borderRadius: 12, padding: 14,
-    color: Colors.text, borderWidth: 1, borderColor: Colors.border, fontSize: 16,
+  /* Tabs */
+  tabBar: { flexDirection: "row-reverse", padding: 12, gap: 8 },
+  tab: {
+    flex: 1, flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 5, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
-  amountInput: {
-    backgroundColor: Colors.background, borderRadius: 12, padding: 16,
-    color: Colors.text, borderWidth: 1, borderColor: Colors.border,
-    fontSize: 28, fontWeight: "bold", textAlign: "right",
+  tabText: { fontSize: 12, fontWeight: "700", color: Colors.textSecondary },
+
+  content: { padding: 16 },
+
+  /* Info */
+  infoCard: {
+    flexDirection: "row-reverse", alignItems: "flex-start", gap: 8,
+    backgroundColor: Colors.warning + "12", borderRadius: 12, padding: 12,
+    borderWidth: 1, borderColor: Colors.warning + "40", marginBottom: 14,
   },
-  hint: { fontSize: 12, color: Colors.textMuted, textAlign: "right", marginTop: 6 },
+  infoText: { flex: 1, fontSize: 12, color: Colors.textSecondary, textAlign: "right", lineHeight: 18 },
 
-  submitBtn: { backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, alignItems: "center", marginTop: 4 },
-  submitBtnDisabled: { opacity: 0.4 },
-  submitBtnText: { fontSize: 18, fontWeight: "bold", color: "#FFF" },
+  /* Card */
+  card: {
+    backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    marginBottom: 14, borderWidth: 1, borderColor: Colors.border, gap: 2,
+  },
 
-  summaryRow: { flexDirection: "row-reverse", gap: 8, marginBottom: 16 },
-  summaryCard: { flex: 1, backgroundColor: Colors.surface, borderRadius: 12, padding: 12, alignItems: "center", borderWidth: 1 },
-  summaryLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
-  summaryValue: { fontSize: 14, fontWeight: "bold" },
+  /* Field */
+  fieldWrap: { marginBottom: 14 },
+  fieldLabel: { fontSize: 13, color: Colors.textSecondary, textAlign: "right", marginBottom: 7, fontWeight: "600" },
+  fieldInput: {
+    backgroundColor: Colors.background, borderRadius: 10, padding: 13,
+    color: Colors.text, fontSize: 15, borderWidth: 1, borderColor: Colors.border,
+  },
+  fieldHint: { fontSize: 11, color: Colors.textMuted, textAlign: "right", marginTop: 5 },
 
-  emptyContainer: { alignItems: "center", marginTop: 60, gap: 12 },
-  emptyText: { color: Colors.textMuted, fontSize: 15 },
+  /* Receive sections */
+  receiveSection: { marginBottom: 16 },
+  receiveSectionHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 6, marginBottom: 8 },
+  receiveSectionTitle: { fontSize: 14, fontWeight: "700" },
 
-  historyCard: { backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Colors.border },
-  historyHeader: { flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 8 },
-  historyName: { fontSize: 14, fontWeight: "bold", color: Colors.text },
-  historyAmount: { fontSize: 16, fontWeight: "bold" },
-  historyFooter: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
-  historyDate: { fontSize: 11, color: Colors.textMuted },
-  typePill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
-  typePillText: { fontSize: 11, fontWeight: "600" },
-  historyNotes: { fontSize: 12, color: Colors.textMuted, marginTop: 6, textAlign: "right" },
+  /* Summary */
+  summaryBox: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1.5, marginBottom: 14,
+  },
+  summaryRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", paddingVertical: 5 },
+  summaryLabel: { fontSize: 13, color: Colors.textSecondary },
+  summaryValue: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  effectRow: { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10, marginTop: 4 },
+  effectItem: { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
+  effectText: { fontSize: 11, fontWeight: "600" },
 
-  alertOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 30 },
-  alertBox: { backgroundColor: Colors.surface, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: Colors.border },
-  alertTitle: { color: Colors.text, fontSize: 17, fontWeight: "bold", textAlign: "right", marginBottom: 8 },
-  alertMsg: { color: Colors.textSecondary, fontSize: 14, textAlign: "right", marginBottom: 16 },
-  alertBtn: { backgroundColor: Colors.primary, borderRadius: 10, padding: 12, alignItems: "center" },
-  alertBtnText: { color: "#FFF", fontWeight: "bold" },
+  /* Submit */
+  submitBtn: {
+    borderRadius: 14, paddingVertical: 15,
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center", gap: 8,
+  },
+  submitBtnText: { fontSize: 17, fontWeight: "bold", color: "#FFF" },
+
+  /* Agent List */
+  listCount: { fontSize: 12, color: Colors.textMuted, textAlign: "right", marginBottom: 12 },
+  agentCard: {
+    backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    marginBottom: 12, borderWidth: 1, borderColor: Colors.border,
+  },
+  agentHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 12, marginBottom: 12 },
+  agentAvatar: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: Colors.warning + "25",
+    justifyContent: "center", alignItems: "center",
+  },
+  agentAvatarText: { fontSize: 20, fontWeight: "bold", color: Colors.warning },
+  agentInfo: { flex: 1, alignItems: "flex-end" },
+  agentName: { fontSize: 16, fontWeight: "bold", color: Colors.text },
+  agentSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
+  agentRemaining: { alignItems: "flex-start" },
+  agentRemainingLabel: { fontSize: 10, color: Colors.textMuted },
+  agentRemainingValue: { fontSize: 18, fontWeight: "800", color: Colors.error },
+
+  progressWrap: {
+    height: 5, backgroundColor: Colors.border, borderRadius: 3, marginBottom: 12, overflow: "hidden",
+  },
+  progressBar: { height: "100%", backgroundColor: Colors.success, borderRadius: 3 },
+
+  agentDetails: { flexDirection: "row-reverse", gap: 8, marginBottom: 12 },
+  agentDetailItem: {
+    flex: 1, backgroundColor: Colors.background, borderRadius: 10, padding: 10, alignItems: "center",
+  },
+  agentDetailLabel: { fontSize: 10, color: Colors.textMuted, marginBottom: 4 },
+  agentDetailValue: { fontSize: 14, fontWeight: "700" },
+
+  quickReceiveBtn: {
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 9, borderRadius: 10,
+    backgroundColor: Colors.success + "15", borderWidth: 1, borderColor: Colors.success + "40",
+  },
+  quickReceiveBtnText: { fontSize: 13, fontWeight: "600", color: Colors.success },
+
+  /* Empty */
+  emptyBox: { alignItems: "center", marginTop: 80, gap: 12 },
+  emptyTitle: { fontSize: 18, fontWeight: "bold", color: Colors.text },
+  emptyHint: { fontSize: 13, color: Colors.textMuted },
+
+  /* Alert Modal */
+  alertOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 30 },
+  alertBox: {
+    backgroundColor: Colors.surface, borderRadius: 20, padding: 24,
+    borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10,
+  },
+  alertIcon: { width: 70, height: 70, borderRadius: 35, justifyContent: "center", alignItems: "center", marginBottom: 4 },
+  alertTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text, textAlign: "center" },
+  alertMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  alertBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
+  alertBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
 });

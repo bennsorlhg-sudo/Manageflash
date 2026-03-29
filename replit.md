@@ -186,7 +186,7 @@ Express 5 API server. Routes live in `src/routes/` and use `@workspace/api-zod` 
   - `src/routes/users.ts` — `GET/POST /api/users`, `GET/PUT /api/users/:id`, `POST /api/users/:id/toggle-active`
   - `src/routes/network.ts` — `GET /api/network/hotspot-points`, broadband, sales
   - `src/routes/dashboard.ts` — `GET /api/dashboard/summary`, `GET /api/card-prices`
-  - `src/routes/custody.ts` — `POST/GET /api/custody`
+  - `src/routes/custody.ts` — `POST/GET /api/custody`, `POST /api/custody/send`, `POST /api/custody/receive`, `GET /api/custody/agents`, `GET /api/custody/summary`
   - `src/routes/tasks.ts` — `POST/GET /api/tasks` (owner-assigned tasks)
   - `src/routes/finances.ts` — `GET /api/finances/report`
   - `src/routes/import.ts` — `POST /api/import/hotspot|broadband|sales-points`

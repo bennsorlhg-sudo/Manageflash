@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, Alert, ActivityIndicator, Platform,
+  TouchableOpacity, ActivityIndicator, Platform, Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +21,9 @@ export default function FinanceAuditScreen() {
   const [actualCards, setActualCards] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success, goBack: false });
+  const showModal = (title: string, message: string, color = Colors.error, goBack = false) =>
+    setModal({ visible: true, title, message, color, goBack });
 
   const fetchSystemData = useCallback(async () => {
     try {
@@ -54,13 +57,12 @@ export default function FinanceAuditScreen() {
 
   const handleSubmit = async () => {
     if (!actualCash && !actualCards) {
-      Alert.alert("خطأ", "أدخل القيم الفعلية للنقد أو الكروت على الأقل");
+      showModal("خطأ", "أدخل القيم الفعلية للنقد أو الكروت على الأقل");
       return;
     }
     setSubmitting(true);
     try {
-      Alert.alert("تم", `تم حفظ تقرير الجرد.\nالفرق الإجمالي: ${diffLabel(totalDiff)}`);
-      router.back();
+      showModal("تم حفظ الجرد", `الفرق الإجمالي: ${diffLabel(totalDiff)}`, Colors.success, true);
     } finally {
       setSubmitting(false);
     }
@@ -170,6 +172,22 @@ export default function FinanceAuditScreen() {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal visible={modal.visible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name={modal.color === Colors.success ? "checkmark-circle" : "alert-circle"} size={48} color={modal.color} />
+            <Text style={styles.modalTitle}>{modal.title}</Text>
+            {modal.message ? <Text style={styles.modalMsg}>{modal.message}</Text> : null}
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: modal.color }]}
+              onPress={() => { setModal(m => ({ ...m, visible: false })); if (modal.goBack) router.back(); }}
+            >
+              <Text style={styles.modalBtnText}>حسناً</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -194,4 +212,10 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: 16, fontWeight: "bold" },
   submitBtn: { backgroundColor: Colors.roles.supervisor, borderRadius: 14, paddingVertical: 16, alignItems: "center", marginBottom: 12 },
   submitBtnText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 30 },
+  modalBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10 },
+  modalTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
+  modalMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  modalBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
+  modalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
 });

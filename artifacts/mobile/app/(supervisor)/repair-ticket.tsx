@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Linking, Alert, ActivityIndicator, Platform,
+  Linking, ActivityIndicator, Platform, Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,12 +29,17 @@ export default function RepairTicketScreen() {
   const [fetching, setFetching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [engineers, setEngineers] = useState<{ id: number; name: string; phone: string }[]>([]);
+  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success, goBack: false });
 
   useEffect(() => {
     apiGet("/users/engineers", token)
       .then(setEngineers)
       .catch(() => {});
   }, [token]);
+
+  const showModal = (title: string, message: string, color = Colors.error, goBack = false) => {
+    setModal({ visible: true, title, message, color, goBack });
+  };
 
   const detectServiceType = (num: string) => {
     if (num.toLowerCase().startsWith("p")) return "broadband";
@@ -49,27 +54,20 @@ export default function RepairTicketScreen() {
       const points = await apiGet(`/network/${serviceType === "broadband" ? "broadband" : "hotspot"}-points`, token);
       const match = points.find((p: any) =>
         p.id === parseInt(serviceNumber.replace(/[^0-9]/g, "")) ||
-        p.name.includes(serviceNumber)
+        p.name?.includes(serviceNumber)
       );
       if (match) {
-        setClientData({
-          name: match.name,
-          location: match.location,
-          type: serviceType,
-          status: match.status,
-        });
+        setClientData({ name: match.name, location: match.location, type: serviceType, status: match.status });
       } else {
         setClientData({
           name: serviceType === "broadband" ? `عميل برودباند - ${serviceNumber}` : `عميل هوتسبوت - ${serviceNumber}`,
-          location: "غير محدد",
-          type: serviceType,
+          location: "غير محدد", type: serviceType,
         });
       }
     } catch {
       setClientData({
         name: serviceType === "broadband" ? `عميل برودباند - ${serviceNumber}` : `عميل هوتسبوت - ${serviceNumber}`,
-        location: "غير محدد",
-        type: serviceType,
+        location: "غير محدد", type: serviceType,
       });
     } finally {
       setFetching(false);
@@ -78,7 +76,7 @@ export default function RepairTicketScreen() {
 
   const handleSubmit = async () => {
     if (!serviceNumber || !description) {
-      Alert.alert("خطأ", "يرجى إدخال رقم الخدمة ووصف المشكلة");
+      showModal("خطأ", "يرجى إدخال رقم الخدمة ووصف المشكلة");
       return;
     }
     setSubmitting(true);
@@ -92,11 +90,9 @@ export default function RepairTicketScreen() {
         assignedToName: assignedToName || undefined,
         locationUrl: locationUrl || undefined,
       });
-      Alert.alert("تم", "تم إنشاء تذكرة الإصلاح بنجاح", [
-        { text: "حسناً", onPress: () => router.back() }
-      ]);
+      showModal("تم", "تم إنشاء تذكرة الإصلاح بنجاح", Colors.success, true);
     } catch (e: any) {
-      Alert.alert("خطأ", e.message ?? "فشل إنشاء التذكرة");
+      showModal("خطأ", e.message ?? "فشل إنشاء التذكرة");
     } finally {
       setSubmitting(false);
     }
@@ -113,7 +109,6 @@ export default function RepairTicketScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        {/* رقم الخدمة */}
         <View style={styles.card}>
           <Text style={styles.label}>رقم الخدمة (مثال: 30 هوتسبوت، p30 برودباند)</Text>
           <View style={styles.inputRow}>
@@ -125,13 +120,12 @@ export default function RepairTicketScreen() {
             <TouchableOpacity style={styles.fetchButton} onPress={handleFetch} disabled={fetching}>
               {fetching
                 ? <ActivityIndicator size="small" color="#FFF" />
-                : <Text style={styles.fetchButtonText}>جلب البيانات</Text>
+                : <Text style={styles.fetchButtonText}>جلب</Text>
               }
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* بيانات العميل */}
         {clientData && (
           <View style={styles.clientCard}>
             <View style={styles.clientHeader}>
@@ -142,10 +136,10 @@ export default function RepairTicketScreen() {
                 </Text>
               </View>
             </View>
-            {clientData.location !== "غير محدد" && (
+            {clientData.location && clientData.location !== "غير محدد" && (
               <TouchableOpacity
                 style={styles.detailRow}
-                onPress={() => clientData.location && Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(clientData.location)}`)}
+                onPress={() => Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(clientData.location)}`)}
               >
                 <Ionicons name="location" size={16} color={Colors.primaryLight} />
                 <Text style={[styles.detailValue, { color: Colors.primaryLight }]}>{clientData.location}</Text>
@@ -160,7 +154,6 @@ export default function RepairTicketScreen() {
           </View>
         )}
 
-        {/* وصف المشكلة */}
         <View style={styles.card}>
           <Text style={styles.label}>وصف المشكلة *</Text>
           <TextInput
@@ -170,7 +163,6 @@ export default function RepairTicketScreen() {
           />
         </View>
 
-        {/* الأولوية */}
         <View style={styles.card}>
           <Text style={styles.label}>الأولوية</Text>
           <View style={styles.priorityRow}>
@@ -186,7 +178,6 @@ export default function RepairTicketScreen() {
           </View>
         </View>
 
-        {/* المهندس المعين */}
         <View style={styles.card}>
           <Text style={styles.label}>إسناد إلى</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.engineerRow}>
@@ -194,7 +185,7 @@ export default function RepairTicketScreen() {
               style={[styles.engChip, assignedToId === null && styles.engChipActive]}
               onPress={() => { setAssignedToId(null); setAssignedToName(""); }}
             >
-              <Text style={[styles.engChipText, assignedToId === null && styles.engChipTextActive]}>الكل</Text>
+              <Text style={[styles.engChipText, assignedToId === null && styles.engChipTextActive]}>غير محدد</Text>
             </TouchableOpacity>
             {engineers.map(eng => (
               <TouchableOpacity
@@ -215,15 +206,42 @@ export default function RepairTicketScreen() {
           <TextInput
             style={styles.inputFull} placeholder="https://maps.google.com/..."
             placeholderTextColor={Colors.textMuted} value={locationUrl}
-            onChangeText={setLocationUrl} textAlign="right"
-            autoCapitalize="none"
+            onChangeText={setLocationUrl} textAlign="right" autoCapitalize="none"
           />
         </View>
 
-        <TouchableOpacity style={[styles.submitButton, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
+        <TouchableOpacity
+          style={[styles.submitButton, submitting && { opacity: 0.6 }]}
+          onPress={handleSubmit} disabled={submitting}
+        >
           {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.submitButtonText}>إنشاء تذكرة الإصلاح</Text>}
         </TouchableOpacity>
+
+        <View style={{ height: 40 }} />
       </ScrollView>
+
+      {/* مودال النتيجة */}
+      <Modal visible={modal.visible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons
+              name={modal.color === Colors.success ? "checkmark-circle" : "alert-circle"}
+              size={48} color={modal.color}
+            />
+            <Text style={styles.modalTitle}>{modal.title}</Text>
+            {modal.message ? <Text style={styles.modalMsg}>{modal.message}</Text> : null}
+            <TouchableOpacity
+              style={[styles.modalBtn, { backgroundColor: modal.color }]}
+              onPress={() => {
+                setModal(m => ({ ...m, visible: false }));
+                if (modal.goBack) router.back();
+              }}
+            >
+              <Text style={styles.modalBtnText}>حسناً</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -236,15 +254,9 @@ const styles = StyleSheet.create({
   card: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
   label: { fontSize: 14, color: Colors.textSecondary, textAlign: "right", marginBottom: 8 },
   inputRow: { flexDirection: "row-reverse", gap: 10 },
-  input: {
-    flex: 1, backgroundColor: Colors.background, borderRadius: 8, padding: 12,
-    color: Colors.text, textAlign: "right", borderWidth: 1, borderColor: Colors.border,
-  },
-  inputFull: {
-    backgroundColor: Colors.background, borderRadius: 8, padding: 12,
-    color: Colors.text, textAlign: "right", borderWidth: 1, borderColor: Colors.border,
-  },
-  fetchButton: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 15, justifyContent: "center", minWidth: 80 },
+  input: { flex: 1, backgroundColor: Colors.background, borderRadius: 8, padding: 12, color: Colors.text, textAlign: "right", borderWidth: 1, borderColor: Colors.border },
+  inputFull: { backgroundColor: Colors.background, borderRadius: 8, padding: 12, color: Colors.text, textAlign: "right", borderWidth: 1, borderColor: Colors.border },
+  fetchButton: { backgroundColor: Colors.primary, borderRadius: 8, paddingHorizontal: 15, justifyContent: "center", minWidth: 70 },
   fetchButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 12 },
   clientCard: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.primary + "33" },
   clientHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
@@ -257,15 +269,18 @@ const styles = StyleSheet.create({
   priorityRow: { flexDirection: "row-reverse", gap: 8, flexWrap: "wrap" },
   priorityBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
   priorityBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: "500" },
-  submitButton: { backgroundColor: Colors.success, borderRadius: 12, padding: 16, alignItems: "center", marginTop: 16 },
+  submitButton: { backgroundColor: Colors.success, borderRadius: 12, padding: 16, alignItems: "center", marginTop: 8 },
   submitButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 16 },
   engineerRow: { flexDirection: "row-reverse", gap: 8, paddingBottom: 4 },
-  engChip: {
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
-  },
+  engChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
   engChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   engChipText: { fontSize: 13, color: Colors.textSecondary },
   engChipTextActive: { color: "#FFF", fontWeight: "bold" },
   selectedHint: { fontSize: 12, color: Colors.success, textAlign: "right", marginTop: 8 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 30 },
+  modalBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10 },
+  modalTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
+  modalMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  modalBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
+  modalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
 });

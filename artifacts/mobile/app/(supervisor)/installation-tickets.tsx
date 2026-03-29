@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Alert, ActivityIndicator, RefreshControl, Linking, Platform,
+  ActivityIndicator, RefreshControl, Linking, Platform, Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,6 +32,9 @@ export default function InstallationTicketsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success });
+  const showModal = (title: string, message: string, color = Colors.error) =>
+    setModal({ visible: true, title, message, color });
 
   const [formData, setFormData] = useState({
     clientName: "", clientPhone: "", serviceType: "hotspot_internal",
@@ -61,7 +64,7 @@ export default function InstallationTicketsScreen() {
 
   const handleSubmit = async () => {
     if (!formData.clientName || !formData.clientPhone) {
-      Alert.alert("خطأ", "أدخل اسم العميل ورقم الهاتف");
+      showModal("خطأ", "أدخل اسم العميل ورقم الهاتف");
       return;
     }
     setSubmitting(true);
@@ -71,9 +74,9 @@ export default function InstallationTicketsScreen() {
       setActiveTab("new");
       setAssignedToId(null);
       setFormData({ clientName: "", clientPhone: "", serviceType: "hotspot_internal", locationUrl: "", address: "", notes: "", assignedToName: "" });
-      Alert.alert("تم", "تم إنشاء تذكرة التركيب بنجاح");
+      showModal("تم", "تم إنشاء تذكرة التركيب بنجاح", Colors.success);
     } catch (e: any) {
-      Alert.alert("خطأ", e.message);
+      showModal("خطأ", e.message);
     } finally {
       setSubmitting(false);
     }
@@ -84,7 +87,7 @@ export default function InstallationTicketsScreen() {
       const updated = await apiPatch(`/tickets/installation/${id}`, token, { status });
       setTickets(prev => prev.map(t => t.id === id ? updated : t));
     } catch (e: any) {
-      Alert.alert("خطأ", e.message);
+      showModal("خطأ", e.message);
     }
   };
 
@@ -265,6 +268,19 @@ export default function InstallationTicketsScreen() {
           ) : filteredTickets.map(renderTicket)}
         </ScrollView>
       )}
+
+      <Modal visible={modal.visible} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalBox}>
+            <Ionicons name={modal.color === Colors.success ? "checkmark-circle" : "alert-circle"} size={48} color={modal.color} />
+            <Text style={styles.modalTitle}>{modal.title}</Text>
+            {modal.message ? <Text style={styles.modalMsg}>{modal.message}</Text> : null}
+            <TouchableOpacity style={[styles.modalBtn, { backgroundColor: modal.color }]} onPress={() => setModal(m => ({ ...m, visible: false }))}>
+              <Text style={styles.modalBtnText}>حسناً</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -311,4 +327,10 @@ const styles = StyleSheet.create({
   engChipText: { fontSize: 13, color: Colors.textSecondary },
   engChipTextActive: { color: "#FFF", fontWeight: "bold" },
   selectedHint: { fontSize: 12, color: Colors.success, textAlign: "right", marginTop: 8 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 30 },
+  modalBox: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10 },
+  modalTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
+  modalMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  modalBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
+  modalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
 });
