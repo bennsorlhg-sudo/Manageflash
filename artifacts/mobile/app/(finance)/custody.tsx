@@ -1,16 +1,33 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Platform, Alert, ActivityIndicator, RefreshControl,
+  TextInput, Platform, ActivityIndicator, RefreshControl, Modal,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost, formatCurrency, formatDate, DENOMINATIONS, CARD_PRICES } from "@/utils/api";
+import { apiGet, apiPost, formatCurrency, formatDate } from "@/utils/api";
 
 type CustodyType = "cash" | "cards";
+
+/* ─── Alert Modal ─── */
+function AlertModal({ title, msg, visible, onClose }: { title: string; msg: string; visible: boolean; onClose: () => void }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={styles.alertOverlay}>
+        <View style={styles.alertBox}>
+          <Text style={styles.alertTitle}>{title}</Text>
+          {msg ? <Text style={styles.alertMsg}>{msg}</Text> : null}
+          <TouchableOpacity style={styles.alertBtn} onPress={onClose}>
+            <Text style={styles.alertBtnText}>حسناً</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 export default function CustodyScreen() {
   const insets = useSafeAreaInsets();
@@ -20,14 +37,10 @@ export default function CustodyScreen() {
   const [activeTab, setActiveTab] = useState<"send" | "history">("send");
   const [custodyType, setCustodyType] = useState<CustodyType>("cash");
 
-  // Cash send
-  const [cashAmount, setCashAmount] = useState("");
+  // مشترك بين النوعين
+  const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
   const [notes, setNotes] = useState("");
-
-  // Cards send
-  const [denomination, setDenomination] = useState(500);
-  const [quantity, setQuantity] = useState("1");
 
   // History
   const [history, setHistory] = useState<any[]>([]);
@@ -35,13 +48,27 @@ export default function CustodyScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  const totalCardsValue = (CARD_PRICES[denomination] ?? denomination) * (parseInt(quantity) || 0);
+  // Summary
+  const [summary, setSummary] = useState({ total: 0, cardsTotal: 0, cashTotal: 0 });
+
+  // Alert
+  const [alertVis, setAlertVis] = useState(false);
+  const [alertTitle, setAlertTitle] = useState("");
+  const [alertMsg, setAlertMsg] = useState("");
+  const showAlert = (t: string, m = "") => { setAlertTitle(t); setAlertMsg(m); setAlertVis(true); };
+
+  const parsedAmount = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
+  const isValid = parsedAmount > 0 && recipient.trim().length > 0;
 
   const fetchHistory = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiGet("/custody", token);
+      const [data, sum] = await Promise.all([
+        apiGet("/custody", token),
+        apiGet("/custody/summary", token),
+      ]);
       setHistory(data);
+      setSummary(sum);
     } catch {} finally {
       setLoading(false); setRefreshing(false);
     }
@@ -50,29 +77,21 @@ export default function CustodyScreen() {
   useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
   const handleSend = async () => {
-    const value = custodyType === "cash"
-      ? parseFloat(cashAmount)
-      : totalCardsValue;
-
-    if (!value || value <= 0) { Alert.alert("خطأ", "أدخل قيمة صحيحة"); return; }
-    if (!recipient) { Alert.alert("خطأ", "أدخل اسم المستلم"); return; }
-
+    if (!isValid) { showAlert("خطأ", "أدخل المبلغ واسم المستلم"); return; }
     setSubmitting(true);
     try {
       await apiPost("/custody", token, {
         type: custodyType,
-        amount: value,
-        personName: recipient,
-        denomination: custodyType === "cards" ? denomination : undefined,
-        quantity: custodyType === "cards" ? parseInt(quantity) : undefined,
-        notes,
+        amount: parsedAmount,
+        personName: recipient.trim(),
+        notes: notes.trim() || undefined,
       });
-      setCashAmount(""); setRecipient(""); setNotes(""); setQuantity("1");
+      setAmount(""); setRecipient(""); setNotes("");
       await fetchHistory();
       setActiveTab("history");
-      Alert.alert("تم", "تم تسجيل العهدة بنجاح");
+      showAlert("تم ✓", "تم تسجيل العهدة بنجاح");
     } catch (e: any) {
-      Alert.alert("خطأ", e.message);
+      showAlert("خطأ", e.message ?? "فشل تسجيل العهدة");
     } finally {
       setSubmitting(false);
     }
@@ -80,6 +99,7 @@ export default function CustodyScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-forward" size={24} color={Colors.text} />
@@ -88,17 +108,28 @@ export default function CustodyScreen() {
         <View style={{ width: 24 }} />
       </View>
 
+      {/* Tabs */}
       <View style={styles.tabs}>
-        <TouchableOpacity style={[styles.tab, activeTab === "history" && styles.tabActive]} onPress={() => setActiveTab("history")}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === "history" && styles.tabActive]}
+          onPress={() => setActiveTab("history")}
+        >
           <Text style={[styles.tabText, activeTab === "history" && styles.tabTextActive]}>السجل</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, activeTab === "send" && styles.tabActive]} onPress={() => setActiveTab("send")}>
+        <TouchableOpacity
+          style={[styles.tab, activeTab === "send" && styles.tabActive]}
+          onPress={() => setActiveTab("send")}
+        >
           <Text style={[styles.tabText, activeTab === "send" && styles.tabTextActive]}>إرسال عهدة</Text>
         </TouchableOpacity>
       </View>
 
       {activeTab === "send" ? (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
           {/* نوع العهدة */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>نوع العهدة</Text>
@@ -120,73 +151,59 @@ export default function CustodyScreen() {
             </View>
           </View>
 
-          {custodyType === "cash" && (
-            <View style={styles.card}>
-              <Text style={styles.label}>المبلغ النقدي (ر.س)</Text>
-              <TextInput
-                style={styles.input} value={cashAmount}
-                onChangeText={setCashAmount} keyboardType="numeric"
-                textAlign="right" placeholder="0.00" placeholderTextColor={Colors.textMuted}
-              />
-            </View>
-          )}
-
-          {custodyType === "cards" && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>الفئة (ريال)</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.denomRow}>
-                {DENOMINATIONS.map(d => (
-                  <TouchableOpacity
-                    key={d}
-                    style={[styles.denomChip, denomination === d && styles.denomChipActive]}
-                    onPress={() => setDenomination(d)}
-                  >
-                    <Text style={[styles.denomText, denomination === d && { color: "#FFF" }]}>{d}</Text>
-                    <Text style={[styles.denomPrice, denomination === d && { color: "#FFF99" }]}>
-                      {CARD_PRICES[d] ?? d}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-              <Text style={[styles.label, { marginTop: 16 }]}>الكمية</Text>
-              <TextInput
-                style={styles.input} value={quantity}
-                onChangeText={v => setQuantity(v.replace(/[^0-9]/g, ""))}
-                keyboardType="numeric" textAlign="right" placeholder="1"
-                placeholderTextColor={Colors.textMuted}
-              />
-              <View style={styles.totalRow}>
-                <Text style={styles.totalLabel}>القيمة الإجمالية:</Text>
-                <Text style={styles.totalValue}>{formatCurrency(totalCardsValue)}</Text>
-              </View>
-            </View>
-          )}
+          {/* المبلغ */}
+          <View style={styles.card}>
+            <Text style={styles.label}>
+              {custodyType === "cash" ? "المبلغ النقدي (ر.س)" : "قيمة الكروت (ر.س)"}
+            </Text>
+            <TextInput
+              style={styles.amountInput}
+              value={amount}
+              onChangeText={v => setAmount(v.replace(/[^0-9.]/g, ""))}
+              keyboardType="decimal-pad"
+              textAlign="right"
+              placeholder="0"
+              placeholderTextColor={Colors.textMuted}
+            />
+            {custodyType === "cash" && parsedAmount > 0 && (
+              <Text style={styles.hint}>سيُضاف للصندوق النقدي تلقائياً</Text>
+            )}
+            {custodyType === "cards" && parsedAmount > 0 && (
+              <Text style={[styles.hint, { color: Colors.info }]}>سيُضاف لمخزون الكروت</Text>
+            )}
+          </View>
 
           {/* المستلم والملاحظات */}
           <View style={styles.card}>
             <Text style={styles.label}>اسم المستلم</Text>
             <TextInput
-              style={styles.input} value={recipient}
-              onChangeText={setRecipient} textAlign="right"
-              placeholder="أدخل اسم المستلم" placeholderTextColor={Colors.textMuted}
+              style={styles.input}
+              value={recipient}
+              onChangeText={setRecipient}
+              textAlign="right"
+              placeholder="أدخل اسم المستلم"
+              placeholderTextColor={Colors.textMuted}
             />
-            <Text style={[styles.label, { marginTop: 12 }]}>ملاحظات</Text>
+            <Text style={[styles.label, { marginTop: 14 }]}>ملاحظات (اختياري)</Text>
             <TextInput
-              style={[styles.input, { height: 80, textAlignVertical: "top" }]}
-              value={notes} onChangeText={setNotes}
-              textAlign="right" multiline
-              placeholder="اختياري..." placeholderTextColor={Colors.textMuted}
+              style={[styles.input, { height: 70, textAlignVertical: "top" }]}
+              value={notes}
+              onChangeText={setNotes}
+              textAlign="right"
+              multiline
+              placeholder="اختياري..."
+              placeholderTextColor={Colors.textMuted}
             />
           </View>
 
           <TouchableOpacity
-            style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
-            onPress={handleSend} disabled={submitting}
+            style={[styles.submitBtn, (!isValid || submitting) && styles.submitBtnDisabled]}
+            onPress={handleSend}
+            disabled={!isValid || submitting}
           >
             {submitting
               ? <ActivityIndicator color="#FFF" />
-              : <Text style={styles.submitBtnText}>تسجيل العهدة</Text>
-            }
+              : <Text style={styles.submitBtnText}>تسجيل العهدة</Text>}
           </TouchableOpacity>
         </ScrollView>
       ) : (
@@ -194,6 +211,22 @@ export default function CustodyScreen() {
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchHistory(); }} />}
         >
+          {/* ملخص */}
+          <View style={styles.summaryRow}>
+            <View style={[styles.summaryCard, { borderColor: Colors.primary + "40" }]}>
+              <Text style={styles.summaryLabel}>الإجمالي</Text>
+              <Text style={[styles.summaryValue, { color: Colors.primary }]}>{formatCurrency(summary.total)}</Text>
+            </View>
+            <View style={[styles.summaryCard, { borderColor: Colors.info + "40" }]}>
+              <Text style={styles.summaryLabel}>الكروت</Text>
+              <Text style={[styles.summaryValue, { color: Colors.info }]}>{formatCurrency(summary.cardsTotal)}</Text>
+            </View>
+            <View style={[styles.summaryCard, { borderColor: Colors.success + "40" }]}>
+              <Text style={styles.summaryLabel}>النقد</Text>
+              <Text style={[styles.summaryValue, { color: Colors.success }]}>{formatCurrency(summary.cashTotal)}</Text>
+            </View>
+          </View>
+
           {loading ? (
             <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
           ) : history.length === 0 ? (
@@ -203,20 +236,20 @@ export default function CustodyScreen() {
             </View>
           ) : (
             history.map(item => (
-              <View key={item.id} style={styles.historyCard}>
+              <View key={item.id} style={[styles.historyCard, { borderLeftWidth: 3, borderLeftColor: item.type === "cash" ? Colors.success : Colors.info }]}>
                 <View style={styles.historyHeader}>
-                  <Text style={styles.historyName}>{item.personName}</Text>
-                  <Text style={[styles.historyAmount, { color: Colors.warning }]}>
+                  <Text style={[styles.historyAmount, { color: item.type === "cash" ? Colors.success : Colors.info }]}>
                     {formatCurrency(parseFloat(item.amount))}
                   </Text>
+                  <Text style={styles.historyName}>{item.toPersonName ?? "—"}</Text>
                 </View>
                 <View style={styles.historyFooter}>
-                  <Text style={styles.historyDate}>{formatDate(item.createdAt)}</Text>
-                  <View style={[styles.typePill, { backgroundColor: item.type === "cash" ? Colors.success + "22" : Colors.info + "22" }]}>
+                  <View style={[styles.typePill, { backgroundColor: item.type === "cash" ? Colors.success + "20" : Colors.info + "20" }]}>
                     <Text style={[styles.typePillText, { color: item.type === "cash" ? Colors.success : Colors.info }]}>
-                      {item.type === "cash" ? "نقدية" : `كروت ${item.denomination ?? ""}`}
+                      {item.type === "cash" ? "نقدي" : "كروت"}
                     </Text>
                   </View>
+                  <Text style={styles.historyDate}>{formatDate(item.createdAt)}</Text>
                 </View>
                 {item.notes && <Text style={styles.historyNotes}>{item.notes}</Text>}
               </View>
@@ -224,48 +257,76 @@ export default function CustodyScreen() {
           )}
         </ScrollView>
       )}
+
+      <AlertModal title={alertTitle} msg={alertMsg} visible={alertVis} onClose={() => setAlertVis(false)} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },
-  headerTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: Colors.text },
+  header: {
+    flexDirection: "row-reverse", justifyContent: "space-between",
+    alignItems: "center", paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  headerTitle: { fontSize: 20, fontWeight: "bold", color: Colors.text },
   backButton: { padding: 4 },
-  tabs: { flexDirection: "row-reverse", padding: 16, gap: 8 },
+
+  tabs: { flexDirection: "row-reverse", padding: 14, gap: 8 },
   tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
   tabActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  tabText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: Colors.textSecondary },
+  tabText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
   tabTextActive: { color: "#FFF" },
+
   content: { padding: 16, paddingTop: 4 },
-  card: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
-  cardTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold", color: Colors.text, marginBottom: 14, textAlign: "right" },
+
+  card: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.border },
+  cardTitle: { fontSize: 15, fontWeight: "600", color: Colors.text, marginBottom: 14, textAlign: "right" },
+
   typeRow: { flexDirection: "row-reverse", gap: 12 },
   typeBtn: { flex: 1, alignItems: "center", padding: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, gap: 8 },
   typeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  typeBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: Colors.textSecondary },
+  typeBtnText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
+
   label: { fontSize: 14, color: Colors.textSecondary, textAlign: "right", marginBottom: 8 },
-  input: { backgroundColor: Colors.background, borderRadius: 12, padding: 14, color: Colors.text, borderWidth: 1, borderColor: Colors.border, fontSize: 16 },
-  denomRow: { flexDirection: "row-reverse", gap: 8, paddingBottom: 4 },
-  denomChip: { alignItems: "center", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
-  denomChipActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  denomText: { fontSize: 14, fontWeight: "bold", color: Colors.text },
-  denomPrice: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  totalRow: { flexDirection: "row-reverse", justifyContent: "space-between", marginTop: 16, paddingTop: 12, borderTopWidth: 1, borderTopColor: Colors.border },
-  totalLabel: { fontSize: 14, color: Colors.textSecondary },
-  totalValue: { fontSize: 18, fontFamily: "Inter_700Bold", color: Colors.warning },
-  submitBtn: { backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, alignItems: "center", marginTop: 8 },
-  submitBtnText: { fontSize: 18, fontFamily: "Inter_700Bold", color: "#FFF" },
+  input: {
+    backgroundColor: Colors.background, borderRadius: 12, padding: 14,
+    color: Colors.text, borderWidth: 1, borderColor: Colors.border, fontSize: 16,
+  },
+  amountInput: {
+    backgroundColor: Colors.background, borderRadius: 12, padding: 16,
+    color: Colors.text, borderWidth: 1, borderColor: Colors.border,
+    fontSize: 28, fontWeight: "bold", textAlign: "right",
+  },
+  hint: { fontSize: 12, color: Colors.textMuted, textAlign: "right", marginTop: 6 },
+
+  submitBtn: { backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, alignItems: "center", marginTop: 4 },
+  submitBtnDisabled: { opacity: 0.4 },
+  submitBtnText: { fontSize: 18, fontWeight: "bold", color: "#FFF" },
+
+  summaryRow: { flexDirection: "row-reverse", gap: 8, marginBottom: 16 },
+  summaryCard: { flex: 1, backgroundColor: Colors.surface, borderRadius: 12, padding: 12, alignItems: "center", borderWidth: 1 },
+  summaryLabel: { fontSize: 11, color: Colors.textMuted, marginBottom: 4 },
+  summaryValue: { fontSize: 14, fontWeight: "bold" },
+
   emptyContainer: { alignItems: "center", marginTop: 60, gap: 12 },
   emptyText: { color: Colors.textMuted, fontSize: 15 },
+
   historyCard: { backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Colors.border },
   historyHeader: { flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 8 },
   historyName: { fontSize: 14, fontWeight: "bold", color: Colors.text },
-  historyAmount: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  historyAmount: { fontSize: 16, fontWeight: "bold" },
   historyFooter: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
   historyDate: { fontSize: 11, color: Colors.textMuted },
   typePill: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
   typePillText: { fontSize: 11, fontWeight: "600" },
   historyNotes: { fontSize: 12, color: Colors.textMuted, marginTop: 6, textAlign: "right" },
+
+  alertOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 30 },
+  alertBox: { backgroundColor: Colors.surface, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: Colors.border },
+  alertTitle: { color: Colors.text, fontSize: 17, fontWeight: "bold", textAlign: "right", marginBottom: 8 },
+  alertMsg: { color: Colors.textSecondary, fontSize: 14, textAlign: "right", marginBottom: 16 },
+  alertBtn: { backgroundColor: Colors.primary, borderRadius: 10, padding: 12, alignItems: "center" },
+  alertBtnText: { color: "#FFF", fontWeight: "bold" },
 });

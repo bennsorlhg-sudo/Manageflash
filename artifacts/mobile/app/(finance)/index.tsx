@@ -1,16 +1,55 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Platform,
-  TouchableOpacity, Dimensions, ActivityIndicator, RefreshControl,
+  TouchableOpacity, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter } from "expo-router";
-import { apiGet, apiPut, formatCurrency } from "@/utils/api";
+import { apiGet, apiPut, formatCurrency, formatDate } from "@/utils/api";
 
-const { width } = Dimensions.get("window");
+/* ─── KPI Card ─── */
+function KPICard({
+  title, value, icon, color, fullWidth = false, large = false,
+}: {
+  title: string; value: number; icon: keyof typeof Ionicons.glyphMap;
+  color: string; fullWidth?: boolean; large?: boolean;
+}) {
+  return (
+    <View style={[
+      styles.kpiCard,
+      fullWidth ? { width: "100%" } : { flex: 1 },
+      { borderColor: color + "40" },
+      large && styles.kpiLarge,
+    ]}>
+      <View style={styles.kpiRow}>
+        <View style={[styles.kpiIcon, { backgroundColor: color + "20" }]}>
+          <Ionicons name={icon} size={large ? 28 : 20} color={color} />
+        </View>
+        <Text style={[styles.kpiTitle, large && styles.kpiTitleLarge]}>{title}</Text>
+      </View>
+      <Text style={[styles.kpiValue, { color }, large && styles.kpiValueLarge]}>
+        {formatCurrency(value)}
+      </Text>
+    </View>
+  );
+}
+
+/* ─── Action Button ─── */
+function ActionBtn({ label, icon, onPress, color }: {
+  label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void; color: string;
+}) {
+  return (
+    <TouchableOpacity style={[styles.actionBtn, { borderColor: color + "40" }]} onPress={onPress} activeOpacity={0.7}>
+      <View style={[styles.actionIcon, { backgroundColor: color + "18" }]}>
+        <Ionicons name={icon} size={22} color={color} />
+      </View>
+      <Text style={styles.actionLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
 
 export default function FinanceDashboard() {
   const insets = useSafeAreaInsets();
@@ -19,30 +58,46 @@ export default function FinanceDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // KPI values
+  const [custodyTotal, setCustodyTotal] = useState(0);
+  const [cardsTotal, setCardsTotal] = useState(0);
   const [cashBalance, setCashBalance] = useState(0);
-  const [totalLoans, setTotalLoans] = useState(0);
-  const [totalDebts, setTotalDebts] = useState(0);
-  const [totalCustody, setTotalCustody] = useState(0);
+  const [loansTotal, setLoansTotal] = useState(0);
+
+  // Lists
+  const [custodyList, setCustodyList] = useState<any[]>([]);
+  const [sellLoans, setSellLoans] = useState<any[]>([]);
   const [purchaseRequests, setPurchaseRequests] = useState<any[]>([]);
   const [updatingReq, setUpdatingReq] = useState<number | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [cashData, loans, debts, custody, reqs] = await Promise.all([
+      const [summary, cashData, loans, custody, reqs] = await Promise.all([
+        apiGet("/custody/summary", token),
         apiGet("/cash-box", token),
-        apiGet("/loans", token),
-        apiGet("/debts", token),
+        apiGet("/debts", token),          // السلف المنشأة من البيع (debts = ما عليه الآخرون)
         apiGet("/custody", token),
         apiGet("/purchase-requests", token),
       ]);
 
+      // KPI
+      setCustodyTotal(summary.total ?? 0);
+      setCardsTotal(summary.cardsTotal ?? 0);
       setCashBalance(cashData.balance ?? 0);
-      setTotalLoans(loans.filter((l: any) => l.status !== "paid")
-        .reduce((s: number, l: any) => s + parseFloat(l.amount) - parseFloat(l.paidAmount), 0));
-      setTotalDebts(debts.filter((d: any) => d.status !== "paid")
-        .reduce((s: number, d: any) => s + parseFloat(d.amount) - parseFloat(d.paidAmount), 0));
-      setTotalCustody(custody.reduce((s: number, c: any) => s + parseFloat(c.amount ?? "0"), 0));
-      setPurchaseRequests(reqs.filter((r: any) => r.status === "pending"));
+
+      // السلف = ما على الآخرين (debts غير المدفوعة بالكامل)
+      const unpaidLoans = (loans as any[]).filter((l: any) => l.status !== "paid");
+      setLoansTotal(unpaidLoans.reduce((s: number, l: any) => s + parseFloat(l.amount ?? "0") - parseFloat(l.paidAmount ?? "0"), 0));
+
+      // قائمة العهدة المسلّمة للمندوب (آخر 5)
+      setCustodyList((custody as any[]).slice(0, 10));
+
+      // السلف المنشأة من البيع المباشر (عرض آخر 5)
+      setSellLoans(unpaidLoans.slice(0, 5));
+
+      // طلبات الشراء المعلقة
+      setPurchaseRequests((reqs as any[]).filter((r: any) => r.status === "pending"));
     } catch {
     } finally {
       setLoading(false);
@@ -57,40 +112,8 @@ export default function FinanceDashboard() {
     try {
       await apiPut(`/purchase-requests/${id}`, token, { status });
       setPurchaseRequests(prev => prev.filter(r => r.id !== id));
-    } catch {} finally {
-      setUpdatingReq(null);
-    }
+    } catch {} finally { setUpdatingReq(null); }
   };
-
-  const KPIBox = ({ title, value, icon, color, fullWidth = false }: {
-    title: string; value: number; icon: keyof typeof Ionicons.glyphMap;
-    color: string; fullWidth?: boolean;
-  }) => (
-    <View style={[styles.kpiCard, fullWidth ? styles.kpiFullWidth : styles.kpiHalfWidth, { borderColor: color + "33" }]}>
-      <View style={styles.kpiHeader}>
-        <View style={[styles.kpiIconContainer, { backgroundColor: color + "15" }]}>
-          <Ionicons name={icon} size={20} color={color} />
-        </View>
-        <Text style={styles.kpiTitle}>{title}</Text>
-      </View>
-      <Text style={[styles.kpiValue, { color }]}>{formatCurrency(value)}</Text>
-    </View>
-  );
-
-  const ActionButton = ({ label, icon, onPress, color, small = false }: {
-    label: string; icon: keyof typeof Ionicons.glyphMap;
-    onPress: () => void; color: string; small?: boolean;
-  }) => (
-    <TouchableOpacity
-      style={[styles.actionButton, small ? styles.actionButtonSmall : styles.actionButtonLarge, { borderColor: color + "44" }]}
-      onPress={onPress} activeOpacity={0.7}
-    >
-      <View style={[styles.actionIconContainer, { backgroundColor: color + "15" }]}>
-        <Ionicons name={icon} size={small ? 20 : 24} color={color} />
-      </View>
-      <Text style={styles.actionLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
 
   if (loading) {
     return (
@@ -102,6 +125,7 @@ export default function FinanceDashboard() {
 
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.push("/(finance)/profile")}>
           <Ionicons name="person-circle-outline" size={28} color={Colors.text} />
@@ -114,40 +138,126 @@ export default function FinanceDashboard() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
       >
-        <View style={styles.kpiContainer}>
-          <KPIBox title="الصندوق النقدي" value={cashBalance} icon="wallet" color={Colors.success} fullWidth />
+        {/* ─── KPI Block ─── */}
+        <View style={styles.kpiBlock}>
+
+          {/* 1. إجمالي العهدة — الكبير */}
+          <KPICard
+            title="إجمالي العهدة"
+            value={custodyTotal}
+            icon="briefcase"
+            color={Colors.primary}
+            fullWidth
+            large
+          />
+
+          {/* 2. قيمة الكروت + نقد */}
           <View style={styles.row}>
-            <KPIBox title="السلف (لنا)" value={totalLoans} icon="trending-up" color={Colors.warning} />
-            <KPIBox title="الديون (علينا)" value={totalDebts} icon="trending-down" color={Colors.error} />
+            <KPICard title="قيمة الكروت" value={cardsTotal} icon="card" color={Colors.info} />
+            <KPICard title="النقد" value={cashBalance} icon="wallet" color={Colors.success} />
+          </View>
+
+          {/* 3. السلف */}
+          <KPICard
+            title="السلف"
+            value={loansTotal}
+            icon="trending-up"
+            color={Colors.warning}
+            fullWidth
+          />
+        </View>
+
+        {/* ─── أزرار العمليات ─── */}
+        <View style={styles.actionsBlock}>
+          <View style={styles.row}>
+            <ActionBtn label="بيع" icon="cart" color={Colors.info} onPress={() => router.push("/(finance)/sell")} />
+            <ActionBtn label="صرف" icon="arrow-up-circle" color={Colors.error} onPress={() => router.push("/(finance)/disburse")} />
+            <ActionBtn label="تحصيل" icon="arrow-down-circle" color={Colors.success} onPress={() => router.push("/(finance)/collect")} />
           </View>
           <View style={styles.row}>
-            <KPIBox title="إجمالي العهدة" value={totalCustody} icon="briefcase" color={Colors.info} />
-            <KPIBox title="صافي الحساب" value={cashBalance + totalLoans - totalDebts} icon="calculator" color="#9C27B0" />
+            <ActionBtn label="إدارة العهدة" icon="briefcase" color="#673AB7" onPress={() => router.push("/(finance)/custody")} />
+            <ActionBtn label="نقاط البيع" icon="location" color="#009688" onPress={() => router.push("/(finance)/sales-points")} />
+          </View>
+          <View style={styles.row}>
+            <ActionBtn label="المصاريف" icon="receipt" color="#FF5722" onPress={() => router.push("/(finance)/expenses")} />
+            <ActionBtn label="ديون/سلف" icon="people" color="#795548" onPress={() => router.push("/(finance)/debts-loans")} />
+            <ActionBtn label="المبيعات" icon="trending-up" color="#4CAF50" onPress={() => router.push("/(finance)/sales")} />
           </View>
         </View>
 
-        <View style={styles.actionsContainer}>
-          <View style={styles.row}>
-            <ActionButton label="صرف" icon="arrow-up-circle" color={Colors.error} onPress={() => router.push("/(finance)/disburse")} small />
-            <ActionButton label="تحصيل" icon="arrow-down-circle" color={Colors.success} onPress={() => router.push("/(finance)/collect")} small />
-            <ActionButton label="بيع" icon="cart" color={Colors.info} onPress={() => router.push("/(finance)/sell")} small />
-          </View>
-          <View style={styles.row}>
-            <ActionButton label="إدارة العهدة" icon="briefcase" color="#673AB7" onPress={() => router.push("/(finance)/custody")} />
-            <ActionButton label="نقاط البيع" icon="location" color="#009688" onPress={() => router.push("/(finance)/sales-points")} />
-          </View>
-          <View style={styles.row}>
-            <ActionButton label="المصاريف" icon="receipt" color="#FF5722" onPress={() => router.push("/(finance)/expenses")} small />
-            <ActionButton label="ديون/سلف" icon="people" color="#795548" onPress={() => router.push("/(finance)/debts-loans")} small />
-            <ActionButton label="المبيعات" icon="trending-up" color="#4CAF50" onPress={() => router.push("/(finance)/sales")} small />
-          </View>
-        </View>
-
+        {/* ─── العهد المسلّمة للمندوب ─── */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>قائمة المشتريات المطلوبة</Text>
+          <Text style={styles.sectionTitle}>العهد المسلّمة</Text>
+          {custodyList.length > 0 && (
+            <View style={[styles.badge, { backgroundColor: Colors.primary + "25" }]}>
+              <Text style={[styles.badgeText, { color: Colors.primary }]}>{custodyList.length}</Text>
+            </View>
+          )}
+        </View>
+
+        {custodyList.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="briefcase-outline" size={28} color={Colors.textMuted} />
+            <Text style={styles.emptyText}>لا توجد عهد مسلّمة</Text>
+          </View>
+        ) : (
+          custodyList.map((item: any) => (
+            <View key={item.id} style={styles.listCard}>
+              <View style={styles.listRow}>
+                <View style={[styles.typePill, { backgroundColor: item.type === "cash" ? Colors.success + "22" : Colors.info + "22" }]}>
+                  <Text style={[styles.typePillText, { color: item.type === "cash" ? Colors.success : Colors.info }]}>
+                    {item.type === "cash" ? "نقدي" : "كروت"}
+                  </Text>
+                </View>
+                <Text style={styles.listName}>{item.toPersonName ?? "—"}</Text>
+              </View>
+              <View style={styles.listRow}>
+                <Text style={styles.listDate}>{formatDate(item.createdAt)}</Text>
+                <Text style={[styles.listAmount, { color: Colors.primary }]}>{formatCurrency(parseFloat(item.amount))}</Text>
+              </View>
+              {item.notes ? <Text style={styles.listNotes}>{item.notes}</Text> : null}
+            </View>
+          ))
+        )}
+
+        {/* ─── السلف من البيع المباشر ─── */}
+        <View style={[styles.sectionHeader, { marginTop: 16 }]}>
+          <Text style={styles.sectionTitle}>السلف (من البيع)</Text>
+          {sellLoans.length > 0 && (
+            <View style={[styles.badge, { backgroundColor: Colors.warning + "25" }]}>
+              <Text style={[styles.badgeText, { color: Colors.warning }]}>{sellLoans.length}</Text>
+            </View>
+          )}
+        </View>
+
+        {sellLoans.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons name="checkmark-circle-outline" size={28} color={Colors.success} />
+            <Text style={styles.emptyText}>لا توجد سلف معلقة</Text>
+          </View>
+        ) : (
+          sellLoans.map((item: any) => (
+            <View key={item.id} style={[styles.listCard, { borderLeftWidth: 3, borderLeftColor: Colors.warning }]}>
+              <View style={styles.listRow}>
+                <Text style={[styles.listAmount, { color: Colors.warning }]}>
+                  {formatCurrency(parseFloat(item.amount ?? "0") - parseFloat(item.paidAmount ?? "0"))}
+                </Text>
+                <Text style={styles.listName}>{item.personName ?? "—"}</Text>
+              </View>
+              <View style={styles.listRow}>
+                <Text style={styles.listDate}>{formatDate(item.createdAt)}</Text>
+                {item.notes ? <Text style={styles.listNotes}>{item.notes}</Text> : null}
+              </View>
+            </View>
+          ))
+        )}
+
+        {/* ─── طلبات الشراء المعلقة ─── */}
+        <View style={[styles.sectionHeader, { marginTop: 16 }]}>
+          <Text style={styles.sectionTitle}>طلبات الشراء</Text>
           {purchaseRequests.length > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{purchaseRequests.length}</Text>
+            <View style={[styles.badge, { backgroundColor: Colors.warning + "33" }]}>
+              <Text style={[styles.badgeText, { color: Colors.warning }]}>{purchaseRequests.length}</Text>
             </View>
           )}
         </View>
@@ -158,33 +268,29 @@ export default function FinanceDashboard() {
             <Text style={styles.emptyText}>لا توجد طلبات شراء معلقة</Text>
           </View>
         ) : (
-          purchaseRequests.map((req) => (
+          purchaseRequests.map((req: any) => (
             <View key={req.id} style={styles.requestCard}>
-              <View style={styles.requestHeader}>
-                <View style={styles.requestMainInfo}>
-                  <Text style={styles.requestDescription}>{req.description}</Text>
-                  {req.notes && <Text style={styles.requestSubText}>{req.notes}</Text>}
-                </View>
-                {req.amount && <Text style={styles.requestAmount}>{formatCurrency(parseFloat(req.amount))}</Text>}
+              <View style={styles.listRow}>
+                <Text style={styles.requestAmount}>{req.amount ? formatCurrency(parseFloat(req.amount)) : "—"}</Text>
+                <Text style={styles.requestDesc}>{req.description}</Text>
               </View>
+              {req.notes && <Text style={styles.listNotes}>{req.notes}</Text>}
               <View style={styles.requestFooter}>
-                <Text style={styles.requestDate}>
-                  {new Date(req.createdAt).toLocaleDateString("ar-SA")}
-                </Text>
-                <View style={styles.requestActions}>
+                <Text style={styles.listDate}>{formatDate(req.createdAt)}</Text>
+                <View style={styles.reqBtns}>
                   <TouchableOpacity
-                    style={[styles.reqBtn, styles.reqBtnApprove]}
-                    onPress={() => handleRequestAction(req.id, "approved")}
-                    disabled={updatingReq === req.id}
-                  >
-                    <Text style={styles.reqBtnText}>موافقة</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.reqBtn, styles.reqBtnReject]}
+                    style={[styles.reqBtn, { backgroundColor: Colors.error + "20" }]}
                     onPress={() => handleRequestAction(req.id, "rejected")}
                     disabled={updatingReq === req.id}
                   >
-                    <Text style={styles.reqBtnText}>رفض</Text>
+                    <Text style={[styles.reqBtnText, { color: Colors.error }]}>رفض</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.reqBtn, { backgroundColor: Colors.success + "20" }]}
+                    onPress={() => handleRequestAction(req.id, "approved")}
+                    disabled={updatingReq === req.id}
+                  >
+                    <Text style={[styles.reqBtnText, { color: Colors.success }]}>موافقة</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -203,55 +309,70 @@ const styles = StyleSheet.create({
     alignItems: "center", paddingHorizontal: 20, paddingVertical: 16,
     borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  headerTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: Colors.text, textAlign: "right" },
+  headerTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
   content: { padding: 16 },
-  kpiContainer: { gap: 12, marginBottom: 24 },
-  row: { flexDirection: "row-reverse", gap: 12 },
+
+  kpiBlock: { gap: 10, marginBottom: 20 },
+  row: { flexDirection: "row-reverse", gap: 10 },
+
   kpiCard: {
     backgroundColor: Colors.surface, borderRadius: 16,
-    padding: 16, borderWidth: 1, justifyContent: "center",
+    padding: 14, borderWidth: 1, justifyContent: "center",
   },
-  kpiFullWidth: { width: "100%" },
-  kpiHalfWidth: { flex: 1 },
-  kpiHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginBottom: 8 },
-  kpiIconContainer: { padding: 6, borderRadius: 8 },
-  kpiTitle: { fontSize: 13, color: Colors.textSecondary, fontFamily: "Inter_500Medium" },
-  kpiValue: { fontSize: 20, fontFamily: "Inter_700Bold", textAlign: "right" },
-  actionsContainer: { gap: 12, marginBottom: 32 },
-  actionButton: {
-    backgroundColor: Colors.surface, borderRadius: 16,
-    padding: 12, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 8,
+  kpiLarge: { padding: 20 },
+  kpiRow: { flexDirection: "row-reverse", alignItems: "center", gap: 10, marginBottom: 10 },
+  kpiIcon: { padding: 8, borderRadius: 10 },
+  kpiTitle: { fontSize: 13, color: Colors.textSecondary, fontWeight: "500" },
+  kpiTitleLarge: { fontSize: 16, fontWeight: "600" },
+  kpiValue: { fontSize: 22, fontWeight: "bold", textAlign: "right" },
+  kpiValueLarge: { fontSize: 32, fontWeight: "800" },
+
+  actionsBlock: { gap: 10, marginBottom: 24 },
+  actionBtn: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: 14,
+    paddingVertical: 14, paddingHorizontal: 8, alignItems: "center",
+    justifyContent: "center", gap: 6, borderWidth: 1,
   },
-  actionButtonSmall: { flex: 1 },
-  actionButtonLarge: { flex: 1, paddingVertical: 16 },
-  actionIconContainer: { padding: 10, borderRadius: 12 },
-  actionLabel: { fontSize: 12, color: Colors.text, fontFamily: "Inter_600SemiBold", textAlign: "center" },
-  sectionHeader: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginBottom: 16 },
-  sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold", color: Colors.text },
-  badge: { backgroundColor: Colors.warning + "33", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  badgeText: { fontSize: 12, color: Colors.warning, fontWeight: "bold" },
+  actionIcon: { padding: 8, borderRadius: 10 },
+  actionLabel: { fontSize: 11, color: Colors.text, fontWeight: "600", textAlign: "center" },
+
+  sectionHeader: {
+    flexDirection: "row-reverse", alignItems: "center",
+    justifyContent: "space-between", marginBottom: 10,
+  },
+  sectionTitle: { fontSize: 15, fontWeight: "bold", color: Colors.text },
+  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  badgeText: { fontSize: 12, fontWeight: "bold" },
+
   emptyCard: {
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 24,
-    alignItems: "center", gap: 12, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 20,
+    alignItems: "center", gap: 8, borderWidth: 1, borderColor: Colors.border, marginBottom: 4,
   },
-  emptyText: { fontSize: 14, color: Colors.textSecondary },
+  emptyText: { fontSize: 13, color: Colors.textMuted },
+
+  listCard: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: 8,
+  },
+  listRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  listName: { fontSize: 14, fontWeight: "bold", color: Colors.text },
+  listAmount: { fontSize: 15, fontWeight: "bold" },
+  listDate: { fontSize: 11, color: Colors.textMuted },
+  listNotes: { fontSize: 12, color: Colors.textMuted, textAlign: "right", marginTop: 2 },
+  typePill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  typePillText: { fontSize: 11, fontWeight: "600" },
+
   requestCard: {
-    backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
-    borderWidth: 1, borderColor: Colors.border, marginBottom: 12,
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: 8,
   },
-  requestHeader: { flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 12 },
-  requestMainInfo: { flex: 1, alignItems: "flex-end" },
-  requestDescription: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: Colors.text, textAlign: "right" },
-  requestSubText: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
-  requestAmount: { fontSize: 14, fontFamily: "Inter_700Bold", color: Colors.primaryLight },
+  requestDesc: { fontSize: 14, fontWeight: "600", color: Colors.text, flex: 1, textAlign: "right" },
+  requestAmount: { fontSize: 14, fontWeight: "bold", color: Colors.primaryLight },
   requestFooter: {
     flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
-    borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 12,
+    borderTopWidth: 1, borderTopColor: Colors.border, marginTop: 10, paddingTop: 10,
   },
-  requestDate: { fontSize: 11, color: Colors.textMuted },
-  requestActions: { flexDirection: "row-reverse", gap: 8 },
-  reqBtn: { paddingHorizontal: 16, paddingVertical: 6, borderRadius: 8 },
-  reqBtnApprove: { backgroundColor: Colors.success + "22" },
-  reqBtnReject: { backgroundColor: Colors.error + "22" },
-  reqBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold", color: Colors.text },
+  reqBtns: { flexDirection: "row-reverse", gap: 8 },
+  reqBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 8 },
+  reqBtnText: { fontSize: 12, fontWeight: "600" },
 });

@@ -1,71 +1,97 @@
 import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
-import { custodyRecordsTable, CARD_PRICES } from "@workspace/db/schema";
-import { desc } from "drizzle-orm";
+import { custodyRecordsTable } from "@workspace/db/schema";
+import { requireAuth } from "../lib/auth";
+import { desc, eq, sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
-router.post("/custody", async (req, res) => {
+/* ─── POST /custody — تسجيل عهدة جديدة ─── */
+router.post("/custody", requireAuth, async (req, res) => {
   try {
-    const { type, amount, denomination, cardCount, toRole, toPersonName, notes } = req.body as {
+    const {
+      type,
+      amount,
+      personName,
+      toPersonName,
+      notes,
+    } = req.body as {
       type: "cash" | "cards";
       amount?: number;
-      denomination?: number;
-      cardCount?: number;
-      toRole: "finance_manager" | "supervisor" | "tech_engineer";
+      personName?: string;
       toPersonName?: string;
       notes?: string;
     };
 
-    if (!type || !toRole) {
-      res.status(400).json({ error: "type and toRole are required" });
-      return;
+    if (!type) { res.status(400).json({ error: "type مطلوب" }); return; }
+
+    const finalAmount = parseFloat(String(amount ?? 0));
+    if (!finalAmount || finalAmount <= 0) {
+      res.status(400).json({ error: "أدخل قيمة صحيحة" }); return;
     }
 
-    let finalAmount: number;
+    const recipientName = personName ?? toPersonName ?? null;
 
-    if (type === "cash") {
-      if (!amount || amount <= 0) {
-        res.status(400).json({ error: "amount is required for cash custody" });
-        return;
-      }
-      finalAmount = amount;
-    } else {
-      if (!denomination || !cardCount || cardCount <= 0) {
-        res.status(400).json({ error: "denomination and cardCount are required for card custody" });
-        return;
-      }
-      const pricePerCard = CARD_PRICES[String(denomination)];
-      if (!pricePerCard) {
-        res.status(400).json({ error: `Invalid denomination: ${denomination}. Valid values: ${Object.keys(CARD_PRICES).join(", ")}` });
-        return;
-      }
-      finalAmount = pricePerCard * cardCount;
-    }
+    const fromRole = req.currentUser!.role as any;
+    const toRole = fromRole === "owner" ? "finance_manager" : "tech_engineer";
 
     const [record] = await db.insert(custodyRecordsTable).values({
       type,
       amount: String(finalAmount),
-      denomination: denomination ?? null,
-      cardCount: cardCount ?? null,
-      fromRole: "owner",
+      denomination: null,
+      cardCount: null,
+      fromRole,
       toRole,
-      toPersonName: toPersonName ?? null,
+      toPersonName: recipientName,
       notes: notes ?? null,
     }).returning();
 
+    // إذا كانت نقدية → أضف للصندوق
+    if (type === "cash") {
+      await db.execute(
+        sql`UPDATE cash_box SET balance = balance + ${finalAmount}, updated_at = NOW() WHERE id = 1`
+      );
+    }
+
     res.status(201).json(record);
   } catch (error) {
-    res.status(500).json({ error: "Failed to create custody record", details: String(error) });
+    res.status(500).json({ error: "فشل في تسجيل العهدة", details: String(error) });
   }
 });
 
-router.get("/custody", async (_req, res) => {
+/* ─── GET /custody/summary — ملخص العهدة ─── */
+router.get("/custody/summary", requireAuth, async (_req, res) => {
   try {
-    const records = await db.select().from(custodyRecordsTable).orderBy(desc(custodyRecordsTable.createdAt));
+    const result = await db.execute(
+      sql`SELECT
+        COALESCE(SUM(amount::numeric), 0) AS total,
+        COALESCE(SUM(CASE WHEN type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS cards_total,
+        COALESCE(SUM(CASE WHEN type = 'cash' THEN amount::numeric ELSE 0 END), 0) AS cash_total
+      FROM custody_records`
+    );
+
+    const row: any = (result as any).rows?.[0] ?? (Array.isArray(result) ? result[0] : result);
+
+    res.json({
+      total: parseFloat(row?.total ?? "0"),
+      cardsTotal: parseFloat(row?.cards_total ?? "0"),
+      cashTotal: parseFloat(row?.cash_total ?? "0"),
+    });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في جلب ملخص العهدة", details: String(error) });
+  }
+});
+
+/* ─── GET /custody — قائمة العهدة ─── */
+router.get("/custody", requireAuth, async (_req, res) => {
+  try {
+    const records = await db
+      .select()
+      .from(custodyRecordsTable)
+      .orderBy(desc(custodyRecordsTable.createdAt));
     res.json(records);
   } catch (error) {
-    res.status(500).json({ error: "Failed to fetch custody records", details: String(error) });
+    res.status(500).json({ error: "فشل في جلب سجلات العهدة", details: String(error) });
   }
 });
 
