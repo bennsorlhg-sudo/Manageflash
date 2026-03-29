@@ -117,6 +117,7 @@ export const financialTransactionsTable = pgTable("financial_transactions", {
   role: text("role").notNull(),
   personName: text("person_name"),
   referenceId: text("reference_id"),
+  paymentType: text("payment_type"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

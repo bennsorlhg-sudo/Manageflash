@@ -50,6 +50,7 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
       role: req.currentUser!.role,
       personName: customerName ?? req.currentUser!.name,
       referenceId: `SELL-${Date.now()}`,
+      paymentType: paymentType === "cash" ? "cash" : "loan",
     });
 
     if (paymentType === "cash") {
@@ -57,6 +58,7 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
         sql`UPDATE cash_box SET balance = balance + ${totalAmount}, updated_at = NOW() WHERE id = 1`
       );
     } else {
+      // سلفة → سجّل في جدول الديون (ما يستحق علينا تحصيله)
       await db.insert(debtsTable).values({
         personName: customerName ?? "عميل",
         amount: String(totalAmount),
@@ -75,37 +77,53 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
 
 router.post("/transactions/disburse", requireAuth, async (req, res) => {
   try {
-    const { expenseType, amount, description, paymentType, notes } = req.body;
+    const { expenseType, amount, description, paymentType, personName, notes } = req.body;
+    const parsedAmount = parseFloat(amount);
+    if (!parsedAmount || parsedAmount <= 0) return res.status(400).json({ error: "المبلغ غير صحيح" });
 
     const categoryMap: Record<string, string> = {
       daily: "operational", monthly: "operational",
       purchase: "other", salary: "salary",
     };
     const category = categoryMap[expenseType] ?? "operational";
+    const desc = description ?? `صرفية - ${expenseType}`;
+    const pt = paymentType === "debt" ? "debt" : "cash";
 
     await db.insert(financialTransactionsTable).values({
       type: "expense",
       category: category as any,
-      amount: String(amount),
-      description: description ?? `صرفية - ${expenseType}`,
+      amount: String(parsedAmount),
+      description: desc,
       role: req.currentUser!.role,
-      personName: req.currentUser!.name,
+      personName: personName ?? req.currentUser!.name,
       referenceId: `EXP-${Date.now()}`,
+      paymentType: pt,
     });
 
     await db.insert(expensesTable).values({
-      description: description ?? `صرفية - ${expenseType}`,
-      amount: String(amount),
+      description: desc,
+      amount: String(parsedAmount),
       userId: req.currentUser!.id,
     });
 
-    if (paymentType === "cash") {
+    if (pt === "cash") {
+      // صرف نقدي → ينقص من الصندوق وينقص من إجمالي العهدة
       await db.execute(
-        sql`UPDATE cash_box SET balance = balance - ${amount}, updated_at = NOW() WHERE id = 1`
+        sql`UPDATE cash_box SET balance = balance - ${parsedAmount}, updated_at = NOW() WHERE id = 1`
       );
+    } else {
+      // صرف دين → لا ينقص من الصندوق، يُسجّل كالتزام على الشبكة
+      await db.insert(loansTable).values({
+        personName: personName ?? desc,
+        amount: String(parsedAmount),
+        paidAmount: "0",
+        status: "pending",
+        notes: notes ?? desc,
+        userId: req.currentUser!.id,
+      });
     }
 
-    res.json({ success: true, amount });
+    res.json({ success: true, amount: parsedAmount });
   } catch (error) {
     res.status(500).json({ error: "فشل في تسجيل الصرفية", details: String(error) });
   }
@@ -342,6 +360,82 @@ router.get("/cash-box", requireAuth, async (req, res) => {
     res.json({ balance: parseFloat(box?.balance ?? "0") });
   } catch (error) {
     res.status(500).json({ error: "فشل في جلب الصندوق" });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   GET /finances/summary
+   يحسب الـ 6 بطاقات للمسؤول المالي بدقة
+─────────────────────────────────────────────── */
+router.get("/finances/summary", requireAuth, async (_req, res) => {
+  try {
+    /* 1. الصندوق النقدي */
+    const [cashRow] = await db.select({ bal: cashBoxTable.balance }).from(cashBoxTable).limit(1);
+    const cashBalance = parseFloat(cashRow?.bal ?? "0");
+
+    /* 2-4. حسابات من custody_records + financial_transactions */
+    const summaryResult = await db.execute(sql`
+      SELECT
+        /* نقد استُلم من المالك */
+        COALESCE(SUM(CASE WHEN from_role = 'owner' AND type = 'cash' THEN amount::numeric ELSE 0 END), 0) AS owner_cash,
+        /* كروت استُلمت من المالك */
+        COALESCE(SUM(CASE WHEN from_role = 'owner' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS owner_cards,
+        /* كروت مسلّمة للمندوبين */
+        COALESCE(SUM(CASE WHEN from_role = 'finance_manager' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS agent_custody
+      FROM custody_records
+    `);
+
+    const txResult = await db.execute(sql`
+      SELECT
+        /* مبيعات برودباند الكلية */
+        COALESCE(SUM(CASE WHEN type = 'sale' AND category = 'broadband' THEN amount::numeric ELSE 0 END), 0) AS broadband_sales,
+        /* مبيعات الكروت الكلية */
+        COALESCE(SUM(CASE WHEN type = 'sale' AND category = 'hotspot' THEN amount::numeric ELSE 0 END), 0) AS hotspot_sales,
+        /* الصرف النقدي فقط */
+        COALESCE(SUM(CASE WHEN type = 'expense' AND payment_type = 'cash' THEN amount::numeric ELSE 0 END), 0) AS cash_expenses
+      FROM financial_transactions
+    `);
+
+    const cr: any = (summaryResult as any).rows?.[0] ?? (Array.isArray(summaryResult) ? summaryResult[0] : {});
+    const tx: any = (txResult as any).rows?.[0] ?? (Array.isArray(txResult) ? txResult[0] : {});
+
+    const ownerCash    = parseFloat(cr.owner_cash ?? "0");
+    const ownerCards   = parseFloat(cr.owner_cards ?? "0");
+    const agentCustody = parseFloat(cr.agent_custody ?? "0");
+    const broadbandSales = parseFloat(tx.broadband_sales ?? "0");
+    const hotspotSales   = parseFloat(tx.hotspot_sales ?? "0");
+    const cashExpenses   = parseFloat(tx.cash_expenses ?? "0");
+
+    /* 5. السلف — debts table (مبالغ يستحق تحصيلها) */
+    const loansResult = await db.execute(sql`
+      SELECT COALESCE(SUM((amount::numeric - paid_amount::numeric)), 0) AS total
+      FROM debts WHERE status != 'paid'
+    `);
+    const loansRow: any = (loansResult as any).rows?.[0] ?? (Array.isArray(loansResult) ? loansResult[0] : {});
+    const totalLoans = parseFloat(loansRow.total ?? "0");
+
+    /* 6. الديون — loans table (التزامات مالية على الشبكة) */
+    const debtsResult = await db.execute(sql`
+      SELECT COALESCE(SUM((amount::numeric - paid_amount::numeric)), 0) AS total
+      FROM loans WHERE status != 'paid'
+    `);
+    const debtsRow: any = (debtsResult as any).rows?.[0] ?? (Array.isArray(debtsResult) ? debtsResult[0] : {});
+    const totalDebts = parseFloat(debtsRow.total ?? "0");
+
+    /* حسابات مشتقة */
+    const totalCustody = ownerCash + ownerCards + broadbandSales - cashExpenses;
+    const cardsValue   = ownerCards - hotspotSales - agentCustody;
+
+    res.json({
+      totalCustody:  Math.max(0, totalCustody),
+      cashBalance,
+      cardsValue:    Math.max(0, cardsValue),
+      agentCustody,
+      totalLoans,
+      totalDebts,
+    });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حساب الملخص المالي", details: String(error) });
   }
 });
 
