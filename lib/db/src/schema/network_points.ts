@@ -40,12 +40,14 @@ export const broadbandPointsTable = pgTable("broadband_points", {
   speed: text("speed"),
   notes: text("notes"),
   // New fields
-  flashNumber: integer("flash_number"),                    // e.g. 3 → displayed as P3
-  subscriptionName: text("subscription_name"),             // e.g. "andls123"
+  flashNumber: integer("flash_number"),
+  subscriptionName: text("subscription_name"),
+  deviceName: text("device_name"),
   clientName: text("client_name"),
   clientPhone: text("client_phone"),
   subscriptionFee: numeric("subscription_fee", { precision: 10, scale: 2 }),
   locationUrl: text("location_url"),
+  isClientOwned: boolean("is_client_owned").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

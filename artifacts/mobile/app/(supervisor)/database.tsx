@@ -24,7 +24,7 @@ interface BroadbandPoint {
   id: number; flashNumber: number | null; name: string; location: string;
   subscriptionName: string | null; deviceName: string | null; clientName: string | null;
   clientPhone: string | null; subscriptionFee: string | null; locationUrl: string | null;
-  notes: string | null; status: string;
+  notes: string | null; status: string; isClientOwned: boolean | null;
 }
 type TabType = "hotspot" | "broadband";
 type HotspotFilter = "all" | "internal" | "external";
@@ -322,8 +322,14 @@ export default function DatabaseScreen() {
         <View style={{ flex: 1 }}>
           <Text style={[styles.flashNum, { color: Colors.warning }]}>{p.name}</Text>
           {p.subscriptionName ? <Text style={styles.deviceName}>{p.subscriptionName}</Text> : null}
-          <View style={[styles.typeBadge, { backgroundColor: Colors.warning + "18" }]}>
-            <Text style={[styles.typeBadgeText, { color: Colors.warning }]}>برودباند</Text>
+          {p.deviceName ? <Text style={[styles.deviceName, { color: Colors.textMuted, fontSize: 11 }]}>{p.deviceName}</Text> : null}
+          <View style={{ flexDirection: "row-reverse", gap: 6, marginTop: 4 }}>
+            <View style={[styles.typeBadge, { backgroundColor: Colors.warning + "18" }]}>
+              <Text style={[styles.typeBadgeText, { color: Colors.warning }]}>برودباند</Text>
+            </View>
+            {p.isClientOwned
+              ? <View style={styles.ownerBadge}><Text style={styles.ownerText}>ملك العميل</Text></View>
+              : <View style={[styles.ownerBadge, { backgroundColor: Colors.primary + "15" }]}><Text style={[styles.ownerText, { color: Colors.primary }]}>ملك الشبكة</Text></View>}
           </View>
         </View>
         {p.subscriptionFee ? <Text style={styles.feeText}>{Number(p.subscriptionFee).toLocaleString()} ر</Text> : null}
