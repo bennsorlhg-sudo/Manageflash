@@ -10,16 +10,23 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 import { apiPost, formatCurrency } from "@/utils/api";
 
-/* ─── Alert Modal ─── */
-function AlertModal({ title, msg, visible, onClose }: { title: string; msg: string; visible: boolean; onClose: () => void }) {
+function AlertModal({ visible, title, message, color, onClose }: {
+  visible: boolean; title: string; message: string; color: string; onClose: () => void;
+}) {
   return (
     <Modal visible={visible} transparent animationType="fade">
-      <View style={styles.alertOverlay}>
-        <View style={styles.alertBox}>
-          <Text style={styles.alertTitle}>{title}</Text>
-          {msg ? <Text style={styles.alertMsg}>{msg}</Text> : null}
-          <TouchableOpacity style={styles.alertBtn} onPress={onClose}>
-            <Text style={styles.alertBtnText}>حسناً</Text>
+      <View style={s.overlay}>
+        <View style={s.alertBox}>
+          <View style={[s.alertIconWrap, { backgroundColor: color + "22" }]}>
+            <Ionicons
+              name={color === Colors.error ? "close-circle" : "checkmark-circle"}
+              size={48} color={color}
+            />
+          </View>
+          <Text style={s.alertTitle}>{title}</Text>
+          {!!message && <Text style={s.alertMsg}>{message}</Text>}
+          <TouchableOpacity style={[s.alertBtn, { backgroundColor: color }]} onPress={onClose}>
+            <Text style={s.alertBtnTxt}>حسناً</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -27,288 +34,285 @@ function AlertModal({ title, msg, visible, onClose }: { title: string; msg: stri
   );
 }
 
+type SaleType = "cards" | "broadband";
+type PayType  = "cash" | "loan";
+
 export default function SellScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const router  = useRouter();
   const { token } = useAuth();
 
-  const [sellType, setSellType] = useState<"cards" | "broadband">("cards");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "loan">("cash");
-  const [amount, setAmount] = useState("");
-  const [customerName, setCustomerName] = useState("");
-  const [notes, setNotes] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [lastSale, setLastSale] = useState<any>(null);
+  const [step,       setStep]       = useState<1 | 2>(1);
+  const [saleType,   setSaleType]   = useState<SaleType>("cards");
+  const [customer,   setCustomer]   = useState("");
+  const [amount,     setAmount]     = useState("");
+  const [payType,    setPayType]    = useState<PayType>("cash");
+  const [notes,      setNotes]      = useState("");
+  const [saving,     setSaving]     = useState(false);
+  const [modal,      setModal]      = useState({ visible: false, title: "", message: "", color: Colors.success });
 
-  const [alertVis, setAlertVis] = useState(false);
-  const [alertTitle, setAlertTitle] = useState("");
-  const [alertMsg, setAlertMsg] = useState("");
-  const showAlert = (t: string, m = "") => { setAlertTitle(t); setAlertMsg(m); setAlertVis(true); };
+  const showMsg = (title: string, message: string, color = Colors.success) =>
+    setModal({ visible: true, title, message, color });
 
-  const parsedAmount = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
-  const isValid = customerName.trim().length > 0 && parsedAmount > 0;
+  const reset = () => {
+    setStep(1); setCustomer(""); setAmount(""); setPayType("cash"); setNotes("");
+  };
 
-  const handleSubmit = async () => {
-    if (!isValid) { showAlert("خطأ", "يرجى إدخال اسم المستلم والمبلغ"); return; }
-    setLoading(true);
+  const parsedAmt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
+  const canSave   = !!customer.trim() && parsedAmt > 0;
+
+  const handleSave = async () => {
+    if (!canSave) return showMsg("خطأ", "أدخل اسم العميل والمبلغ", Colors.error);
+    setSaving(true);
     try {
-      const result = await apiPost("/transactions/sell", token, {
-        cardType: sellType,
-        amount: parsedAmount,
-        paymentType: paymentMethod,
-        customerName: customerName.trim(),
+      await apiPost("/transactions/sell", token, {
+        cardType: saleType,
+        amount: parsedAmt,
+        customerName: customer.trim(),
+        paymentType: payType,
         notes: notes.trim() || undefined,
       });
-      setLastSale(result);
-      setSubmitted(true);
+
+      const typeLabel = saleType === "cards" ? "كروت هوتسبوت" : "برودباند";
+      const payLabel  = payType  === "cash"  ? "نقد" : "سلفة";
+      let effectLines = "";
+      if (saleType === "cards") {
+        effectLines  = payType === "cash"
+          ? "← ينقص من إجمالي الكروت\n← يزيد الصندوق النقدي"
+          : "← ينقص من إجمالي الكروت\n← يزيد السلف";
+      } else {
+        effectLines  = payType === "cash"
+          ? "← يُسجَّل ضمن العهدة\n← يزيد الصندوق النقدي"
+          : "← يُسجَّل ضمن العهدة\n← يزيد السلف";
+      }
+
+      showMsg(
+        "تم تسجيل البيع ✓",
+        `${typeLabel} — ${payLabel}\n${formatCurrency(parsedAmt)}\nإلى: ${customer.trim()}\n\n${effectLines}`,
+      );
+      reset();
     } catch (e: any) {
-      showAlert("خطأ", e.message ?? "فشلت عملية البيع");
+      showMsg("خطأ في البيع", e?.message ?? "فشل تسجيل البيع", Colors.error);
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
   };
 
-  const reset = () => {
-    setSubmitted(false);
-    setCustomerName("");
-    setAmount("");
-    setNotes("");
-    setPaymentMethod("cash");
-    setSellType("cards");
-    setLastSale(null);
-  };
+  /* ── الألوان حسب النوع ── */
+  const typeColor = saleType === "cards" ? Colors.info : "#9C27B0";
 
-  /* ─── Success Screen ─── */
-  if (submitted) {
-    return (
-      <View style={[styles.container, styles.centered, { paddingTop: insets.top }]}>
-        <View style={styles.successIcon}>
-          <Ionicons name="checkmark-circle" size={80} color={Colors.success} />
-        </View>
-        <Text style={styles.successTitle}>تمت عملية البيع بنجاح</Text>
-        <Text style={styles.successSub}>
-          {sellType === "cards" ? "كروت هوتسبوت" : "باقات برودباند"} — {customerName}
-        </Text>
-        <Text style={styles.successAmount}>{formatCurrency(lastSale?.amount ?? parsedAmount)}</Text>
-        <View style={[
-          styles.badge,
-          { backgroundColor: paymentMethod === "cash" ? Colors.success + "22" : Colors.info + "22" }
-        ]}>
-          <Text style={[styles.badgeText, { color: paymentMethod === "cash" ? Colors.success : Colors.info }]}>
-            {paymentMethod === "cash" ? "نقدي — أُضيف للصندوق" : "سلفة — سُجل كمديونية"}
-          </Text>
-        </View>
-        <View style={styles.successActions}>
-          <TouchableOpacity style={styles.primaryBtn} onPress={reset}>
-            <Text style={styles.primaryBtnText}>بيع جديد</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
-            <Text style={styles.secondaryBtnText}>العودة للرئيسية</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
-
-  /* ─── Main Form ─── */
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+    <View style={[s.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
+      {/* ── Header ── */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => { if (step === 2) setStep(1); else router.back(); }}>
           <Ionicons name="arrow-forward" size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>بيع</Text>
+        <Text style={s.headerTitle}>بيع</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
-        {/* نوع البيع */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>نوع البيع</Text>
-          <View style={styles.segmentedControl}>
-            {(["cards", "broadband"] as const).map(t => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.segment, sellType === t && styles.segmentActive]}
-                onPress={() => setSellType(t)}
-              >
-                <Ionicons
-                  name={t === "cards" ? "card-outline" : "wifi-outline"}
-                  size={20}
-                  color={sellType === t ? "#FFF" : Colors.textSecondary}
-                />
-                <Text style={[styles.segmentText, sellType === t && styles.segmentTextActive]}>
-                  {t === "cards" ? "كروت" : "برودباند"}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+        {/* ══ الخطوة 1: اختيار النوع ══ */}
+        <Text style={s.sectionLabel}>نوع البيع</Text>
+        <View style={s.typeRow}>
+          {([
+            { key: "cards",     label: "كروت هوتسبوت", icon: "card"  as const, color: Colors.info,  desc: "كروت إنترنت هوتسبوت" },
+            { key: "broadband", label: "برودباند",      icon: "wifi"  as const, color: "#9C27B0",    desc: "اشتراكات برودباند"   },
+          ] as const).map(t => (
+            <TouchableOpacity
+              key={t.key}
+              style={[s.typeCard, saleType === t.key && { borderColor: t.color, backgroundColor: t.color + "12" }]}
+              onPress={() => setSaleType(t.key)}
+              activeOpacity={0.8}
+            >
+              <View style={[s.typeIconWrap, { backgroundColor: t.color + "20" }]}>
+                <Ionicons name={t.icon} size={26} color={t.color} />
+              </View>
+              {saleType === t.key && (
+                <View style={[s.typeCheck, { backgroundColor: t.color }]}>
+                  <Ionicons name="checkmark" size={11} color="#fff" />
+                </View>
+              )}
+              <Text style={[s.typeLabel, saleType === t.key && { color: t.color }]}>{t.label}</Text>
+              <Text style={s.typeDesc}>{t.desc}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* طريقة الدفع */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>طريقة الدفع</Text>
-          <View style={styles.paymentRow}>
-            {(["cash", "loan"] as const).map(m => (
-              <TouchableOpacity
-                key={m}
-                style={[
-                  styles.paymentBtn,
-                  paymentMethod === m && styles.paymentBtnActive,
-                  { borderColor: m === "cash" ? Colors.success : Colors.info },
-                ]}
-                onPress={() => setPaymentMethod(m)}
-              >
-                <Ionicons
-                  name={m === "cash" ? "cash-outline" : "trending-up-outline"}
-                  size={24}
-                  color={paymentMethod === m ? (m === "cash" ? Colors.success : Colors.info) : Colors.textSecondary}
-                />
-                <Text style={[styles.paymentBtnText, paymentMethod === m && { color: m === "cash" ? Colors.success : Colors.info }]}>
-                  {m === "cash" ? "نقدي" : "سلفة"}
-                </Text>
-                {paymentMethod === m && (
-                  <Text style={styles.paymentHint}>{m === "cash" ? "يُضاف للصندوق" : "يُسجل كمديونية"}</Text>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* البيانات */}
-        <View style={styles.card}>
-          <Text style={styles.label}>اسم المستلم / المشترك</Text>
+        {/* ══ نموذج البيع ══ */}
+        <View style={s.card}>
+          {/* اسم العميل */}
+          <Text style={s.fieldLabel}>
+            {saleType === "cards" ? "اسم الجهة / العميل" : "اسم العميل"} *
+          </Text>
           <TextInput
-            style={styles.input}
-            placeholder="أدخل الاسم"
-            placeholderTextColor={Colors.textMuted}
-            value={customerName}
-            onChangeText={setCustomerName}
-            textAlign="right"
+            style={s.input} value={customer} onChangeText={setCustomer}
+            placeholder="أدخل الاسم" placeholderTextColor={Colors.textMuted} textAlign="right"
           />
 
-          <Text style={[styles.label, { marginTop: 16 }]}>المبلغ (ريال)</Text>
+          {/* المبلغ */}
+          <Text style={[s.fieldLabel, { marginTop: 14 }]}>المبلغ (ر.س) *</Text>
           <TextInput
-            style={[styles.input, styles.amountInput]}
-            placeholder="0"
-            placeholderTextColor={Colors.textMuted}
-            value={amount}
+            style={[s.input, s.amtInput]} value={amount}
             onChangeText={v => setAmount(v.replace(/[^0-9.]/g, ""))}
-            keyboardType="decimal-pad"
-            textAlign="right"
+            placeholder="0" placeholderTextColor={Colors.textMuted}
+            keyboardType="decimal-pad" textAlign="right"
           />
 
-          <Text style={[styles.label, { marginTop: 16 }]}>ملاحظات (اختياري)</Text>
+          {/* طريقة الدفع */}
+          <Text style={[s.fieldLabel, { marginTop: 14 }]}>طريقة الدفع *</Text>
+          <View style={s.payRow}>
+            {([
+              { k: "cash", label: "نقد",  icon: "cash"  as const, c: Colors.success, hint: "يزيد الصندوق"  },
+              { k: "loan", label: "سلفة", icon: "time"  as const, c: Colors.warning, hint: "يُسجَّل كسلفة" },
+            ] as const).map(p => (
+              <TouchableOpacity
+                key={p.k}
+                style={[s.payBtn, payType === p.k && { borderColor: p.c, backgroundColor: p.c + "18" }]}
+                onPress={() => setPayType(p.k)}
+              >
+                <Ionicons name={p.icon} size={20} color={payType === p.k ? p.c : Colors.textSecondary} />
+                <Text style={[s.payBtnTxt, payType === p.k && { color: p.c, fontWeight: "700" }]}>{p.label}</Text>
+                <Text style={[s.payBtnHint, payType === p.k && { color: p.c + "BB" }]}>{p.hint}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* ملاحظات */}
+          <Text style={[s.fieldLabel, { marginTop: 14 }]}>ملاحظات (اختياري)</Text>
           <TextInput
-            style={[styles.input, { height: 70, textAlignVertical: "top" }]}
-            placeholder="أي تفاصيل إضافية..."
-            placeholderTextColor={Colors.textMuted}
-            value={notes}
-            onChangeText={setNotes}
-            textAlign="right"
-            multiline
+            style={s.input} value={notes} onChangeText={setNotes}
+            placeholder="أي ملاحظات..." placeholderTextColor={Colors.textMuted} textAlign="right"
           />
         </View>
 
-        {/* ملخص */}
-        {parsedAmount > 0 && (
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryLabel}>إجمالي المبلغ</Text>
-            <Text style={styles.summaryValue}>{formatCurrency(parsedAmount)}</Text>
-            <Text style={styles.summaryDetail}>
-              {sellType === "cards" ? "كروت هوتسبوت" : "باقات برودباند"} ·{" "}
-              {paymentMethod === "cash" ? "نقدي" : "سلفة"}
+        {/* ── ملخص الأثر ── */}
+        {canSave && (
+          <View style={[s.summaryBox, { borderColor: typeColor + "55" }]}>
+            <Text style={[s.summaryTitle, { color: typeColor }]}>
+              {saleType === "cards" ? "بيع كروت هوتسبوت" : "بيع باقة برودباند"}
+              {" — "}{payType === "cash" ? "نقد" : "سلفة"}
             </Text>
+            <View style={s.summaryAmtRow}>
+              <Text style={s.summaryName}>{customer}</Text>
+              <Text style={[s.summaryAmt, { color: typeColor }]}>{formatCurrency(parsedAmt)}</Text>
+            </View>
+            <View style={s.divider} />
+            {/* الآثار */}
+            {saleType === "cards" && (
+              <View style={s.effectRow}>
+                <Ionicons name="remove-circle" size={14} color={Colors.error} />
+                <Text style={s.effectTxt}>ينقص من إجمالي الكروت</Text>
+              </View>
+            )}
+            <View style={s.effectRow}>
+              <Ionicons name="add-circle" size={14} color={payType === "cash" ? Colors.success : Colors.warning} />
+              <Text style={s.effectTxt}>
+                {payType === "cash" ? "يزيد الصندوق النقدي" : "يزيد السلف (مبلغ مستحق التحصيل)"}
+              </Text>
+            </View>
           </View>
         )}
 
+        {/* ── زر الحفظ ── */}
         <TouchableOpacity
-          style={[styles.submitBtn, (!isValid || loading) && styles.submitBtnDisabled]}
-          onPress={handleSubmit}
-          disabled={!isValid || loading}
+          style={[s.saveBtn, { backgroundColor: typeColor }, (!canSave || saving) && { opacity: 0.4 }]}
+          onPress={handleSave} disabled={!canSave || saving}
         >
-          {loading
-            ? <ActivityIndicator color="#FFF" />
-            : <Text style={styles.submitBtnText}>تأكيد البيع</Text>}
+          {saving
+            ? <ActivityIndicator color="#fff" />
+            : <>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={s.saveBtnTxt}>حفظ البيع</Text>
+              </>}
         </TouchableOpacity>
+
+        <View style={{ height: 50 }} />
       </ScrollView>
 
-      <AlertModal title={alertTitle} msg={alertMsg} visible={alertVis} onClose={() => setAlertVis(false)} />
+      <AlertModal
+        visible={modal.visible} title={modal.title} message={modal.message} color={modal.color}
+        onClose={() => setModal(m => ({ ...m, visible: false }))}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  centered: { alignItems: "center", justifyContent: "center", padding: 20 },
   header: {
-    flexDirection: "row-reverse", justifyContent: "space-between",
-    alignItems: "center", paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: Colors.text },
-  backButton: { padding: 4 },
-  content: { padding: 20, gap: 4 },
+  content: { padding: 16 },
+
+  sectionLabel: { fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right", marginBottom: 10 },
+
+  typeRow: { flexDirection: "row-reverse", gap: 10, marginBottom: 16 },
+  typeCard: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    alignItems: "center", gap: 8, borderWidth: 1.5, borderColor: Colors.border,
+  },
+  typeIconWrap: { width: 52, height: 52, borderRadius: 14, justifyContent: "center", alignItems: "center" },
+  typeCheck: {
+    position: "absolute", top: 8, left: 8, width: 20, height: 20,
+    borderRadius: 10, justifyContent: "center", alignItems: "center",
+  },
+  typeLabel: { fontSize: 13, fontWeight: "700", color: Colors.text, textAlign: "center" },
+  typeDesc:  { fontSize: 11, color: Colors.textMuted, textAlign: "center" },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
-    marginBottom: 16, borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: 14,
   },
-  cardTitle: { fontSize: 16, fontWeight: "600", color: Colors.text, marginBottom: 16, textAlign: "right" },
-
-  segmentedControl: { flexDirection: "row-reverse", backgroundColor: Colors.background, borderRadius: 12, padding: 4 },
-  segment: { flex: 1, flexDirection: "row-reverse", alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 10, gap: 8 },
-  segmentActive: { backgroundColor: Colors.primary },
-  segmentText: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary },
-  segmentTextActive: { color: "#FFF" },
-
-  paymentRow: { flexDirection: "row-reverse", gap: 12 },
-  paymentBtn: {
-    flex: 1, backgroundColor: Colors.background, borderRadius: 12,
-    padding: 16, alignItems: "center", borderWidth: 2, borderColor: "transparent",
-  },
-  paymentBtnActive: { backgroundColor: Colors.surfaceElevated },
-  paymentBtnText: { fontSize: 14, fontWeight: "bold", color: Colors.textSecondary, marginTop: 8 },
-  paymentHint: { fontSize: 10, color: Colors.textMuted, marginTop: 4 },
-
-  label: { fontSize: 14, fontWeight: "600", color: Colors.textSecondary, marginBottom: 8, textAlign: "right" },
+  fieldLabel: { fontSize: 13, color: Colors.textSecondary, textAlign: "right", marginBottom: 7, fontWeight: "600" },
   input: {
-    backgroundColor: Colors.background, borderRadius: 12, padding: 14,
-    color: Colors.text, fontSize: 16, borderWidth: 1, borderColor: Colors.border,
+    backgroundColor: Colors.background, borderRadius: 10, padding: 13,
+    color: Colors.text, fontSize: 15, borderWidth: 1, borderColor: Colors.border,
   },
-  amountInput: { fontSize: 24, fontWeight: "bold", color: Colors.text, paddingVertical: 16 },
+  amtInput: { fontSize: 24, fontWeight: "800" },
 
-  summaryCard: {
-    backgroundColor: Colors.primary + "15", borderRadius: 16, padding: 20,
-    alignItems: "center", marginBottom: 16, borderWidth: 1, borderColor: Colors.primary + "33",
+  payRow: { flexDirection: "row-reverse", gap: 8 },
+  payBtn: {
+    flex: 1, alignItems: "center", paddingVertical: 12, borderRadius: 10,
+    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.background, gap: 4,
   },
-  summaryLabel: { fontSize: 13, color: Colors.textSecondary },
-  summaryValue: { fontSize: 36, fontWeight: "800", color: Colors.primaryLight, marginVertical: 6 },
-  summaryDetail: { fontSize: 12, color: Colors.textMuted },
+  payBtnTxt:  { fontSize: 14, color: Colors.textSecondary },
+  payBtnHint: { fontSize: 10, color: Colors.textMuted },
 
-  submitBtn: { backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 16, alignItems: "center", marginTop: 4, marginBottom: 20 },
-  submitBtnDisabled: { opacity: 0.4 },
-  submitBtnText: { fontSize: 18, fontWeight: "bold", color: "#FFF" },
+  summaryBox: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1.5, marginBottom: 14, gap: 8,
+  },
+  summaryTitle:  { fontSize: 13, fontWeight: "700", textAlign: "right" },
+  summaryAmtRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  summaryName:   { fontSize: 13, color: Colors.textSecondary },
+  summaryAmt:    { fontSize: 18, fontWeight: "800" },
+  divider:       { height: 1, backgroundColor: Colors.border },
+  effectRow:     { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
+  effectTxt:     { fontSize: 12, color: Colors.textSecondary },
 
-  successIcon: { marginBottom: 24 },
-  successTitle: { fontSize: 24, fontWeight: "bold", color: Colors.text, marginBottom: 8, textAlign: "center" },
-  successSub: { fontSize: 16, color: Colors.textSecondary, marginBottom: 4, textAlign: "center" },
-  successAmount: { fontSize: 36, fontWeight: "800", color: Colors.primaryLight, marginBottom: 16 },
-  badge: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginBottom: 32 },
-  badgeText: { fontSize: 13, fontWeight: "600" },
-  successActions: { width: "100%", gap: 12 },
-  primaryBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  primaryBtnText: { color: "#FFF", fontSize: 16, fontWeight: "600" },
-  secondaryBtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  secondaryBtnText: { color: Colors.text, fontSize: 16, fontWeight: "600" },
+  saveBtn: {
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 16, borderRadius: 14,
+  },
+  saveBtnTxt: { color: "#fff", fontSize: 16, fontWeight: "800" },
 
-  alertOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 30 },
-  alertBox: { backgroundColor: Colors.surface, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: Colors.border },
-  alertTitle: { color: Colors.text, fontSize: 17, fontWeight: "bold", textAlign: "right", marginBottom: 8 },
-  alertMsg: { color: Colors.textSecondary, fontSize: 14, textAlign: "right", marginBottom: 16 },
-  alertBtn: { backgroundColor: Colors.primary, borderRadius: 10, padding: 12, alignItems: "center" },
-  alertBtnText: { color: "#FFF", fontWeight: "bold" },
-  surfaceElevated: { backgroundColor: Colors.surfaceElevated },
+  /* modal */
+  overlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center", alignItems: "center", padding: 24,
+  },
+  alertBox: {
+    backgroundColor: Colors.surface, borderRadius: 20, padding: 28,
+    width: "100%", maxWidth: 340, alignItems: "center", gap: 12,
+  },
+  alertIconWrap: { width: 76, height: 76, borderRadius: 38, justifyContent: "center", alignItems: "center" },
+  alertTitle:    { fontSize: 18, fontWeight: "800", color: Colors.text, textAlign: "center" },
+  alertMsg:      { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  alertBtn:      { paddingHorizontal: 44, paddingVertical: 12, borderRadius: 12, marginTop: 4 },
+  alertBtnTxt:   { fontSize: 15, fontWeight: "700", color: "#fff" },
 });

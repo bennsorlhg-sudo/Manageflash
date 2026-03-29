@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Platform, Modal, ActivityIndicator, Alert, RefreshControl,
+  TextInput, Platform, Modal, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,26 +10,60 @@ import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPost, formatCurrency } from "@/utils/api";
 
+/* ─── نوع العملية:
+ *   "collect" = تحصيل سلفة  (عميل يدفع لنا) → debtsTable (sourceType="debt") → +cashbox
+ *   "pay"     = سداد دين     (نحن ندفع لجهة) → loansTable (sourceType="loan") → -cashbox
+ */
+type Mode = "collect" | "pay";
+
+function AlertModal({ visible, title, message, color, onClose }: {
+  visible: boolean; title: string; message: string; color: string; onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={s.overlay}>
+        <View style={s.alertBox}>
+          <View style={[s.alertIconWrap, { backgroundColor: color + "22" }]}>
+            <Ionicons
+              name={color === Colors.error ? "close-circle" : "checkmark-circle"}
+              size={48} color={color}
+            />
+          </View>
+          <Text style={s.alertTitle}>{title}</Text>
+          {!!message && <Text style={s.alertMsg}>{message}</Text>}
+          <TouchableOpacity style={[s.alertBtn, { backgroundColor: color }]} onPress={onClose}>
+            <Text style={s.alertBtnTxt}>حسناً</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function CollectScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const router  = useRouter();
   const { token } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<"loans" | "debts">("loans");
-  const [search, setSearch] = useState("");
-  const [loans, setLoans] = useState<any[]>([]);
-  const [debts, setDebts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [mode,     setMode]     = useState<Mode>("collect");
+  const [search,   setSearch]   = useState("");
+  const [debts,    setDebts]    = useState<any[]>([]); /* السلف — عملاء يدينون لنا */
+  const [loans,    setLoans]    = useState<any[]>([]); /* الديون — نحن ندين لجهات */
+  const [loading,  setLoading]  = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedEntity, setSelectedEntity] = useState<any>(null);
-  const [amountInput, setAmountInput] = useState("");
+  const [selected, setSelected] = useState<any>(null);
+  const [amtInput, setAmtInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [alert,    setAlert]    = useState({ visible: false, title: "", message: "", color: Colors.success });
+
+  const showAlert = (title: string, message: string, color = Colors.success) =>
+    setAlert({ visible: true, title, message, color });
 
   const fetchData = useCallback(async () => {
     try {
-      const [l, d] = await Promise.all([apiGet("/loans", token), apiGet("/debts", token)]);
-      setLoans(l.filter((x: any) => x.status !== "paid"));
+      const [d, l] = await Promise.all([apiGet("/debts", token), apiGet("/loans", token)]);
       setDebts(d.filter((x: any) => x.status !== "paid"));
+      setLoans(l.filter((x: any) => x.status !== "paid"));
     } catch {} finally {
       setLoading(false); setRefreshing(false);
     }
@@ -37,191 +71,331 @@ export default function CollectScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const list = (activeTab === "loans" ? loans : debts)
-    .filter(item => item.personName.includes(search))
-    .map(item => ({
+  /* قائمة حسب الوضع */
+  const rawList = mode === "collect" ? debts : loans;
+  const list = rawList
+    .map((item: any) => ({
       ...item,
-      remaining: parseFloat(item.amount) - parseFloat(item.paidAmount),
+      remaining: Math.max(0, parseFloat(item.amount) - parseFloat(item.paidAmount)),
     }))
-    .sort((a, b) => b.remaining - a.remaining);
+    .filter((item: any) => item.remaining > 0.01 && item.personName.includes(search))
+    .sort((a: any, b: any) => b.remaining - a.remaining);
 
-  const handleAction = async () => {
-    const amt = parseFloat(amountInput);
-    if (!amt || amt <= 0) { Alert.alert("خطأ", "أدخل مبلغاً صحيحاً"); return; }
+  const handleSubmit = async () => {
+    const amt = parseFloat(amtInput.replace(/[^0-9.]/g, ""));
+    if (!amt || amt <= 0) return showAlert("خطأ", "أدخل مبلغاً صحيحاً", Colors.error);
+    if (amt > selected.remaining + 0.01) return showAlert("خطأ", "المبلغ أكبر من المتبقي", Colors.error);
+
     setSubmitting(true);
     try {
       await apiPost("/transactions/collect", token, {
-        sourceType: activeTab === "loans" ? "debt" : "loan",
-        sourceId: selectedEntity.id,
-        amount: amt,
+        sourceType: mode === "collect" ? "debt" : "loan",
+        sourceId:   selected.id,
+        amount:     amt,
       });
       await fetchData();
-      setSelectedEntity(null);
-      setAmountInput("");
+      const label = mode === "collect"
+        ? `تم تحصيل ${formatCurrency(amt)} من ${selected.personName}\n← يزيد الصندوق النقدي`
+        : `تم سداد ${formatCurrency(amt)} لـ ${selected.personName}\n← ينقص من الصندوق النقدي`;
+      showAlert(mode === "collect" ? "تم التحصيل ✓" : "تم السداد ✓", label);
+      setSelected(null);
+      setAmtInput("");
     } catch (e: any) {
-      Alert.alert("خطأ", e.message);
+      showAlert("خطأ", e?.message ?? "فشلت العملية", Colors.error);
     } finally {
-      setSubmitting(false);
-    }
+      setSubmitting(false); }
   };
+
+  const modeColor = mode === "collect" ? Colors.success : Colors.error;
 
   if (loading) {
     return (
-      <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
+      <View style={[s.container, s.center, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
         <ActivityIndicator size="large" color={Colors.primary} />
       </View>
     );
   }
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+    <View style={[s.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
+      {/* Header */}
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-forward" size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>تحصيل</Text>
+        <Text style={s.headerTitle}>تحصيل</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <View style={styles.tabs}>
-        {(["loans", "debts"] as const).map(t => (
-          <TouchableOpacity key={t} style={[styles.tab, activeTab === t && styles.tabActive]} onPress={() => setActiveTab(t)}>
-            <Text style={[styles.tabText, activeTab === t && styles.tabTextActive]}>
-              {t === "loans" ? "تحصيل سلفة" : "سداد دين"}
-            </Text>
+      {/* ── اختيار الوضع ── */}
+      <View style={s.modeRow}>
+        {([
+          { key: "collect", label: "تحصيل سلف",  icon: "arrow-down-circle" as const, color: Colors.success,
+            sub: "عملاء يدينون لنا" },
+          { key: "pay",     label: "سداد دين",    icon: "arrow-up-circle"   as const, color: Colors.error,
+            sub: "نحن ندين لجهات" },
+        ] as const).map(m => (
+          <TouchableOpacity
+            key={m.key}
+            style={[s.modeCard, mode === m.key && { borderColor: m.color, backgroundColor: m.color + "12" }]}
+            onPress={() => { setMode(m.key); setSearch(""); }}
+          >
+            <Ionicons name={m.icon} size={28} color={mode === m.key ? m.color : Colors.textMuted} />
+            <Text style={[s.modeLabel, mode === m.key && { color: m.color }]}>{m.label}</Text>
+            <Text style={s.modeSub}>{m.sub}</Text>
+            {mode === m.key && (
+              <View style={[s.modeCheck, { backgroundColor: m.color }]}>
+                <Ionicons name="checkmark" size={11} color="#fff" />
+              </View>
+            )}
           </TouchableOpacity>
         ))}
       </View>
 
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color={Colors.textMuted} style={styles.searchIcon} />
+      {/* ── بحث ── */}
+      <View style={s.searchWrap}>
         <TextInput
-          style={styles.searchInput} placeholder="بحث بالاسم..."
+          style={s.searchInput} placeholder="بحث بالاسم..."
           placeholderTextColor={Colors.textMuted} value={search}
           onChangeText={setSearch} textAlign="right"
         />
+        <Ionicons name="search" size={18} color={Colors.textMuted} style={{ marginLeft: 8 }} />
       </View>
 
+      {/* ── القائمة ── */}
       <ScrollView
-        contentContainerStyle={styles.content}
+        contentContainerStyle={s.content}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
       >
         {list.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="checkmark-circle-outline" size={48} color={Colors.success} />
-            <Text style={styles.emptyText}>لا توجد سجلات</Text>
+          <View style={s.empty}>
+            <Ionicons name="checkmark-done-circle-outline" size={52} color={Colors.textMuted} />
+            <Text style={s.emptyTxt}>لا توجد سجلات مفتوحة</Text>
           </View>
-        ) : list.map((item) => (
-          <View key={item.id} style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.entityName}>{item.personName}</Text>
-              <Text style={[styles.remainingText, { color: activeTab === "loans" ? Colors.success : Colors.error }]}>
-                متبقي: {formatCurrency(item.remaining)}
-              </Text>
-            </View>
-            <View style={styles.progressContainer}>
-              <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, {
-                  width: `${Math.min((parseFloat(item.paidAmount) / parseFloat(item.amount)) * 100, 100)}%` as any,
-                  backgroundColor: activeTab === "loans" ? Colors.success : Colors.error,
-                }]} />
+        ) : list.map((item: any) => {
+          const pct = Math.min((parseFloat(item.paidAmount) / parseFloat(item.amount)) * 100, 100);
+          return (
+            <View key={item.id} style={s.card}>
+              {/* اسم + متبقي */}
+              <View style={s.cardTop}>
+                <Text style={[s.remaining, { color: modeColor }]}>{formatCurrency(item.remaining)}</Text>
+                <Text style={s.personName}>{item.personName}</Text>
               </View>
-              <View style={styles.progressInfo}>
-                <Text style={styles.progressText}>الإجمالي: {formatCurrency(parseFloat(item.amount))}</Text>
-                <Text style={styles.progressText}>المدفوع: {formatCurrency(parseFloat(item.paidAmount))}</Text>
+
+              {/* شريط التقدم */}
+              <View style={s.progressBg}>
+                <View style={[s.progressFill, { width: `${pct}%` as any, backgroundColor: modeColor }]} />
               </View>
+
+              {/* إجمالي / مسدد / متبقي */}
+              <View style={s.statsRow}>
+                <View style={s.stat}>
+                  <Text style={s.statVal}>{formatCurrency(parseFloat(item.amount))}</Text>
+                  <Text style={s.statKey}>الإجمالي</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.stat}>
+                  <Text style={s.statVal}>{formatCurrency(parseFloat(item.paidAmount))}</Text>
+                  <Text style={s.statKey}>المسدد</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.stat}>
+                  <Text style={[s.statVal, { color: modeColor }]}>{formatCurrency(item.remaining)}</Text>
+                  <Text style={s.statKey}>المتبقي</Text>
+                </View>
+              </View>
+
+              {/* زر الإجراء */}
+              <TouchableOpacity
+                style={[s.actionBtn, { backgroundColor: modeColor }]}
+                onPress={() => { setSelected(item); setAmtInput(""); }}
+              >
+                <Ionicons name={mode === "collect" ? "arrow-down" : "arrow-up"} size={16} color="#fff" />
+                <Text style={s.actionBtnTxt}>{mode === "collect" ? "تحصيل سلفة" : "سداد دين"}</Text>
+              </TouchableOpacity>
             </View>
-            <TouchableOpacity
-              style={[styles.actionBtn, { backgroundColor: activeTab === "loans" ? Colors.success : Colors.error }]}
-              onPress={() => { setSelectedEntity(item); setAmountInput(""); }}
-            >
-              <Text style={styles.actionBtnText}>{activeTab === "loans" ? "تحصيل" : "سداد"}</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
+          );
+        })}
+        <View style={{ height: 40 }} />
       </ScrollView>
 
-      <Modal visible={!!selectedEntity} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{activeTab === "loans" ? "تحصيل سلفة" : "سداد دين"}</Text>
-            <Text style={styles.modalEntity}>{selectedEntity?.personName}</Text>
-            <View style={styles.modalSummary}>
-              <Text style={styles.modalSummaryText}>المتبقي: {selectedEntity && formatCurrency(selectedEntity.remaining)}</Text>
+      {/* ── Modal الإدخال ── */}
+      <Modal visible={!!selected} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <Text style={[s.modalTitle, { color: modeColor }]}>
+              {mode === "collect" ? "تحصيل سلفة" : "سداد دين"}
+            </Text>
+            <Text style={s.modalPerson}>{selected?.personName}</Text>
+
+            {/* ملخص */}
+            <View style={s.modalSummary}>
+              <View style={s.summaryItem}>
+                <Text style={s.summaryVal}>{selected && formatCurrency(parseFloat(selected.amount))}</Text>
+                <Text style={s.summaryKey}>الإجمالي</Text>
+              </View>
+              <View style={s.summaryDivider} />
+              <View style={s.summaryItem}>
+                <Text style={s.summaryVal}>{selected && formatCurrency(parseFloat(selected.paidAmount))}</Text>
+                <Text style={s.summaryKey}>المسدد</Text>
+              </View>
+              <View style={s.summaryDivider} />
+              <View style={s.summaryItem}>
+                <Text style={[s.summaryVal, { color: modeColor }]}>
+                  {selected && formatCurrency(selected.remaining)}
+                </Text>
+                <Text style={s.summaryKey}>المتبقي</Text>
+              </View>
             </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>المبلغ</Text>
-              <TextInput
-                style={styles.input} placeholder="0.00"
-                placeholderTextColor={Colors.textMuted} value={amountInput}
-                onChangeText={setAmountInput} keyboardType="numeric" textAlign="right"
+
+            {/* حقل المبلغ */}
+            <Text style={s.inputLabel}>المبلغ المدفوع (ر.س)</Text>
+            <TextInput
+              style={s.modalInput} value={amtInput}
+              onChangeText={v => setAmtInput(v.replace(/[^0-9.]/g, ""))}
+              placeholder="0.00" placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad" textAlign="right" autoFocus
+            />
+
+            {/* الأثر */}
+            <View style={[s.effectBox, { backgroundColor: modeColor + "12" }]}>
+              <Ionicons
+                name={mode === "collect" ? "add-circle" : "remove-circle"}
+                size={14} color={modeColor}
               />
+              <Text style={[s.effectTxt, { color: modeColor }]}>
+                {mode === "collect" ? "يزيد الصندوق النقدي" : "ينقص من الصندوق النقدي"}
+              </Text>
             </View>
-            <View style={styles.modalActions}>
+
+            {/* أزرار */}
+            <View style={s.modalBtns}>
               <TouchableOpacity
-                style={[styles.modalBtn, { backgroundColor: activeTab === "loans" ? Colors.success : Colors.error }]}
-                onPress={handleAction} disabled={submitting}
+                style={[s.confirmBtn, { backgroundColor: modeColor }, submitting && { opacity: 0.5 }]}
+                onPress={handleSubmit} disabled={submitting}
               >
-                {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.modalBtnText}>تأكيد</Text>}
+                {submitting
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.confirmBtnTxt}>تأكيد</Text>}
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalBtnCancel} onPress={() => setSelectedEntity(null)}>
-                <Text style={styles.modalBtnTextCancel}>إلغاء</Text>
+              <TouchableOpacity
+                style={s.cancelBtn}
+                onPress={() => { setSelected(null); setAmtInput(""); }}
+              >
+                <Text style={s.cancelBtnTxt}>إلغاء</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
+
+      <AlertModal
+        visible={alert.visible} title={alert.title} message={alert.message} color={alert.color}
+        onClose={() => { setAlert(a => ({ ...a, visible: false })); }}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  center:    { justifyContent: "center", alignItems: "center" },
   header: {
-    flexDirection: "row-reverse", justifyContent: "space-between",
-    alignItems: "center", paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  headerTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: Colors.text },
-  backButton: { padding: 4 },
-  tabs: { flexDirection: "row-reverse", paddingHorizontal: 20, paddingVertical: 12, gap: 12 },
-  tab: { flex: 1, paddingVertical: 10, alignItems: "center", borderRadius: 12, borderWidth: 1, borderColor: Colors.border },
-  tabActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  tabText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: Colors.textSecondary },
-  tabTextActive: { color: "#FFF" },
-  searchContainer: {
-    flexDirection: "row-reverse", alignItems: "center",
-    marginHorizontal: 20, marginBottom: 16, backgroundColor: Colors.surface,
-    borderRadius: 12, paddingHorizontal: 12, borderWidth: 1, borderColor: Colors.border,
+  headerTitle: { fontSize: 20, fontWeight: "bold", color: Colors.text },
+
+  modeRow: { flexDirection: "row-reverse", gap: 10, padding: 16, paddingBottom: 8 },
+  modeCard: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    alignItems: "center", gap: 4, borderWidth: 1.5, borderColor: Colors.border,
   },
-  searchIcon: { marginLeft: 8 },
+  modeLabel: { fontSize: 14, fontWeight: "700", color: Colors.textSecondary, textAlign: "center" },
+  modeSub:   { fontSize: 10, color: Colors.textMuted, textAlign: "center" },
+  modeCheck: {
+    position: "absolute", top: 8, left: 8, width: 20, height: 20,
+    borderRadius: 10, justifyContent: "center", alignItems: "center",
+  },
+
+  searchWrap: {
+    flexDirection: "row-reverse", alignItems: "center", backgroundColor: Colors.surface,
+    marginHorizontal: 16, marginBottom: 12, borderRadius: 12, paddingHorizontal: 12,
+    borderWidth: 1, borderColor: Colors.border,
+  },
   searchInput: { flex: 1, paddingVertical: 10, color: Colors.text, fontSize: 14 },
-  content: { padding: 20, paddingTop: 0 },
-  card: { backgroundColor: Colors.surface, borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: Colors.border },
-  cardHeader: { flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 12 },
-  entityName: { fontSize: 15, fontFamily: "Inter_700Bold", color: Colors.text },
-  remainingText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  progressContainer: { marginBottom: 16 },
-  progressBarBg: { height: 8, backgroundColor: Colors.background, borderRadius: 4, overflow: "hidden" },
-  progressBarFill: { height: "100%", borderRadius: 4 },
-  progressInfo: { flexDirection: "row-reverse", justifyContent: "space-between", marginTop: 8 },
-  progressText: { fontSize: 11, color: Colors.textMuted },
-  actionBtn: { borderRadius: 10, paddingVertical: 10, alignItems: "center" },
-  actionBtnText: { color: "#FFF", fontSize: 14, fontFamily: "Inter_700Bold" },
-  emptyContainer: { alignItems: "center", justifyContent: "center", marginTop: 60, gap: 12 },
-  emptyText: { color: Colors.textMuted, fontSize: 15 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 20 },
-  modalContent: { backgroundColor: Colors.surface, borderRadius: 20, padding: 24, width: "100%", maxWidth: 400 },
-  modalTitle: { fontSize: 20, fontFamily: "Inter_700Bold", color: Colors.text, textAlign: "center", marginBottom: 8 },
-  modalEntity: { fontSize: 16, color: Colors.textSecondary, textAlign: "center", marginBottom: 16 },
-  modalSummary: { backgroundColor: Colors.background, padding: 12, borderRadius: 12, marginBottom: 20, alignItems: "center" },
-  modalSummaryText: { fontSize: 16, fontFamily: "Inter_700Bold", color: Colors.primaryLight },
-  inputGroup: { marginBottom: 24 },
-  label: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: Colors.textSecondary, marginBottom: 8, textAlign: "right" },
-  input: { backgroundColor: Colors.background, borderRadius: 12, padding: 14, color: Colors.text, fontSize: 16, borderWidth: 1, borderColor: Colors.border },
-  modalActions: { flexDirection: "row-reverse", gap: 12 },
-  modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
-  modalBtnText: { color: "#FFF", fontSize: 16, fontFamily: "Inter_700Bold" },
-  modalBtnCancel: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: Colors.border },
-  modalBtnTextCancel: { color: Colors.textSecondary, fontSize: 16, fontFamily: "Inter_600SemiBold" },
+
+  content: { padding: 16, paddingTop: 4 },
+  empty: { alignItems: "center", justifyContent: "center", marginTop: 60, gap: 12 },
+  emptyTxt: { fontSize: 15, color: Colors.textMuted },
+
+  card: {
+    backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
+    marginBottom: 14, borderWidth: 1, borderColor: Colors.border, gap: 10,
+  },
+  cardTop: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  personName: { fontSize: 15, fontWeight: "700", color: Colors.text },
+  remaining:  { fontSize: 16, fontWeight: "800" },
+
+  progressBg:   { height: 7, backgroundColor: Colors.background, borderRadius: 4, overflow: "hidden" },
+  progressFill: { height: "100%", borderRadius: 4 },
+
+  statsRow:    { flexDirection: "row-reverse", justifyContent: "space-around" },
+  stat:        { alignItems: "center", flex: 1 },
+  statVal:     { fontSize: 13, fontWeight: "700", color: Colors.text },
+  statKey:     { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  statDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 2 },
+
+  actionBtn: {
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 11, borderRadius: 10,
+  },
+  actionBtnTxt: { color: "#fff", fontSize: 14, fontWeight: "700" },
+
+  /* Modal */
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" },
+  modalBox: {
+    backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, gap: 12,
+  },
+  modalTitle:  { fontSize: 20, fontWeight: "800", textAlign: "center" },
+  modalPerson: { fontSize: 15, color: Colors.textSecondary, textAlign: "center" },
+
+  modalSummary: {
+    flexDirection: "row-reverse", justifyContent: "space-around",
+    backgroundColor: Colors.background, borderRadius: 12, padding: 14,
+  },
+  summaryItem:   { alignItems: "center", flex: 1 },
+  summaryVal:    { fontSize: 14, fontWeight: "700", color: Colors.text },
+  summaryKey:    { fontSize: 10, color: Colors.textMuted, marginTop: 2 },
+  summaryDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 4 },
+
+  inputLabel: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary, textAlign: "right" },
+  modalInput: {
+    backgroundColor: Colors.background, borderRadius: 12, padding: 16,
+    color: Colors.text, fontSize: 22, fontWeight: "800", borderWidth: 1, borderColor: Colors.border,
+  },
+
+  effectBox: { flexDirection: "row-reverse", alignItems: "center", gap: 6, borderRadius: 10, padding: 10 },
+  effectTxt: { fontSize: 12, fontWeight: "600" },
+
+  modalBtns:    { flexDirection: "row-reverse", gap: 10, marginTop: 4 },
+  confirmBtn:   { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
+  confirmBtnTxt: { color: "#fff", fontSize: 16, fontWeight: "700" },
+  cancelBtn:    { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: Colors.border },
+  cancelBtnTxt: { fontSize: 16, color: Colors.textSecondary },
+
+  /* Alert */
+  overlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center", alignItems: "center", padding: 24,
+  },
+  alertBox: {
+    backgroundColor: Colors.surface, borderRadius: 20, padding: 28,
+    width: "100%", maxWidth: 340, alignItems: "center", gap: 12,
+  },
+  alertIconWrap: { width: 76, height: 76, borderRadius: 38, justifyContent: "center", alignItems: "center" },
+  alertTitle:    { fontSize: 18, fontWeight: "800", color: Colors.text, textAlign: "center" },
+  alertMsg:      { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  alertBtn:      { paddingHorizontal: 44, paddingVertical: 12, borderRadius: 12, marginTop: 4 },
+  alertBtnTxt:   { fontSize: 15, fontWeight: "700", color: "#fff" },
 });

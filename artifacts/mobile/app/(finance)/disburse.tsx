@@ -8,310 +8,484 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost, formatCurrency } from "@/utils/api";
+import { apiGet, apiPost, apiPut, formatCurrency } from "@/utils/api";
 
-const EXPENSE_TYPES = [
-  { key: "daily",    label: "مصروف يومي",    icon: "today-outline" as const },
-  { key: "monthly",  label: "التزام شهري",    icon: "calendar-outline" as const },
-  { key: "purchase", label: "مشتريات",        icon: "cart-outline" as const },
-  { key: "salary",   label: "راتب",           icon: "people-outline" as const },
+type ExpenseType = "daily" | "monthly" | "purchase";
+type PayType     = "cash"  | "debt";
+
+const EXPENSE_TYPES: { key: ExpenseType; label: string; icon: keyof typeof Ionicons.glyphMap; color: string; desc: string }[] = [
+  { key: "daily",    label: "مصروف يومي",  icon: "today",          color: Colors.warning, desc: "فواتير ومصروفات يومية" },
+  { key: "monthly",  label: "التزام شهري", icon: "calendar",       color: Colors.info,    desc: "إيجارات والتزامات ثابتة" },
+  { key: "purchase", label: "مشتريات",     icon: "cart",           color: "#9C27B0",      desc: "تنفيذ طلبات الشراء" },
 ];
+
+function AlertModal({ visible, title, message, color, onClose }: {
+  visible: boolean; title: string; message: string; color: string; onClose: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade">
+      <View style={s.overlay}>
+        <View style={s.alertBox}>
+          <View style={[s.alertIconWrap, { backgroundColor: color + "22" }]}>
+            <Ionicons
+              name={color === Colors.error ? "close-circle" : "checkmark-circle"}
+              size={48} color={color}
+            />
+          </View>
+          <Text style={s.alertTitle}>{title}</Text>
+          {!!message && <Text style={s.alertMsg}>{message}</Text>}
+          <TouchableOpacity style={[s.alertBtn, { backgroundColor: color }]} onPress={onClose}>
+            <Text style={s.alertBtnTxt}>حسناً</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const PRIORITY_MAP: Record<string, { label: string; color: string }> = {
+  urgent: { label: "عاجل جداً", color: "#B71C1C"       },
+  high:   { label: "عاجل",    color: Colors.error    },
+  medium: { label: "متوسط",   color: Colors.warning  },
+  low:    { label: "منخفض",   color: Colors.success  },
+};
 
 export default function DisburseScreen() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
+  const router  = useRouter();
   const { token } = useAuth();
 
-  const [expenseType, setExpenseType] = useState<"daily" | "monthly" | "purchase" | "salary">("daily");
-  const [paymentMethod, setPaymentMethod] = useState<"cash" | "debt">("cash");
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
-  const [personName, setPersonName] = useState(""); // ← اسم المستلم (للدين)
-  const [loading, setLoading] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [templates, setTemplates] = useState<any[]>([]);
-  const [showResult, setShowResult] = useState(false);
+  const [expenseType,    setExpenseType]    = useState<ExpenseType>("daily");
+  const [payType,        setPayType]        = useState<PayType>("cash");
+  const [description,    setDescription]    = useState("");
+  const [amount,         setAmount]         = useState("");
+  const [personName,     setPersonName]     = useState("");
+  const [saving,         setSaving]         = useState(false);
+  const [modal,          setModal]          = useState({ visible: false, title: "", message: "", color: Colors.success });
 
-  useEffect(() => {
-    apiGet("/expense-templates", token).then(setTemplates).catch(() => {});
+  /* ── مشتريات ── */
+  const [purchaseReqs,   setPurchaseReqs]   = useState<any[]>([]);
+  const [loadingReqs,    setLoadingReqs]    = useState(false);
+  const [selectedReqs,   setSelectedReqs]   = useState<Set<number>>(new Set());
+
+  const showMsg = (title: string, message: string, color = Colors.success) =>
+    setModal({ visible: true, title, message, color });
+
+  const fetchPurchaseReqs = useCallback(async () => {
+    setLoadingReqs(true);
+    try {
+      const data = await apiGet("/purchase-requests", token);
+      setPurchaseReqs(data.filter((r: any) => r.status === "pending"));
+    } catch {} finally {
+      setLoadingReqs(false);
+    }
   }, [token]);
 
-  const isValid = !!amount && parseFloat(amount) > 0 && !!description &&
-    (paymentMethod === "cash" || !!personName);
+  useEffect(() => {
+    if (expenseType === "purchase") fetchPurchaseReqs();
+  }, [expenseType, fetchPurchaseReqs]);
 
-  const handleSubmit = async () => {
-    if (!isValid) return;
-    setLoading(true);
+  const toggleReq = (id: number) => {
+    setSelectedReqs(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedReqs(new Set(purchaseReqs.map(r => r.id)));
+  };
+
+  const parsedAmt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
+
+  /* صلاحية الحفظ */
+  const canSave = expenseType === "purchase"
+    ? selectedReqs.size > 0
+    : parsedAmt > 0 && !!description.trim() && (payType === "cash" || !!personName.trim());
+
+  const handleSave = async () => {
+    if (!canSave) return showMsg("خطأ", "أكمل البيانات المطلوبة", Colors.error);
+    setSaving(true);
     try {
-      await apiPost("/transactions/disburse", token, {
-        expenseType,
-        paymentType: paymentMethod,
-        amount: parseFloat(amount),
-        description,
-        personName: paymentMethod === "debt" ? personName : undefined,
-      });
-      setShowResult(true);
-    } catch {} finally {
-      setLoading(false);
+      if (expenseType === "purchase") {
+        /* ── تنفيذ المشتريات المحددة ── */
+        const selected = purchaseReqs.filter(r => selectedReqs.has(r.id));
+        const totalAmt = selected.reduce((sum: number, r: any) => {
+          const price = parseFloat(r.estimatedPrice ?? r.amount ?? "0");
+          return sum + (isNaN(price) ? 0 : price);
+        }, 0);
+        const desc = selected.map((r: any) => `${r.description ?? r.itemName ?? "صنف"} (${r.quantity} ${r.unit ?? ""})`).join("، ");
+
+        await apiPost("/transactions/disburse", token, {
+          expenseType: "purchase",
+          paymentType: payType,
+          amount: totalAmt,
+          description: `مشتريات: ${desc}`,
+          personName: payType === "debt" ? (personName.trim() || "المورد") : undefined,
+        });
+
+        /* تحديث حالة الطلبات إلى "executed" */
+        await Promise.all(
+          selected.map(r => apiPut(`/purchase-requests/${r.id}`, token, { status: "approved" }))
+        );
+
+        const names = selected.map((r: any) => `• ${r.itemName}`).join("\n");
+        showMsg(
+          "تم تنفيذ المشتريات ✓",
+          `تم تسجيل ${selected.length} طلب شراء وتحويلها إلى "منفذ"\n\n${names}${totalAmt > 0 ? `\n\nالإجمالي: ${formatCurrency(totalAmt)}` : ""}`
+        );
+        setSelectedReqs(new Set());
+        fetchPurchaseReqs();
+      } else {
+        /* ── صرف عادي ── */
+        await apiPost("/transactions/disburse", token, {
+          expenseType,
+          paymentType: payType,
+          amount: parsedAmt,
+          description: description.trim(),
+          personName: payType === "debt" ? personName.trim() : undefined,
+        });
+
+        const payLabel = payType === "cash"
+          ? "← ينقص من الصندوق النقدي"
+          : `← يُسجَّل كدين على الشبكة لصالح ${personName}`;
+        showMsg(
+          "تم تسجيل الصرف ✓",
+          `${description}\n${formatCurrency(parsedAmt)}\n\n${payLabel}`
+        );
+        setDescription(""); setAmount(""); setPersonName("");
+      }
+    } catch (e: any) {
+      showMsg("خطأ", e?.message ?? "فشل تسجيل الصرف", Colors.error);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const resetForm = () => {
-    setAmount(""); setDescription(""); setPersonName("");
-    setPaymentMethod("cash"); setExpenseType("daily");
-    setShowResult(false);
-  };
-
-  /* ─── شاشة النجاح ─── */
-  if (showResult) {
-    return (
-      <View style={[styles.container, styles.centered, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
-        <View style={styles.successIcon}>
-          <Ionicons name="checkmark-circle" size={72} color={Colors.error} />
-        </View>
-        <Text style={styles.successTitle}>تمت عملية الصرف</Text>
-        <Text style={styles.successDesc}>{description}</Text>
-        <Text style={[styles.successAmount, { color: Colors.error }]}>{formatCurrency(parseFloat(amount))}</Text>
-        <View style={[styles.badge, { backgroundColor: paymentMethod === "cash" ? Colors.error + "20" : Colors.warning + "20" }]}>
-          <Ionicons
-            name={paymentMethod === "cash" ? "cash" : "receipt"}
-            size={14}
-            color={paymentMethod === "cash" ? Colors.error : Colors.warning}
-          />
-          <Text style={[styles.badgeText, { color: paymentMethod === "cash" ? Colors.error : Colors.warning }]}>
-            {paymentMethod === "cash" ? "نقدي — خُصم من الصندوق" : `دين على ${personName}`}
-          </Text>
-        </View>
-        <View style={styles.successActions}>
-          <TouchableOpacity style={styles.primaryBtn} onPress={resetForm}>
-            <Text style={styles.primaryBtnText}>صرف جديد</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.back()}>
-            <Text style={styles.secondaryBtnText}>العودة</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+  const currentType = EXPENSE_TYPES.find(t => t.key === expenseType)!;
 
   return (
-    <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
-      <View style={styles.header}>
+    <View style={[s.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
+      {/* Header */}
+      <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-forward" size={24} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>صرف</Text>
+        <Text style={s.headerTitle}>صرف</Text>
         <View style={{ width: 24 }} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
-        {/* ─── نوع المصروف ─── */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>نوع المصروف</Text>
-          <View style={styles.typeGrid}>
-            {EXPENSE_TYPES.map(et => (
-              <TouchableOpacity
-                key={et.key}
-                style={[styles.typeBtn, expenseType === et.key && styles.typeBtnActive]}
-                onPress={() => setExpenseType(et.key as any)}
-              >
-                <Ionicons name={et.icon} size={18} color={expenseType === et.key ? "#FFF" : Colors.textSecondary} />
-                <Text style={[styles.typeBtnText, expenseType === et.key && styles.typeBtnTextActive]}>{et.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ─── القوالب ─── */}
-        {templates.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>قوالب سريعة</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, flexDirection: "row-reverse" }}>
-              {templates.map(t => (
-                <TouchableOpacity
-                  key={t.id} style={styles.chip}
-                  onPress={() => {
-                    setDescription(t.name);
-                    if (t.amount) setAmount(String(t.amount));
-                  }}
-                >
-                  <Text style={styles.chipText}>{t.name}</Text>
-                  {t.amount && <Text style={styles.chipSub}>{formatCurrency(parseFloat(t.amount))}</Text>}
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* ─── طريقة الدفع ─── */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>طريقة الدفع</Text>
-          <View style={styles.payRow}>
-            {([
-              { val: "cash", label: "نقدي", icon: "cash-outline", color: Colors.error, hint: "يُخصم من الصندوق" },
-              { val: "debt", label: "دين",  icon: "receipt-outline", color: Colors.warning, hint: "لا يُخصم حالياً" },
-            ] as any[]).map(p => (
-              <TouchableOpacity
-                key={p.val}
-                style={[styles.payBtn, paymentMethod === p.val && { backgroundColor: p.color + "18", borderColor: p.color }]}
-                onPress={() => setPaymentMethod(p.val)}
-              >
-                <Ionicons name={p.icon} size={24} color={paymentMethod === p.val ? p.color : Colors.textSecondary} />
-                <Text style={[styles.payBtnLabel, paymentMethod === p.val && { color: p.color }]}>{p.label}</Text>
-                <Text style={styles.payBtnHint}>{p.hint}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ─── البيانات ─── */}
-        <View style={styles.card}>
-          <Text style={styles.fieldLabel}>البيان / الوصف *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="مثال: فاتورة كهرباء، إيجار شبكة..."
-            placeholderTextColor={Colors.textMuted}
-            value={description}
-            onChangeText={setDescription}
-            textAlign="right"
-          />
-
-          <Text style={[styles.fieldLabel, { marginTop: 14 }]}>المبلغ (ر.س) *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="0.00"
-            placeholderTextColor={Colors.textMuted}
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            textAlign="right"
-          />
-
-          {/* حقل اسم المستلم — يظهر فقط عند الدين */}
-          {paymentMethod === "debt" && (
-            <>
-              <Text style={[styles.fieldLabel, { marginTop: 14 }]}>اسم المستلم (الدائن) *</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="من صرفنا له..."
-                placeholderTextColor={Colors.textMuted}
-                value={personName}
-                onChangeText={setPersonName}
-                textAlign="right"
-              />
-              <View style={styles.infoBox}>
-                <Ionicons name="information-circle" size={16} color={Colors.warning} />
-                <Text style={styles.infoText}>سيُسجَّل هذا المبلغ كدين مستحق على الشبكة لصالح {personName || "المستلم"}</Text>
+        {/* ── نوع المصروف ── */}
+        <Text style={s.sectionLabel}>نوع الصرف</Text>
+        <View style={s.typeRow}>
+          {EXPENSE_TYPES.map(t => (
+            <TouchableOpacity
+              key={t.key}
+              style={[s.typeCard, expenseType === t.key && { borderColor: t.color, backgroundColor: t.color + "12" }]}
+              onPress={() => setExpenseType(t.key)}
+              activeOpacity={0.8}
+            >
+              <View style={[s.typeIconWrap, { backgroundColor: t.color + "20" }]}>
+                <Ionicons name={t.icon} size={24} color={t.color} />
               </View>
-            </>
-          )}
+              {expenseType === t.key && (
+                <View style={[s.typeCheck, { backgroundColor: t.color }]}>
+                  <Ionicons name="checkmark" size={11} color="#fff" />
+                </View>
+              )}
+              <Text style={[s.typeLabel, expenseType === t.key && { color: t.color }]}>{t.label}</Text>
+              <Text style={s.typeDesc}>{t.desc}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-        {/* ─── ملخص ─── */}
-        {amount && parseFloat(amount) > 0 && (
-          <View style={[styles.summaryCard, { borderColor: paymentMethod === "cash" ? Colors.error + "44" : Colors.warning + "44" }]}>
-            <Text style={styles.summaryLabel}>إجمالي الصرف</Text>
-            <Text style={[styles.summaryAmount, { color: paymentMethod === "cash" ? Colors.error : Colors.warning }]}>
-              {formatCurrency(parseFloat(amount))}
-            </Text>
-            <Text style={styles.summaryMethod}>
-              {paymentMethod === "cash" ? "نقدي — سيُخصم من الصندوق" : "دين — لن يُخصم من الصندوق"}
-            </Text>
+        {/* ── طريقة الدفع ── */}
+        <Text style={s.sectionLabel}>طريقة الدفع</Text>
+        <View style={s.payRow}>
+          {([
+            { k: "cash", label: "نقد",  icon: "cash"    as const, c: Colors.error,   hint: "ينقص من الصندوق"  },
+            { k: "debt", label: "دين",  icon: "receipt" as const, c: Colors.warning, hint: "يُضاف للديون"     },
+          ] as const).map(p => (
+            <TouchableOpacity
+              key={p.k}
+              style={[s.payBtn, payType === p.k && { borderColor: p.c, backgroundColor: p.c + "18" }]}
+              onPress={() => setPayType(p.k)}
+            >
+              <Ionicons name={p.icon} size={20} color={payType === p.k ? p.c : Colors.textSecondary} />
+              <Text style={[s.payBtnLabel, payType === p.k && { color: p.c }]}>{p.label}</Text>
+              <Text style={[s.payBtnHint, payType === p.k && { color: p.c + "AA" }]}>{p.hint}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* ── المشتريات: قائمة الطلبات ── */}
+        {expenseType === "purchase" ? (
+          <View style={s.card}>
+            <View style={s.purchaseHeader}>
+              <TouchableOpacity onPress={selectAll} style={s.selectAllBtn}>
+                <Ionicons name="checkmark-done" size={14} color={Colors.primary} />
+                <Text style={s.selectAllTxt}>تحديد الكل</Text>
+              </TouchableOpacity>
+              <Text style={s.cardTitle}>طلبات الشراء المعلقة</Text>
+            </View>
+
+            {loadingReqs ? (
+              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+            ) : purchaseReqs.length === 0 ? (
+              <View style={s.emptyReqs}>
+                <Ionicons name="cart-outline" size={36} color={Colors.textMuted} />
+                <Text style={s.emptyReqsTxt}>لا توجد طلبات شراء معلقة</Text>
+              </View>
+            ) : purchaseReqs.map((req: any) => {
+              const isSelected = selectedReqs.has(req.id);
+              const prio = PRIORITY_MAP[req.priority ?? "medium"] ?? PRIORITY_MAP.medium;
+              const hasPrice = !!req.estimatedPrice && parseFloat(req.estimatedPrice) > 0;
+              return (
+                <TouchableOpacity
+                  key={req.id}
+                  style={[s.reqItem, isSelected && s.reqItemSelected]}
+                  onPress={() => toggleReq(req.id)}
+                  activeOpacity={0.7}
+                >
+                  {/* Checkbox */}
+                  <View style={[s.checkbox, isSelected && s.checkboxChecked]}>
+                    {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
+                  </View>
+
+                  {/* المحتوى */}
+                  <View style={s.reqContent}>
+                    <View style={s.reqTopRow}>
+                      <View style={[s.prioBadge, { backgroundColor: prio.color + "20" }]}>
+                        <Text style={[s.prioBadgeTxt, { color: prio.color }]}>{prio.label}</Text>
+                      </View>
+                      <Text style={s.reqName}>{req.description ?? req.itemName ?? "طلب شراء"}</Text>
+                    </View>
+                    <View style={s.reqDetails}>
+                      {req.quantity && (
+                        <Text style={s.reqDetail}>الكمية: {req.quantity} {req.unit ?? ""}</Text>
+                      )}
+                      {hasPrice && (
+                        <Text style={[s.reqDetail, { color: Colors.warning }]}>
+                          {formatCurrency(parseFloat(req.estimatedPrice))}
+                        </Text>
+                      )}
+                    </View>
+                    {req.notes && <Text style={s.reqNotes}>{req.notes}</Text>}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* ملخص المحدد */}
+            {selectedReqs.size > 0 && (
+              <View style={s.selectedSummary}>
+                <Text style={s.selectedSummaryTxt}>
+                  {selectedReqs.size} طلب محدد
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          /* ── نموذج الصرف العادي ── */
+          <View style={s.card}>
+            <Text style={s.fieldLabel}>البيان / الوصف *</Text>
+            <TextInput
+              style={s.input} value={description} onChangeText={setDescription}
+              placeholder="مثال: فاتورة كهرباء، إيجار..." placeholderTextColor={Colors.textMuted} textAlign="right"
+            />
+
+            <Text style={[s.fieldLabel, { marginTop: 14 }]}>المبلغ (ر.س) *</Text>
+            <TextInput
+              style={[s.input, s.amtInput]} value={amount}
+              onChangeText={v => setAmount(v.replace(/[^0-9.]/g, ""))}
+              placeholder="0.00" placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad" textAlign="right"
+            />
+
+            {payType === "debt" && (
+              <>
+                <Text style={[s.fieldLabel, { marginTop: 14 }]}>اسم الجهة الدائنة *</Text>
+                <TextInput
+                  style={s.input} value={personName} onChangeText={setPersonName}
+                  placeholder="اسم المورد أو الجهة..." placeholderTextColor={Colors.textMuted} textAlign="right"
+                />
+                <View style={s.infoBox}>
+                  <Ionicons name="information-circle" size={15} color={Colors.warning} />
+                  <Text style={s.infoTxt}>
+                    سيُسجَّل هذا المبلغ كدين مستحق على الشبكة لصالح {personName || "الجهة"}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         )}
 
+        {/* ── ملخص الأثر ── */}
+        {canSave && (
+          <View style={[s.summaryBox, { borderColor: currentType.color + "55" }]}>
+            <Text style={[s.summaryTitle, { color: currentType.color }]}>
+              {currentType.label} — {payType === "cash" ? "نقد" : "دين"}
+            </Text>
+            <View style={s.summaryEffects}>
+              <View style={s.effectRow}>
+                <Ionicons
+                  name={payType === "cash" ? "remove-circle" : "add-circle"}
+                  size={14} color={payType === "cash" ? Colors.error : Colors.warning}
+                />
+                <Text style={s.effectTxt}>
+                  {payType === "cash" ? "ينقص من الصندوق النقدي" : "يُضاف إلى ديون الشبكة"}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* ── زر الحفظ ── */}
         <TouchableOpacity
-          style={[styles.submitBtn, !isValid && { opacity: 0.45 }]}
-          onPress={handleSubmit}
-          disabled={loading || !isValid}
+          style={[s.saveBtn, { backgroundColor: currentType.color }, (!canSave || saving) && { opacity: 0.4 }]}
+          onPress={handleSave} disabled={!canSave || saving}
         >
-          {loading
-            ? <ActivityIndicator color="#FFF" />
+          {saving
+            ? <ActivityIndicator color="#fff" />
             : <>
-                <Ionicons name="arrow-up-circle" size={20} color="#FFF" />
-                <Text style={styles.submitBtnText}>تأكيد الصرف</Text>
+                <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                <Text style={s.saveBtnTxt}>
+                  {expenseType === "purchase" ? `تنفيذ ${selectedReqs.size} طلب` : "تأكيد الصرف"}
+                </Text>
               </>}
         </TouchableOpacity>
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 50 }} />
       </ScrollView>
+
+      <AlertModal
+        visible={modal.visible} title={modal.title} message={modal.message} color={modal.color}
+        onClose={() => setModal(m => ({ ...m, visible: false }))}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  centered: { alignItems: "center", justifyContent: "center" },
   header: {
     flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  title: { fontSize: 20, fontWeight: "bold", color: Colors.text },
-  content: { padding: 18 },
+  headerTitle: { fontSize: 20, fontWeight: "bold", color: Colors.text },
+  content: { padding: 16 },
+
+  sectionLabel: { fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right", marginBottom: 10 },
+
+  /* أنواع الصرف — صف واحد من 3 */
+  typeRow: { flexDirection: "row-reverse", gap: 8, marginBottom: 16 },
+  typeCard: {
+    flex: 1, backgroundColor: Colors.surface, borderRadius: 14, padding: 12,
+    alignItems: "center", gap: 6, borderWidth: 1.5, borderColor: Colors.border,
+  },
+  typeIconWrap: { width: 44, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  typeCheck: {
+    position: "absolute", top: 6, left: 6, width: 18, height: 18,
+    borderRadius: 9, justifyContent: "center", alignItems: "center",
+  },
+  typeLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, textAlign: "center" },
+  typeDesc:  { fontSize: 10, color: Colors.textMuted, textAlign: "center" },
+
+  /* طريقة الدفع */
+  payRow: { flexDirection: "row-reverse", gap: 10, marginBottom: 16 },
+  payBtn: {
+    flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.background, gap: 4,
+  },
+  payBtnLabel: { fontSize: 15, fontWeight: "700", color: Colors.textSecondary },
+  payBtnHint:  { fontSize: 10, color: Colors.textMuted },
+
+  /* البطاقة العامة */
   card: {
     backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
-    marginBottom: 16, borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: 14,
   },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: Colors.text, textAlign: "right", marginBottom: 14 },
-  typeGrid: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 8 },
-  typeBtn: {
-    flexDirection: "row-reverse", alignItems: "center", gap: 6,
-    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
-  },
-  typeBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  typeBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: "600" },
-  typeBtnTextActive: { color: "#FFF" },
-  chip: {
-    backgroundColor: Colors.background, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8,
-    borderWidth: 1, borderColor: Colors.border, alignItems: "center",
-  },
-  chipText: { fontSize: 13, color: Colors.text },
-  chipSub: { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  payRow: { flexDirection: "row-reverse", gap: 12 },
-  payBtn: {
-    flex: 1, backgroundColor: Colors.background, borderRadius: 12, padding: 14,
-    alignItems: "center", borderWidth: 1.5, borderColor: Colors.border, gap: 6,
-  },
-  payBtnLabel: { fontSize: 15, fontWeight: "bold", color: Colors.textSecondary },
-  payBtnHint: { fontSize: 10, color: Colors.textMuted },
-  fieldLabel: { fontSize: 13, color: Colors.textSecondary, textAlign: "right", marginBottom: 8, fontWeight: "600" },
+  cardTitle:  { fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right" },
+  fieldLabel: { fontSize: 13, color: Colors.textSecondary, textAlign: "right", marginBottom: 7, fontWeight: "600" },
   input: {
-    backgroundColor: Colors.background, borderRadius: 10, padding: 12,
+    backgroundColor: Colors.background, borderRadius: 10, padding: 13,
     color: Colors.text, fontSize: 15, borderWidth: 1, borderColor: Colors.border,
   },
+  amtInput: { fontSize: 24, fontWeight: "800" },
   infoBox: {
     flexDirection: "row-reverse", gap: 6, alignItems: "flex-start",
     backgroundColor: Colors.warning + "12", borderRadius: 10, padding: 10, marginTop: 10,
   },
-  infoText: { flex: 1, fontSize: 12, color: Colors.textSecondary, textAlign: "right", lineHeight: 18 },
-  summaryCard: {
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 16,
-    alignItems: "center", borderWidth: 1.5, marginBottom: 16,
-  },
-  summaryLabel: { fontSize: 12, color: Colors.textSecondary, marginBottom: 4 },
-  summaryAmount: { fontSize: 28, fontWeight: "800" },
-  summaryMethod: { fontSize: 12, color: Colors.textMuted, marginTop: 4 },
-  submitBtn: {
-    backgroundColor: Colors.error, borderRadius: 14, paddingVertical: 16,
-    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center", gap: 8,
-  },
-  submitBtnText: { fontSize: 17, fontWeight: "bold", color: "#FFF" },
+  infoTxt: { flex: 1, fontSize: 11, color: Colors.textSecondary, textAlign: "right", lineHeight: 17 },
 
-  /* ─── Success ─── */
-  successIcon: { marginBottom: 16 },
-  successTitle: { fontSize: 24, fontWeight: "bold", color: Colors.text, marginBottom: 8 },
-  successDesc: { fontSize: 15, color: Colors.textSecondary, marginBottom: 4, textAlign: "center" },
-  successAmount: { fontSize: 34, fontWeight: "800", marginBottom: 14 },
-  badge: {
-    flexDirection: "row-reverse", alignItems: "center", gap: 6,
-    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginBottom: 30,
+  /* قائمة المشتريات */
+  purchaseHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
+  selectAllBtn:   { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
+  selectAllTxt:   { fontSize: 12, color: Colors.primary, fontWeight: "700" },
+
+  emptyReqs:    { alignItems: "center", paddingVertical: 30, gap: 10 },
+  emptyReqsTxt: { fontSize: 13, color: Colors.textMuted },
+
+  reqItem: {
+    flexDirection: "row-reverse", gap: 12, alignItems: "flex-start",
+    paddingVertical: 12, paddingHorizontal: 8, borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.border, marginBottom: 8,
+    backgroundColor: Colors.background,
   },
-  badgeText: { fontSize: 13, fontWeight: "600" },
-  successActions: { width: "100%", gap: 12, paddingHorizontal: 20 },
-  primaryBtn: { backgroundColor: Colors.error, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  primaryBtnText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
-  secondaryBtn: { borderWidth: 1, borderColor: Colors.border, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
-  secondaryBtnText: { color: Colors.text, fontSize: 15, fontWeight: "600" },
+  reqItemSelected: { borderColor: "#9C27B0", backgroundColor: "#9C27B0" + "0F" },
+
+  checkbox: {
+    width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: Colors.border,
+    justifyContent: "center", alignItems: "center", marginTop: 2, flexShrink: 0,
+  },
+  checkboxChecked: { backgroundColor: "#9C27B0", borderColor: "#9C27B0" },
+
+  reqContent:  { flex: 1, gap: 4 },
+  reqTopRow:   { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  reqName:     { fontSize: 14, fontWeight: "700", color: Colors.text, flex: 1, textAlign: "right" },
+  prioBadge:   { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
+  prioBadgeTxt: { fontSize: 10, fontWeight: "700" },
+  reqDetails:  { flexDirection: "row-reverse", justifyContent: "space-between" },
+  reqDetail:   { fontSize: 11, color: Colors.textSecondary },
+  reqNotes:    { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+
+  selectedSummary: {
+    backgroundColor: "#9C27B0" + "15", borderRadius: 10, padding: 10, marginTop: 8, alignItems: "center",
+  },
+  selectedSummaryTxt: { fontSize: 13, fontWeight: "700", color: "#9C27B0" },
+
+  /* ملخص الأثر */
+  summaryBox: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    borderWidth: 1.5, marginBottom: 14, gap: 6,
+  },
+  summaryTitle:   { fontSize: 13, fontWeight: "700", textAlign: "right" },
+  summaryEffects: { gap: 6 },
+  effectRow:      { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
+  effectTxt:      { fontSize: 12, color: Colors.textSecondary },
+
+  /* زر الحفظ */
+  saveBtn: {
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 8, paddingVertical: 16, borderRadius: 14,
+  },
+  saveBtnTxt: { color: "#fff", fontSize: 16, fontWeight: "800" },
+
+  /* Alert */
+  overlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center", alignItems: "center", padding: 24,
+  },
+  alertBox: {
+    backgroundColor: Colors.surface, borderRadius: 20, padding: 28,
+    width: "100%", maxWidth: 340, alignItems: "center", gap: 12,
+  },
+  alertIconWrap: { width: 76, height: 76, borderRadius: 38, justifyContent: "center", alignItems: "center" },
+  alertTitle:    { fontSize: 18, fontWeight: "800", color: Colors.text, textAlign: "center" },
+  alertMsg:      { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
+  alertBtn:      { paddingHorizontal: 44, paddingVertical: 12, borderRadius: 12, marginTop: 4 },
+  alertBtnTxt:   { fontSize: 15, fontWeight: "700", color: "#fff" },
 });

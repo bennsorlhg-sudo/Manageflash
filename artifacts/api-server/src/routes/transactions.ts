@@ -153,8 +153,15 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
       await db.update(loansTable)
         .set({ paidAmount: String(newPaid), status: status as any, updatedAt: new Date() })
         .where(eq(loansTable.id, sourceId));
+
+      /* سداد دين: ينقص من الصندوق (نحن ندفع للجهة) */
+      await db.execute(
+        sql`UPDATE cash_box SET balance = balance - ${amount}, updated_at = NOW() WHERE id = 1`
+      );
+      return res.json({ success: true, amount });
     }
 
+    /* تحصيل سلفة: يزيد الصندوق (نحن نستلم من العميل) */
     await db.execute(
       sql`UPDATE cash_box SET balance = balance + ${amount}, updated_at = NOW() WHERE id = 1`
     );
