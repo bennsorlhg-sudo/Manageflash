@@ -28,11 +28,9 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
     let description: string;
 
     if (amount !== undefined && amount !== null) {
-      // Finance Manager flow: direct amount entry
       totalAmount = parseFloat(amount);
       description = `بيع ${cardType === "broadband" ? "باقات برودباند" : "كروت هوتسبوت"} - ${customerName}`;
     } else {
-      // Owner flow: denomination + quantity
       const unitPrice = CARD_PRICES[denomination] ?? denomination * 0.9;
       totalAmount = unitPrice * quantity;
       description = `بيع ${quantity} كرت ${denomination} ريال - ${cardType === "broadband" ? "باقات" : "هوتسبوت"}`;
@@ -42,32 +40,34 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
       return res.status(400).json({ error: "المبلغ غير صحيح" });
     }
 
-    await db.insert(financialTransactionsTable).values({
-      type: "sale",
-      category: cardType === "broadband" ? "broadband" : "hotspot",
-      amount: String(totalAmount),
-      description,
-      role: req.currentUser!.role,
-      personName: customerName ?? req.currentUser!.name,
-      referenceId: `SELL-${Date.now()}`,
-      paymentType: paymentType === "cash" ? "cash" : "loan",
-    });
-
-    if (paymentType === "cash") {
-      await db.execute(
-        sql`UPDATE cash_box SET balance = balance + ${totalAmount}, updated_at = NOW() WHERE id = 1`
-      );
-    } else {
-      // سلفة → سجّل في جدول الديون (ما يستحق علينا تحصيله)
-      await db.insert(debtsTable).values({
-        personName: customerName ?? "عميل",
+    /* ── عملية ذرية: إما كل شيء ينجح أو لا شيء ── */
+    await db.transaction(async (tx) => {
+      await tx.insert(financialTransactionsTable).values({
+        type: "sale",
+        category: cardType === "broadband" ? "broadband" : "hotspot",
         amount: String(totalAmount),
-        paidAmount: "0",
-        status: "pending",
-        notes: notes ?? description,
-        userId: req.currentUser!.id,
+        description,
+        role: req.currentUser!.role,
+        personName: customerName ?? req.currentUser!.name,
+        referenceId: `SELL-${Date.now()}`,
+        paymentType: paymentType === "cash" ? "cash" : "loan",
       });
-    }
+
+      if (paymentType === "cash") {
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance + ${totalAmount}, updated_at = NOW() WHERE id = 1`
+        );
+      } else {
+        await tx.insert(debtsTable).values({
+          personName: customerName ?? "عميل",
+          amount: String(totalAmount),
+          paidAmount: "0",
+          status: "pending",
+          notes: notes ?? description,
+          userId: req.currentUser!.id,
+        });
+      }
+    });
 
     res.json({ success: true, amount: totalAmount });
   } catch (error) {
@@ -89,44 +89,46 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
     const desc = description ?? `صرفية - ${expenseType}`;
     const pt = paymentType === "debt" ? "debt" : "cash";
 
-    let linkedLoanId: number | undefined;
+    /* ── عملية ذرية ── */
+    await db.transaction(async (tx) => {
+      let linkedLoanId: number | undefined;
 
-    if (pt === "debt") {
-      // أنشئ سجل الدين أولاً لنحتفظ بمعرّفه
-      const [loan] = await db.insert(loansTable).values({
-        personName: personName ?? desc,
+      if (pt === "debt") {
+        const [loan] = await tx.insert(loansTable).values({
+          personName: personName ?? desc,
+          amount: String(parsedAmount),
+          paidAmount: "0",
+          status: "pending",
+          notes: notes ?? desc,
+          userId: req.currentUser!.id,
+        }).returning();
+        linkedLoanId = loan.id;
+      }
+
+      await tx.insert(financialTransactionsTable).values({
+        type: "expense",
+        category: category as any,
         amount: String(parsedAmount),
-        paidAmount: "0",
-        status: "pending",
-        notes: notes ?? desc,
+        description: desc,
+        role: req.currentUser!.role,
+        personName: personName ?? req.currentUser!.name,
+        referenceId: `EXP-${Date.now()}`,
+        paymentType: pt,
+        linkedLoanId: linkedLoanId ?? null,
+      });
+
+      await tx.insert(expensesTable).values({
+        description: desc,
+        amount: String(parsedAmount),
         userId: req.currentUser!.id,
-      }).returning();
-      linkedLoanId = loan.id;
-    }
+      });
 
-    await db.insert(financialTransactionsTable).values({
-      type: "expense",
-      category: category as any,
-      amount: String(parsedAmount),
-      description: desc,
-      role: req.currentUser!.role,
-      personName: personName ?? req.currentUser!.name,
-      referenceId: `EXP-${Date.now()}`,
-      paymentType: pt,
-      linkedLoanId: linkedLoanId ?? null,
+      if (pt === "cash") {
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance - ${parsedAmount}, updated_at = NOW() WHERE id = 1`
+        );
+      }
     });
-
-    await db.insert(expensesTable).values({
-      description: desc,
-      amount: String(parsedAmount),
-      userId: req.currentUser!.id,
-    });
-
-    if (pt === "cash") {
-      await db.execute(
-        sql`UPDATE cash_box SET balance = balance - ${parsedAmount}, updated_at = NOW() WHERE id = 1`
-      );
-    }
 
     res.json({ success: true, amount: parsedAmount });
   } catch (error) {
@@ -247,41 +249,75 @@ router.put("/transactions/:id", requireAuth, async (req, res) => {
 router.post("/transactions/collect", requireAuth, async (req, res) => {
   try {
     const { sourceType, sourceId, amount, notes } = req.body;
+    const parsedAmount = parseFloat(String(amount));
+    if (!parsedAmount || parsedAmount <= 0) return res.status(400).json({ error: "المبلغ غير صحيح" });
 
     if (sourceType === "debt") {
+      /* ── تحصيل سلفة: العميل يدفع لنا → يزيد الصندوق وينقص السلف ── */
       const [debt] = await db.select().from(debtsTable).where(eq(debtsTable.id, sourceId)).limit(1);
-      if (!debt) return res.status(404).json({ error: "الدين غير موجود" });
+      if (!debt) return res.status(404).json({ error: "السلفة غير موجودة" });
 
-      const newPaid = parseFloat(debt.paidAmount) + parseFloat(amount);
-      const status = newPaid >= parseFloat(debt.amount) ? "paid" : "partial";
+      const newPaid = parseFloat(debt.paidAmount) + parsedAmount;
+      const status  = newPaid >= parseFloat(debt.amount) ? "paid" : "partial";
 
-      await db.update(debtsTable)
-        .set({ paidAmount: String(newPaid), status: status as any, updatedAt: new Date() })
-        .where(eq(debtsTable.id, sourceId));
+      /* ── عملية ذرية ── */
+      await db.transaction(async (tx) => {
+        await tx.update(debtsTable)
+          .set({ paidAmount: String(newPaid), status: status as any, updatedAt: new Date() })
+          .where(eq(debtsTable.id, sourceId));
+
+        await tx.insert(financialTransactionsTable).values({
+          type:        "sale",
+          category:    "other" as any,
+          amount:      String(parsedAmount),
+          description: `تحصيل سلفة من: ${debt.personName}`,
+          role:        req.currentUser!.role,
+          personName:  debt.personName,
+          referenceId: `COLLECT-DEBT-${sourceId}-${Date.now()}`,
+          paymentType: "collect",
+        });
+
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance + ${parsedAmount}, updated_at = NOW() WHERE id = 1`
+        );
+      });
+
+      return res.json({ success: true, amount: parsedAmount });
+
     } else if (sourceType === "loan") {
+      /* ── سداد دين: نحن ندفع لجهة → ينقص الصندوق وينقص الدين ── */
       const [loan] = await db.select().from(loansTable).where(eq(loansTable.id, sourceId)).limit(1);
-      if (!loan) return res.status(404).json({ error: "القرض غير موجود" });
+      if (!loan) return res.status(404).json({ error: "الدين غير موجود" });
 
-      const newPaid = parseFloat(loan.paidAmount) + parseFloat(amount);
-      const status = newPaid >= parseFloat(loan.amount) ? "paid" : "partial";
+      const newPaid = parseFloat(loan.paidAmount) + parsedAmount;
+      const status  = newPaid >= parseFloat(loan.amount) ? "paid" : "partial";
 
-      await db.update(loansTable)
-        .set({ paidAmount: String(newPaid), status: status as any, updatedAt: new Date() })
-        .where(eq(loansTable.id, sourceId));
+      /* ── عملية ذرية ── */
+      await db.transaction(async (tx) => {
+        await tx.update(loansTable)
+          .set({ paidAmount: String(newPaid), status: status as any, updatedAt: new Date() })
+          .where(eq(loansTable.id, sourceId));
 
-      /* سداد دين: ينقص من الصندوق (نحن ندفع للجهة) */
-      await db.execute(
-        sql`UPDATE cash_box SET balance = balance - ${amount}, updated_at = NOW() WHERE id = 1`
-      );
-      return res.json({ success: true, amount });
+        await tx.insert(financialTransactionsTable).values({
+          type:        "expense",
+          category:    "other" as any,
+          amount:      String(parsedAmount),
+          description: `سداد دين لـ: ${loan.personName}`,
+          role:        req.currentUser!.role,
+          personName:  loan.personName,
+          referenceId: `PAY-LOAN-${sourceId}-${Date.now()}`,
+          paymentType: "loan_payment",
+        });
+
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance - ${parsedAmount}, updated_at = NOW() WHERE id = 1`
+        );
+      });
+
+      return res.json({ success: true, amount: parsedAmount });
     }
 
-    /* تحصيل سلفة: يزيد الصندوق (نحن نستلم من العميل) */
-    await db.execute(
-      sql`UPDATE cash_box SET balance = balance + ${amount}, updated_at = NOW() WHERE id = 1`
-    );
-
-    res.json({ success: true, amount });
+    return res.status(400).json({ error: "نوع المصدر غير صحيح (debt | loan)" });
   } catch (error) {
     res.status(500).json({ error: "فشل في التحصيل", details: String(error) });
   }
@@ -491,9 +527,25 @@ router.get("/cash-box", requireAuth, async (req, res) => {
 ─────────────────────────────────────────────── */
 router.get("/finances/summary", requireAuth, async (_req, res) => {
   try {
-    /* 1. الصندوق النقدي */
-    const [cashRow] = await db.select({ bal: cashBoxTable.balance }).from(cashBoxTable).limit(1);
-    const cashBalance = parseFloat(cashRow?.bal ?? "0");
+    /*
+     * 1. رصيد الصندوق — محسوب من السجل المحاسبي (لا من قيمة مخزنة)
+     *    هذا يضمن أن الرصيد لا يمكن أن ينجرف عن السجل
+     *    payment_type المؤثّرة على الصندوق:
+     *      داخل: cash (بيع نقدي / عهدة نقد من مالك / نقد من مندوب) | collect (تحصيل سلفة) | opening (رصيد افتتاحي)
+     *      خارج: cash (صرف نقدي) | loan_payment (سداد دين)
+     */
+    const ledgerResult = await db.execute(sql`
+      SELECT COALESCE(SUM(
+        CASE
+          WHEN type IN ('sale','custody_in') AND payment_type IN ('cash','collect','opening') THEN  amount::numeric
+          WHEN type = 'expense'             AND payment_type IN ('cash','loan_payment')       THEN -amount::numeric
+          ELSE 0
+        END
+      ), 0) AS cash_balance
+      FROM financial_transactions
+    `);
+    const ledgerRow: any = (ledgerResult as any).rows?.[0] ?? (Array.isArray(ledgerResult) ? ledgerResult[0] : {});
+    const cashBalance = parseFloat(ledgerRow.cash_balance ?? "0");
 
     /* 2-4. حسابات من custody_records + financial_transactions */
     const summaryResult = await db.execute(sql`

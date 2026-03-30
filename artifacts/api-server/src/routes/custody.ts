@@ -57,53 +57,56 @@ router.post("/custody/receive", requireAuth, async (req, res) => {
     if (cash <= 0 && cards <= 0) return res.status(400).json({ error: "أدخل مبلغ النقد أو قيمة الكروت" });
 
     const agent = agentName.trim();
-    const created: any[] = [];
 
-    /* ─── استلام نقد ─── */
-    if (cash > 0) {
-      /* 1. سجّل حركة استلام نقد في custody_records (tech_engineer → finance_manager) */
-      const [cashRec] = await db.insert(custodyRecordsTable).values({
-        type: "cash",
-        amount: String(cash),
-        denomination: null, cardCount: null,
-        fromRole: "tech_engineer",
-        toRole: "finance_manager",
-        toPersonName: agent,
-        notes: notes?.trim() ?? null,
-      }).returning();
-      created.push(cashRec);
+    /* ── عملية ذرية: إما كل شيء ينجح أو لا شيء ── */
+    const created = await db.transaction(async (tx) => {
+      const records: any[] = [];
 
-      /* 2. أضف للصندوق النقدي */
-      await db.execute(
-        sql`UPDATE cash_box SET balance = balance + ${cash}, updated_at = NOW() WHERE id = 1`
-      );
+      /* ─── استلام نقد ─── */
+      if (cash > 0) {
+        const [cashRec] = await tx.insert(custodyRecordsTable).values({
+          type: "cash",
+          amount: String(cash),
+          denomination: null, cardCount: null,
+          fromRole: "tech_engineer",
+          toRole: "finance_manager",
+          toPersonName: agent,
+          notes: notes?.trim() ?? null,
+        }).returning();
+        records.push(cashRec);
 
-      /* 3. سجّل كمبيعات (بيع بالنقد من طرف المندوب) */
-      await db.insert(financialTransactionsTable).values({
-        type: "sale",
-        category: "hotspot",
-        amount: String(cash),
-        description: `مبيعات نقدية من مندوب: ${agent}`,
-        role: req.currentUser!.role,
-        personName: agent,
-        referenceId: `AGENT-CASH-${Date.now()}`,
-        paymentType: "cash",
-      });
-    }
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance + ${cash}, updated_at = NOW() WHERE id = 1`
+        );
 
-    /* ─── استلام كروت مرتجعة ─── */
-    if (cards > 0) {
-      const [cardsRec] = await db.insert(custodyRecordsTable).values({
-        type: "cards",
-        amount: String(cards),
-        denomination: null, cardCount: null,
-        fromRole: "tech_engineer",
-        toRole: "finance_manager",
-        toPersonName: agent,
-        notes: notes?.trim() ?? null,
-      }).returning();
-      created.push(cardsRec);
-    }
+        await tx.insert(financialTransactionsTable).values({
+          type: "sale",
+          category: "hotspot",
+          amount: String(cash),
+          description: `مبيعات نقدية من مندوب: ${agent}`,
+          role: req.currentUser!.role,
+          personName: agent,
+          referenceId: `AGENT-CASH-${Date.now()}`,
+          paymentType: "cash",
+        });
+      }
+
+      /* ─── استلام كروت مرتجعة ─── */
+      if (cards > 0) {
+        const [cardsRec] = await tx.insert(custodyRecordsTable).values({
+          type: "cards",
+          amount: String(cards),
+          denomination: null, cardCount: null,
+          fromRole: "tech_engineer",
+          toRole: "finance_manager",
+          toPersonName: agent,
+          notes: notes?.trim() ?? null,
+        }).returning();
+        records.push(cardsRec);
+      }
+
+      return records;
+    });
 
     res.status(201).json({ records: created, cashReceived: cash, cardsReturned: cards });
   } catch (err) {
@@ -217,18 +220,36 @@ router.post("/custody", requireAuth, async (req, res) => {
     const fromRole = req.currentUser!.role as any;
     const toRole = fromRole === "owner" ? "finance_manager" : "tech_engineer";
 
-    const [record] = await db.insert(custodyRecordsTable).values({
-      type, amount: String(finalAmount), denomination: null, cardCount: null,
-      fromRole, toRole, toPersonName: recipientName, notes: notes ?? null,
-    }).returning();
+    /* ── عملية ذرية: إما كل شيء ينجح أو لا شيء ── */
+    const result = await db.transaction(async (tx) => {
+      const [record] = await tx.insert(custodyRecordsTable).values({
+        type, amount: String(finalAmount), denomination: null, cardCount: null,
+        fromRole, toRole, toPersonName: recipientName, notes: notes ?? null,
+      }).returning();
 
-    if (type === "cash") {
-      await db.execute(
-        sql`UPDATE cash_box SET balance = balance + ${finalAmount}, updated_at = NOW() WHERE id = 1`
-      );
-    }
+      if (type === "cash") {
+        /* سجّل في المعاملات المالية (يضيفه للسجل المحاسبي) */
+        await tx.insert(financialTransactionsTable).values({
+          type:        "custody_in",
+          category:    "other",
+          amount:      String(finalAmount),
+          description: `عهدة نقد من ${fromRole === "owner" ? "المالك" : "المسؤول المالي"}`,
+          role:        fromRole,
+          personName:  req.currentUser!.name ?? fromRole,
+          referenceId: `CUSTODY-CASH-${Date.now()}`,
+          paymentType: "cash",
+        });
 
-    res.status(201).json(record);
+        /* حدّث الصندوق للتوافق مع الكود القديم */
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance + ${finalAmount}, updated_at = NOW() WHERE id = 1`
+        );
+      }
+
+      return record;
+    });
+
+    res.status(201).json(result);
   } catch (err) {
     res.status(500).json({ error: "فشل في تسجيل العهدة", details: String(err) });
   }

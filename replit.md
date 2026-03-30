@@ -93,7 +93,45 @@ The database has the following tables (in `lib/db/src/schema/`):
 - `hotspot_cards` & `broadband_cards` — Card inventory tables (serial, denomination, batchNumber, status)
 - `custody_records` — Owner-to-staff custody transfers (cash or cards with auto-calculated value)
 - `tasks` — Owner-assigned tasks to team members
-- `financial_transactions` — Financial ledger (sales, expenses, loans)
+- `financial_transactions` — Financial ledger (ALL cash movements: sales, expenses, custody_in, custody_out, collect, loan_payment, opening balance)
+
+## Financial System Architecture (Radical/Ledger Approach)
+
+### cash_box table
+Used as a cache/secondary store for backward compatibility. Updated atomically alongside financial_transactions.
+
+### financial_transactions: Source of Truth
+`cashBalance` in `GET /finances/summary` is computed purely from the ledger:
+```sql
+cashBalance = SUM(
+  CASE
+    WHEN type IN ('sale','custody_in') AND payment_type IN ('cash','collect','opening') THEN +amount
+    WHEN type = 'expense' AND payment_type IN ('cash','loan_payment') THEN -amount
+    ELSE 0
+  END
+) FROM financial_transactions
+```
+
+### Operations Logged to financial_transactions
+| Operation | type | payment_type | cash_effect |
+|-----------|------|-------------|-------------|
+| بيع نقدي | sale | cash | +amount |
+| بيع بسلفة | sale | loan | 0 |
+| صرف نقدي | expense | cash | -amount |
+| صرف كدين | expense | debt | 0 |
+| عهدة نقد من المالك | custody_in | cash | +amount |
+| تحصيل سلفة | sale | collect | +amount |
+| سداد دين | expense | loan_payment | -amount |
+| نقد من مندوب | sale | cash | +amount |
+| رصيد افتتاحي | custody_in | opening | +amount |
+
+### Atomicity (DB Transactions)
+All multi-step financial operations use `db.transaction()`:
+- POST /transactions/sell (financial_tx + cash_box)
+- POST /transactions/disburse (loan + financial_tx + expense + cash_box)
+- POST /transactions/collect (debt/loan update + financial_tx + cash_box)
+- POST /custody (custody_record + financial_tx + cash_box)
+- POST /custody/receive (custody_record + financial_tx + cash_box)
 
 ### From Task #5 (Tech Engineer / Finance Sales Points)
 - `field_tasks` — Field engineer task lifecycle (new → in_progress → completed) with taskType, serviceNumber, clientName, location, phoneNumber, notes, photoUrl
