@@ -114,9 +114,10 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       db.select().from(loansTable),
       db.select().from(custodyRecordsTable),
       db.select({
-        type: financialTransactionsTable.type,
+        type:        financialTransactionsTable.type,
+        category:    financialTransactionsTable.category,
         paymentType: financialTransactionsTable.paymentType,
-        amount: financialTransactionsTable.amount,
+        amount:      financialTransactionsTable.amount,
       }).from(financialTransactionsTable),
     ]);
 
@@ -160,11 +161,18 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       .filter(r => r.type === "expense")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
 
+    /* مبيعات البرودباند تضاف للعهدة (إيراد جديد يتحمّل مسؤوليته المدير المالي) */
+    const broadbandSalesRevenue = txRows
+      .filter(r => r.type === "sale" && r.category === "broadband")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+
     /*
-     * إجمالي العهدة المتبقية = ما سلّمه المالك − ما صُرف
-     * الصرف يُعدّ استنزافاً للعهدة ∴ يُنقَص منها
+     * إجمالي العهدة المتبقية = ما سلّمه المالك + مبيعات برودباند − ما صُرف
+     * - الصرف استنزاف من العهدة
+     * - مبيعات البرودباند إيراد جديد يُضاف للعهدة (المالك يستحقه)
+     * - مبيعات الكروت لا تُغيِّر العهدة (الكرت يتحوّل لنقد أو سلفة ضمن العهدة)
      */
-    const totalCustody = Math.max(0, custodyFromOwner - totalExpensesPaid);
+    const totalCustody = Math.max(0, custodyFromOwner + broadbandSalesRevenue - totalExpensesPaid);
 
     /* كروت من المالك للمدير المالي */
     const cardsFromOwner = custodyRows
@@ -178,8 +186,16 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
     const cardsReturnedFromAgents = custodyRows
       .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-    /* قيمة الكروت المتاحة لدى المدير المالي */
-    const cardsValue = cardsFromOwner + cardsReturnedFromAgents - cardsSentToAgents;
+    /* مبيعات الكروت (هوتسبوت) — تُنقَص من رصيد الكروت لأن الكرت خرج */
+    const cardSalesAmount = txRows
+      .filter(r => r.type === "sale" && r.category === "hotspot")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+
+    /*
+     * قيمة الكروت المتاحة لدى المدير المالي:
+     * = كروت من المالك + مُرتجَعة من المندوبين − أُرسِلت للمندوبين − بِيعَت للعملاء
+     */
+    const cardsValue = cardsFromOwner + cardsReturnedFromAgents - cardsSentToAgents - cardSalesAmount;
 
     /* العهد الكلية عند المندوبين (نقد + كروت) */
     const sentToAgents     = custodyRows
