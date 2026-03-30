@@ -255,4 +255,132 @@ router.post("/custody", requireAuth, async (req, res) => {
   }
 });
 
+/* ════════════════════════════════════════════════════
+   GET /custody/owner-log
+   سجل العهد التي أضافها المالك للمسؤول المالي فقط
+════════════════════════════════════════════════════ */
+router.get("/custody/owner-log", requireAuth, async (_req, res) => {
+  try {
+    const records = await db.execute(sql`
+      SELECT * FROM custody_records
+      WHERE from_role = 'owner'
+      ORDER BY created_at DESC
+      LIMIT 500
+    `);
+    const rows: any[] = (records as any).rows ?? (Array.isArray(records) ? records : []);
+
+    const totResult = await db.execute(sql`
+      SELECT
+        COALESCE(SUM(amount::numeric), 0)                                          AS total,
+        COALESCE(SUM(CASE WHEN type = 'cash'  THEN amount::numeric ELSE 0 END), 0) AS cash_total,
+        COALESCE(SUM(CASE WHEN type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS cards_total
+      FROM custody_records WHERE from_role = 'owner'
+    `);
+    const tot: any = (totResult as any).rows?.[0] ?? (Array.isArray(totResult) ? totResult[0] : {});
+
+    res.json({
+      records: rows,
+      total:      parseFloat(tot?.total       ?? "0"),
+      cashTotal:  parseFloat(tot?.cash_total  ?? "0"),
+      cardsTotal: parseFloat(tot?.cards_total ?? "0"),
+    });
+  } catch (err) {
+    res.status(500).json({ error: "فشل جلب سجل العهدة", details: String(err) });
+  }
+});
+
+/* ════════════════════════════════════════════════════
+   DELETE /custody/:id
+   حذف عهدة وعكس تأثيرها على الصندوق
+════════════════════════════════════════════════════ */
+router.delete("/custody/:id", requireAuth, async (req, res) => {
+  try {
+    const recordId = parseInt(req.params.id);
+    if (!recordId) return res.status(400).json({ error: "معرف غير صحيح" });
+
+    const found = await db.execute(sql`SELECT * FROM custody_records WHERE id = ${recordId}`);
+    const rows: any[] = (found as any).rows ?? (Array.isArray(found) ? found : []);
+    if (!rows.length) return res.status(404).json({ error: "السجل غير موجود" });
+
+    const record = rows[0];
+    const amount = parseFloat(record.amount ?? "0");
+
+    await db.transaction(async (tx) => {
+      if (record.type === "cash" && record.from_role === "owner") {
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance - ${amount}, updated_at = NOW() WHERE id = 1`
+        );
+        await tx.execute(sql`
+          DELETE FROM financial_transactions
+          WHERE id = (
+            SELECT id FROM financial_transactions
+            WHERE type = 'custody_in' AND payment_type = 'cash'
+              AND amount::numeric = ${amount}
+              AND created_at >= ${record.created_at}::timestamptz - interval '30 seconds'
+              AND created_at <= ${record.created_at}::timestamptz + interval '30 seconds'
+            ORDER BY created_at LIMIT 1
+          )
+        `);
+      }
+      await tx.execute(sql`DELETE FROM custody_records WHERE id = ${recordId}`);
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "فشل حذف العهدة", details: String(err) });
+  }
+});
+
+/* ════════════════════════════════════════════════════
+   PUT /custody/:id
+   تعديل مبلغ عهدة مع عكس الفرق على الصندوق
+════════════════════════════════════════════════════ */
+router.put("/custody/:id", requireAuth, async (req, res) => {
+  try {
+    const recordId = parseInt(req.params.id);
+    if (!recordId) return res.status(400).json({ error: "معرف غير صحيح" });
+
+    const { amount: newAmountRaw, notes } = req.body as { amount: number; notes?: string };
+    const newAmount = parseFloat(String(newAmountRaw ?? 0));
+    if (!newAmount || newAmount <= 0) return res.status(400).json({ error: "أدخل قيمة صحيحة" });
+
+    const found = await db.execute(sql`SELECT * FROM custody_records WHERE id = ${recordId}`);
+    const rows: any[] = (found as any).rows ?? (Array.isArray(found) ? found : []);
+    if (!rows.length) return res.status(404).json({ error: "السجل غير موجود" });
+
+    const record = rows[0];
+    const oldAmount = parseFloat(record.amount ?? "0");
+    const diff = newAmount - oldAmount;
+
+    await db.transaction(async (tx) => {
+      if (record.type === "cash" && record.from_role === "owner" && Math.abs(diff) > 0.001) {
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance + ${diff}, updated_at = NOW() WHERE id = 1`
+        );
+        await tx.execute(sql`
+          UPDATE financial_transactions SET amount = ${String(newAmount)}
+          WHERE id = (
+            SELECT id FROM financial_transactions
+            WHERE type = 'custody_in' AND payment_type = 'cash'
+              AND amount::numeric = ${oldAmount}
+              AND created_at >= ${record.created_at}::timestamptz - interval '30 seconds'
+              AND created_at <= ${record.created_at}::timestamptz + interval '30 seconds'
+            ORDER BY created_at LIMIT 1
+          )
+        `);
+      }
+      const newNotes = notes?.trim() ?? null;
+      await tx.execute(sql`
+        UPDATE custody_records SET amount = ${String(newAmount)}, notes = ${newNotes}
+        WHERE id = ${recordId}
+      `);
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "فشل تعديل العهدة", details: String(err) });
+  }
+});
+
 export default router;
+

@@ -106,6 +106,10 @@ export default function OwnerTabLayout() {
         name="expenses"
         options={{ href: null, headerShown: false }}
       />
+      <Tabs.Screen
+        name="custody-log"
+        options={{ href: null, headerShown: false }}
+      />
     </Tabs>
   );
 }

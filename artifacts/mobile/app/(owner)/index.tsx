@@ -188,6 +188,12 @@ export default function OwnerDashboard() {
               onPress={() => router.push("/(owner)/expenses")}
             />
             <ActionBtn
+              label="سجل العهد"  icon="archive"     color={Colors.warning}
+              onPress={() => router.push("/(owner)/custody-log")}
+            />
+          </View>
+          <View style={styles.actionRow}>
+            <ActionBtn
               label="الربح"      icon="trending-up" color={Colors.primary}
               onPress={() => router.push({ pathname: "/(owner)/report", params: { type: "profit" } })}
             />
