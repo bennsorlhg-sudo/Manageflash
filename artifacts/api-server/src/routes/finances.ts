@@ -150,10 +150,21 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       .filter(l => l.status !== "paid")
       .reduce((s, l) => s + Math.max(0, parseFloat(l.amount) - parseFloat(l.paidAmount ?? "0")), 0);
 
-    /* الأمانة الكلية: مجموع ما سلّمه المالك للمدير المالي (نقد + كروت) */
-    const totalCustody = custodyRows
+    /* إجمالي ما سلّمه المالك للمدير المالي (نقد + كروت) */
+    const custodyFromOwner = custodyRows
       .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
+
+    /* إجمالي المصروفات المدفوعة (تُنقَص من العهدة) */
+    const totalExpensesPaid = txRows
+      .filter(r => r.type === "expense")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+
+    /*
+     * إجمالي العهدة المتبقية = ما سلّمه المالك − ما صُرف
+     * الصرف يُعدّ استنزافاً للعهدة ∴ يُنقَص منها
+     */
+    const totalCustody = Math.max(0, custodyFromOwner - totalExpensesPaid);
 
     /* كروت من المالك للمدير المالي */
     const cardsFromOwner = custodyRows
