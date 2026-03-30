@@ -149,20 +149,43 @@ router.delete("/transactions/:id", requireAuth, async (req, res) => {
 
     const amt = parseFloat(tx.amount);
 
-    if (tx.type === "expense") {
-      if (tx.paymentType === "cash") {
-        /* نقدي: نُعيد المبلغ للصندوق */
-        await db.execute(
-          sql`UPDATE cash_box SET balance = balance + ${amt}, updated_at = NOW() WHERE id = 1`
-        );
-      } else if (tx.paymentType === "debt" && tx.linkedLoanId) {
-        /* دين: نحذف سجل الدين المرتبط */
-        await db.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
+    await db.transaction(async (dbTx) => {
+      /* ── مبيعات ── */
+      if (tx.type === "sale") {
+        if (tx.paymentType === "cash" || tx.paymentType === "collect") {
+          /* نقدي: ننقص الصندوق */
+          await dbTx.execute(
+            sql`UPDATE cash_box SET balance = balance - ${amt}, updated_at = NOW() WHERE id = 1`
+          );
+        } else if (tx.paymentType === "loan") {
+          /* سلفة: نحذف سجل السلف المرتبط (مطابقة بالاسم والمبلغ والوقت) */
+          await dbTx.execute(sql`
+            DELETE FROM debts WHERE id = (
+              SELECT id FROM debts
+              WHERE person_name = ${tx.personName ?? ""}
+                AND amount::numeric = ${amt}
+                AND created_at >= ${tx.createdAt}::timestamptz - interval '5 minutes'
+                AND created_at <= ${tx.createdAt}::timestamptz + interval '5 minutes'
+              ORDER BY created_at LIMIT 1
+            )
+          `);
+        }
       }
-    }
 
-    await db.delete(financialTransactionsTable)
-      .where(eq(financialTransactionsTable.id, id));
+      /* ── مصروفات ── */
+      if (tx.type === "expense") {
+        if (tx.paymentType === "cash") {
+          await dbTx.execute(
+            sql`UPDATE cash_box SET balance = balance + ${amt}, updated_at = NOW() WHERE id = 1`
+          );
+        } else if (tx.paymentType === "debt" && tx.linkedLoanId) {
+          await dbTx.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
+        }
+      }
+
+      await dbTx.delete(financialTransactionsTable)
+        .where(eq(financialTransactionsTable.id, id));
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -181,64 +204,133 @@ router.put("/transactions/:id", requireAuth, async (req, res) => {
       .where(eq(financialTransactionsTable.id, id)).limit(1);
     if (!tx) return res.status(404).json({ error: "المعاملة غير موجودة" });
 
-    const { amount, description, paymentType, personName } = req.body;
+    const { amount, description, paymentType, personName, category } = req.body;
     const oldAmt = parseFloat(tx.amount);
     const newAmt = parseFloat(amount) || oldAmt;
     const oldPt  = tx.paymentType ?? "cash";
     const newPt  = paymentType ?? oldPt;
+    const newPersonName = personName ?? tx.personName;
 
-    /* حساب الأثر على الصندوق */
-    if (tx.type === "expense") {
-      if (oldPt === "cash" && newPt === "cash") {
-        /* نقد → نقد: عدّل الفرق */
+    await db.transaction(async (dbTx) => {
+      /* ══ مبيعات ══ */
+      if (tx.type === "sale") {
         const diff = newAmt - oldAmt;
-        if (diff !== 0) {
-          await db.execute(
-            sql`UPDATE cash_box SET balance = balance - ${diff}, updated_at = NOW() WHERE id = 1`
+
+        if (oldPt === "cash" && newPt === "cash") {
+          /* نقد → نقد: عدّل الفرق على الصندوق */
+          if (Math.abs(diff) > 0.001) {
+            await dbTx.execute(
+              sql`UPDATE cash_box SET balance = balance + ${diff}, updated_at = NOW() WHERE id = 1`
+            );
+          }
+        } else if (oldPt === "loan" && newPt === "loan") {
+          /* سلفة → سلفة: عدّل السلفة المرتبطة */
+          if (Math.abs(diff) > 0.001) {
+            await dbTx.execute(sql`
+              UPDATE debts SET amount = ${String(newAmt)}, updated_at = NOW()
+              WHERE id = (
+                SELECT id FROM debts
+                WHERE person_name = ${tx.personName ?? ""}
+                  AND amount::numeric = ${oldAmt}
+                  AND created_at >= ${tx.createdAt}::timestamptz - interval '5 minutes'
+                ORDER BY created_at LIMIT 1
+              )
+            `);
+          }
+          /* تحديث الاسم في السلفة إن تغيّر */
+          if (newPersonName && newPersonName !== tx.personName) {
+            await dbTx.execute(sql`
+              UPDATE debts SET person_name = ${newPersonName}, updated_at = NOW()
+              WHERE id = (
+                SELECT id FROM debts
+                WHERE person_name = ${tx.personName ?? ""}
+                  AND amount::numeric = ${newAmt}
+                  AND created_at >= ${tx.createdAt}::timestamptz - interval '5 minutes'
+                ORDER BY created_at LIMIT 1
+              )
+            `);
+          }
+        } else if (oldPt === "cash" && newPt === "loan") {
+          /* نقد → سلفة: اطرح من الصندوق وأنشئ سلفة */
+          await dbTx.execute(
+            sql`UPDATE cash_box SET balance = balance - ${oldAmt}, updated_at = NOW() WHERE id = 1`
+          );
+          await dbTx.insert(debtsTable).values({
+            personName: newPersonName ?? "عميل",
+            amount: String(newAmt),
+            paidAmount: "0",
+            status: "pending" as any,
+            notes: description ?? tx.description ?? "",
+            userId: req.currentUser!.id,
+          });
+        } else if (oldPt === "loan" && newPt === "cash") {
+          /* سلفة → نقد: احذف السلفة وأضف للصندوق */
+          await dbTx.execute(sql`
+            DELETE FROM debts WHERE id = (
+              SELECT id FROM debts
+              WHERE person_name = ${tx.personName ?? ""}
+                AND amount::numeric = ${oldAmt}
+                AND created_at >= ${tx.createdAt}::timestamptz - interval '5 minutes'
+              ORDER BY created_at LIMIT 1
+            )
+          `);
+          await dbTx.execute(
+            sql`UPDATE cash_box SET balance = balance + ${newAmt}, updated_at = NOW() WHERE id = 1`
           );
         }
-      } else if (oldPt === "cash" && newPt === "debt") {
-        /* نقد → دين: أعد المبلغ القديم للصندوق وأنشئ دين جديد */
-        await db.execute(
-          sql`UPDATE cash_box SET balance = balance + ${oldAmt}, updated_at = NOW() WHERE id = 1`
-        );
-        /* حذف الدين القديم إن وجد */
-        if (tx.linkedLoanId) await db.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
-        /* إنشاء دين جديد */
-        const [newLoan] = await db.insert(loansTable).values({
-          personName: personName ?? tx.personName ?? tx.description ?? "غير محدد",
-          amount: String(newAmt),
-          paidAmount: "0",
-          status: "pending",
-          notes: description ?? tx.description ?? "",
-          userId: req.currentUser!.id,
-        }).returning();
-        await db.update(financialTransactionsTable)
-          .set({ linkedLoanId: newLoan.id })
-          .where(eq(financialTransactionsTable.id, id));
-      } else if (oldPt === "debt" && newPt === "cash") {
-        /* دين → نقد: احذف الدين وانقص من الصندوق */
-        if (tx.linkedLoanId) await db.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
-        await db.execute(
-          sql`UPDATE cash_box SET balance = balance - ${newAmt}, updated_at = NOW() WHERE id = 1`
-        );
-      } else if (oldPt === "debt" && newPt === "debt") {
-        /* دين → دين: عدّل المبلغ في سجل الدين */
-        if (tx.linkedLoanId) {
-          await db.update(loansTable)
-            .set({ amount: String(newAmt), updatedAt: new Date() })
-            .where(eq(loansTable.id, tx.linkedLoanId));
+      }
+
+      /* ══ مصروفات ══ */
+      if (tx.type === "expense") {
+        if (oldPt === "cash" && newPt === "cash") {
+          const diff = newAmt - oldAmt;
+          if (Math.abs(diff) > 0.001) {
+            await dbTx.execute(
+              sql`UPDATE cash_box SET balance = balance - ${diff}, updated_at = NOW() WHERE id = 1`
+            );
+          }
+        } else if (oldPt === "cash" && newPt === "debt") {
+          await dbTx.execute(
+            sql`UPDATE cash_box SET balance = balance + ${oldAmt}, updated_at = NOW() WHERE id = 1`
+          );
+          if (tx.linkedLoanId) await dbTx.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
+          const [newLoan] = await dbTx.insert(loansTable).values({
+            personName: newPersonName ?? tx.description ?? "غير محدد",
+            amount: String(newAmt),
+            paidAmount: "0",
+            status: "pending" as any,
+            notes: description ?? tx.description ?? "",
+            userId: req.currentUser!.id,
+          }).returning();
+          await dbTx.update(financialTransactionsTable)
+            .set({ linkedLoanId: newLoan.id })
+            .where(eq(financialTransactionsTable.id, id));
+        } else if (oldPt === "debt" && newPt === "cash") {
+          if (tx.linkedLoanId) await dbTx.delete(loansTable).where(eq(loansTable.id, tx.linkedLoanId));
+          await dbTx.execute(
+            sql`UPDATE cash_box SET balance = balance - ${newAmt}, updated_at = NOW() WHERE id = 1`
+          );
+        } else if (oldPt === "debt" && newPt === "debt") {
+          if (tx.linkedLoanId) {
+            await dbTx.update(loansTable)
+              .set({ amount: String(newAmt), updatedAt: new Date() })
+              .where(eq(loansTable.id, tx.linkedLoanId));
+          }
         }
       }
-    }
 
-    /* حدّث المعاملة */
-    const [updated] = await db.update(financialTransactionsTable).set({
-      amount: String(newAmt),
-      description: description ?? tx.description,
-      paymentType: newPt,
-      personName: personName ?? tx.personName,
-    }).where(eq(financialTransactionsTable.id, id)).returning();
+      /* حدّث المعاملة */
+      await dbTx.update(financialTransactionsTable).set({
+        amount: String(newAmt),
+        category: (category ?? tx.category) as any,
+        description: description ?? tx.description,
+        paymentType: newPt,
+        personName: newPersonName,
+      }).where(eq(financialTransactionsTable.id, id));
+    });
+
+    const [updated] = await db.select().from(financialTransactionsTable)
+      .where(eq(financialTransactionsTable.id, id)).limit(1);
 
     res.json(updated);
   } catch (error) {
