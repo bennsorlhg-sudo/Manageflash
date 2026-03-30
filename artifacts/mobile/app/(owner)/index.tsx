@@ -232,9 +232,9 @@ export default function OwnerDashboard() {
         visible={showCustodyModal}
         token={token}
         onClose={() => setShowCustodyModal(false)}
-        onSuccess={() => {
+        onSuccess={async () => {
           setShowCustodyModal(false);
-          fetchData();
+          await fetchData();
           showAlert("تم ✓", "تم إضافة العهدة بنجاح");
         }}
         onError={(msg) => showAlert("خطأ", msg, Colors.error)}
@@ -267,7 +267,7 @@ export default function OwnerDashboard() {
 ═══════════════════════════════════════════════════ */
 function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }: {
   visible: boolean; token: string | null;
-  onClose: () => void; onSuccess: () => void;
+  onClose: () => void; onSuccess: () => Promise<void>;
   onError: (msg: string) => void; insets: any;
 }) {
   const [type,         setType]         = useState<"cash" | "cards">("cash");
@@ -305,7 +305,7 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
       try {
         await apiPost("/custody", token, { type: "cash", amount: parsedAmt, notes: notes.trim() || undefined });
         setAmount(""); setNotes("");
-        onSuccess();
+        await onSuccess();
       } catch (e: any) {
         onError(e?.message ?? "فشل إضافة العهدة");
       } finally { setSaving(false); }
@@ -317,7 +317,7 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
       try {
         await apiPost("/custody", token, { type: "cards", amount: parsedAmt, notes: notes.trim() || undefined });
         setCardCount(""); setCardsAmount(""); setNotes("");
-        onSuccess();
+        await onSuccess();
       } catch (e: any) {
         onError(e?.message ?? "فشل إضافة العهدة");
       } finally { setSaving(false); }
