@@ -2,10 +2,8 @@ import { Router, type IRouter } from "express";
 import { db } from "@workspace/db";
 import {
   financialTransactionsTable,
-  cashBoxTable,
   debtsTable,
   loansTable,
-  cardInventoryTable,
 } from "@workspace/db/schema";
 import { custodyRecordsTable } from "@workspace/db/schema";
 import { sql, sum, eq } from "drizzle-orm";
@@ -107,20 +105,40 @@ router.get("/finances/report", async (req, res) => {
 router.get("/finances/summary", requireAuth, async (_req, res) => {
   try {
     const [
-      cashBoxRows,
       debtRows,
       loanRows,
       custodyRows,
-      inventoryRows,
+      txRows,
     ] = await Promise.all([
-      db.select().from(cashBoxTable).limit(1),
       db.select().from(debtsTable),
       db.select().from(loansTable),
       db.select().from(custodyRecordsTable),
-      db.select().from(cardInventoryTable),
+      db.select({
+        type: financialTransactionsTable.type,
+        paymentType: financialTransactionsTable.paymentType,
+        amount: financialTransactionsTable.amount,
+      }).from(financialTransactionsTable),
     ]);
 
-    const cashBalance = parseFloat(cashBoxRows[0]?.balance ?? "0");
+    /* ─── الصندوق النقدي: يُحسَب ديناميكياً من السجلات الفعلية ─── */
+    /* نقد من المالك للمدير المالي */
+    const cashFromOwner = custodyRows
+      .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager" && r.type === "cash")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+    /* نقد من المندوبين للمدير المالي (تحصيل) */
+    const cashFromAgents = custodyRows
+      .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager" && r.type === "cash")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+    /* مبيعات نقدية */
+    const cashSales = txRows
+      .filter(r => r.type === "sale" && r.paymentType === "cash")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+    /* مصروفات نقدية */
+    const cashExpenses = txRows
+      .filter(r => r.type === "expense" && (r.paymentType === "cash" || r.paymentType === "loan_payment"))
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+
+    const cashBalance = Math.max(0, cashFromOwner + cashFromAgents + cashSales - cashExpenses);
 
     /* السلف: عملاء يدينون لنا */
     const totalLoans = debtRows
@@ -137,27 +155,44 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
 
-    /* قيمة الكروت: ما سلّمه المالك للمدير المالي من كروت فقط */
-    const cardsValue = custodyRows
+    /* كروت من المالك للمدير المالي */
+    const cardsFromOwner = custodyRows
       .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-
-    /* العهد عند المندوبين: كروت أرسلها المدير المالي للمندوبين ناقص ما استردّه */
-    const cardsToAgents = custodyRows
+    /* كروت أرسلها المدير المالي للمندوبين */
+    const cardsSentToAgents = custodyRows
       .filter(r => r.fromRole === "finance_manager" && r.toRole === "tech_engineer" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-    const cardsFromAgents = custodyRows
+    /* كروت مرتجعة من المندوبين */
+    const cardsReturnedFromAgents = custodyRows
       .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-    const agentCustody = Math.max(0, cardsToAgents - cardsFromAgents);
+    /* قيمة الكروت المتاحة لدى المدير المالي */
+    const cardsValue = cardsFromOwner + cardsReturnedFromAgents - cardsSentToAgents;
+
+    /* العهد الكلية عند المندوبين (نقد + كروت) */
+    const sentToAgents     = custodyRows
+      .filter(r => r.fromRole === "finance_manager" && r.toRole === "tech_engineer")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+    const returnedFromAgents = custodyRows
+      .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+    const agentCustody = Math.max(0, sentToAgents - returnedFromAgents);
+
+    /* إجمالي المبيعات من سجل المعاملات */
+    const broadbandSales = txRows
+      .filter(r => r.type === "sale")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
 
     res.json({
       cashBalance,
       totalLoans,
       totalOwed,
+      totalDebts: totalOwed,   /* alias — finance screen يقرأ totalDebts */
       totalCustody,
-      cardsValue,
+      cardsValue: Math.max(0, cardsValue),
       agentCustody,
+      broadbandSales,
     });
   } catch (error) {
     res.status(500).json({ error: "فشل في جلب الملخص المالي", details: String(error) });
