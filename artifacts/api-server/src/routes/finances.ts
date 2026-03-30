@@ -132,17 +132,24 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       .filter(l => l.status !== "paid")
       .reduce((s, l) => s + Math.max(0, parseFloat(l.amount) - parseFloat(l.paidAmount ?? "0")), 0);
 
-    /* الأمانة الكلية: مجموع الأمانات الممنوحة للمدير المالي */
+    /* الأمانة الكلية: مجموع ما سلّمه المالك للمدير المالي (نقد + كروت) */
     const totalCustody = custodyRows
-      .filter(r => r.toRole === "finance_manager")
+      .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
 
-    /* قيمة الكروت في المخزون */
-    const cardsValue = inventoryRows
-      .reduce((s, r) => s + parseFloat(r.denomination) * r.quantity, 0);
+    /* قيمة الكروت: ما سلّمه المالك للمدير المالي من كروت فقط */
+    const cardsValue = custodyRows
+      .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager" && r.type === "cards")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
 
-    /* أمانة العميل (المدير المالي) = أمانته الأولية - ما صرفه نقداً */
-    const agentCustody = totalCustody;
+    /* العهد عند المندوبين: كروت أرسلها المدير المالي للمندوبين ناقص ما استردّه */
+    const cardsToAgents = custodyRows
+      .filter(r => r.fromRole === "finance_manager" && r.toRole === "tech_engineer" && r.type === "cards")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+    const cardsFromAgents = custodyRows
+      .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager" && r.type === "cards")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+    const agentCustody = Math.max(0, cardsToAgents - cardsFromAgents);
 
     res.json({
       cashBalance,

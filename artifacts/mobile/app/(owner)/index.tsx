@@ -112,7 +112,7 @@ export default function OwnerDashboard() {
       setCardsValue(summary.cardsValue     ?? 0);
       setAgentCustody(summary.agentCustody ?? 0);
       setTotalLoans(summary.totalLoans     ?? 0);
-      setTotalDebts(summary.totalDebts     ?? 0);
+      setTotalDebts(summary.totalOwed      ?? 0);
     } catch {
     } finally {
       setLoading(false);

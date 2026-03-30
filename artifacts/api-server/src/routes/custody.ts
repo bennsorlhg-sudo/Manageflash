@@ -220,7 +220,7 @@ router.post("/custody", requireAuth, async (req, res) => {
     const fromRole = req.currentUser!.role as any;
     const toRole = fromRole === "owner" ? "finance_manager" : "tech_engineer";
 
-    /* ── عملية ذرية: إما كل شيء ينجح أو لا شيء ── */
+    /* ── الخطوة 1: سجّل العهدة + حدّث الصندوق (عملية ذرية) ── */
     const result = await db.transaction(async (tx) => {
       const [record] = await tx.insert(custodyRecordsTable).values({
         type, amount: String(finalAmount), denomination: null, cardCount: null,
@@ -228,8 +228,18 @@ router.post("/custody", requireAuth, async (req, res) => {
       }).returning();
 
       if (type === "cash") {
-        /* سجّل في المعاملات المالية (يضيفه للسجل المحاسبي) */
-        await tx.insert(financialTransactionsTable).values({
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance + ${finalAmount}, updated_at = NOW() WHERE id = 1`
+        );
+      }
+
+      return record;
+    });
+
+    /* ── الخطوة 2: سجّل في المعاملات المالية (خارج الـ transaction — لا يُلغي الصندوق إن فشل) ── */
+    if (type === "cash") {
+      try {
+        await db.insert(financialTransactionsTable).values({
           type:        "custody_in",
           category:    "other",
           amount:      String(finalAmount),
@@ -239,15 +249,8 @@ router.post("/custody", requireAuth, async (req, res) => {
           referenceId: `CUSTODY-CASH-${Date.now()}`,
           paymentType: "cash",
         });
-
-        /* حدّث الصندوق للتوافق مع الكود القديم */
-        await tx.execute(
-          sql`UPDATE cash_box SET balance = balance + ${finalAmount}, updated_at = NOW() WHERE id = 1`
-        );
-      }
-
-      return record;
-    });
+      } catch { /* لا يُلغي نجاح العهدة */ }
+    }
 
     res.status(201).json(result);
   } catch (err) {
