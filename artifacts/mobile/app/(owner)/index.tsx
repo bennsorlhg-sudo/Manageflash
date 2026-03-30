@@ -5,7 +5,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPost, formatCurrency, DENOMINATIONS, CARD_PRICES } from "@/utils/api";
@@ -122,6 +122,8 @@ export default function OwnerDashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+
   if (loading) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
@@ -154,7 +156,7 @@ export default function OwnerDashboard() {
         ══════════════════════════════════════════════ */}
         <View style={styles.kpiGrid}>
           <View style={styles.kpiRow}>
-            <KPICard title="إجمالي العهدة"  value={totalCustody}  icon="briefcase"    color={Colors.primary}  subtitle="نقد + كروت + برودباند" />
+            <KPICard title="إجمالي العهدة"  value={totalCustody}  icon="briefcase"    color={Colors.primary}  subtitle="ما سلّمه المالك للمسؤول المالي" />
             <KPICard title="الصندوق النقدي" value={cashBalance}   icon="wallet"        color={Colors.success}  subtitle="النقد الفعلي" />
           </View>
           <View style={styles.kpiRow}>

@@ -498,42 +498,59 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
     /* 2-4. حسابات من custody_records + financial_transactions */
     const summaryResult = await db.execute(sql`
       SELECT
-        /* نقد استُلم من المالك */
-        COALESCE(SUM(CASE WHEN from_role = 'owner' AND type = 'cash' THEN amount::numeric ELSE 0 END), 0) AS owner_cash,
-        /* كروت استُلمت من المالك */
+        /* نقد استُلم من المالك → يزيد الصندوق */
+        COALESCE(SUM(CASE WHEN from_role = 'owner' AND type = 'cash'  THEN amount::numeric ELSE 0 END), 0) AS owner_cash,
+        /* كروت استُلمت من المالك → تزيد إجمالي الكروت */
         COALESCE(SUM(CASE WHEN from_role = 'owner' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS owner_cards,
-        /* كروت مسلّمة للمندوبين (ما أُرسل) */
+        /* كروت مسلّمة للمندوبين */
         COALESCE(SUM(CASE WHEN from_role = 'finance_manager' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS agent_sent,
-        /* ما استُلم من المندوبين (نقد + كروت مرتجعة) */
-        COALESCE(SUM(CASE WHEN from_role = 'tech_engineer' AND to_role = 'finance_manager' THEN amount::numeric ELSE 0 END), 0) AS agent_received
+        /* كروت مرتجعة من المندوبين (نوع = cards فقط) */
+        COALESCE(SUM(CASE WHEN from_role = 'tech_engineer' AND to_role = 'finance_manager' AND type = 'cards' THEN amount::numeric ELSE 0 END), 0) AS agent_returned_cards,
+        /* نقد مستلم من المندوبين (نوع = cash فقط) */
+        COALESCE(SUM(CASE WHEN from_role = 'tech_engineer' AND to_role = 'finance_manager' AND type = 'cash'  THEN amount::numeric ELSE 0 END), 0) AS agent_returned_cash
       FROM custody_records
     `);
 
     const txResult = await db.execute(sql`
       SELECT
-        /* مبيعات برودباند الكلية */
+        /* مبيعات برودباند (نقد أو سلفة) */
         COALESCE(SUM(CASE WHEN type = 'sale' AND category = 'broadband' THEN amount::numeric ELSE 0 END), 0) AS broadband_sales,
-        /* مبيعات الكروت الكلية */
-        COALESCE(SUM(CASE WHEN type = 'sale' AND category = 'hotspot' THEN amount::numeric ELSE 0 END), 0) AS hotspot_sales,
-        /* الصرف النقدي فقط */
-        COALESCE(SUM(CASE WHEN type = 'expense' AND payment_type = 'cash' THEN amount::numeric ELSE 0 END), 0) AS cash_expenses
+        /* مبيعات الكروت النقدية (ينقص من إجمالي الكروت) */
+        COALESCE(SUM(CASE WHEN type = 'sale' AND category = 'hotspot'   THEN amount::numeric ELSE 0 END), 0) AS hotspot_sales
       FROM financial_transactions
     `);
 
     const cr: any = (summaryResult as any).rows?.[0] ?? (Array.isArray(summaryResult) ? summaryResult[0] : {});
-    const tx: any = (txResult as any).rows?.[0] ?? (Array.isArray(txResult) ? txResult[0] : {});
+    const tx: any = (txResult    as any).rows?.[0] ?? (Array.isArray(txResult)    ? txResult[0]    : {});
 
-    const ownerCash      = parseFloat(cr.owner_cash     ?? "0");
-    const ownerCards     = parseFloat(cr.owner_cards    ?? "0");
-    const agentSent      = parseFloat(cr.agent_sent     ?? "0");
-    const agentReceived  = parseFloat(cr.agent_received ?? "0");
-    /* العهدة الفعلية عند المندوبين = ما أُرسل − ما استُلم */
-    const agentCustody   = Math.max(0, agentSent - agentReceived);
-    const broadbandSales = parseFloat(tx.broadband_sales ?? "0");
-    const hotspotSales   = parseFloat(tx.hotspot_sales   ?? "0");
-    const cashExpenses   = parseFloat(tx.cash_expenses   ?? "0");
+    const ownerCash           = parseFloat(cr.owner_cash           ?? "0");
+    const ownerCards          = parseFloat(cr.owner_cards          ?? "0");
+    const agentSent           = parseFloat(cr.agent_sent           ?? "0");
+    const agentReturnedCards  = parseFloat(cr.agent_returned_cards ?? "0");
+    const agentReturnedCash   = parseFloat(cr.agent_returned_cash  ?? "0");
+    const hotspotSales        = parseFloat(tx.hotspot_sales        ?? "0");
+    const broadbandSales      = parseFloat(tx.broadband_sales      ?? "0");
 
-    /* 5. السلف — debts table (مبالغ يستحق تحصيلها) */
+    /*
+     * إجمالي العهدة = ما أعطاه المالك للمسؤول المالي (نقد + كروت)
+     */
+    const totalCustody = ownerCash + ownerCards;
+
+    /*
+     * العهدة الفعلية عند المندوبين = ما أُرسل − (نقد مسترد + كروت مرتجعة)
+     */
+    const agentCustody = Math.max(0, agentSent - agentReturnedCash - agentReturnedCards);
+
+    /*
+     * إجمالي الكروت الموجودة لدى المسؤول المالي:
+     *   = كروت من المالك
+     *   + كروت مرتجعة من المندوبين
+     *   − كروت أُرسلت للمندوبين
+     *   − مبيعات هوتسبوت (كروت بيعت مباشرة)
+     */
+    const cardsValue = ownerCards + agentReturnedCards - agentSent - hotspotSales;
+
+    /* 5. السلف — debts table (مبالغ يستحق تحصيلها من العملاء) */
     const loansResult = await db.execute(sql`
       SELECT COALESCE(SUM((amount::numeric - paid_amount::numeric)), 0) AS total
       FROM debts WHERE status != 'paid'
@@ -549,15 +566,12 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
     const debtsRow: any = (debtsResult as any).rows?.[0] ?? (Array.isArray(debtsResult) ? debtsResult[0] : {});
     const totalDebts = parseFloat(debtsRow.total ?? "0");
 
-    /* حسابات مشتقة */
-    const totalCustody = ownerCash + ownerCards + broadbandSales - cashExpenses;
-    const cardsValue   = ownerCards - hotspotSales - agentCustody;
-
     res.json({
-      totalCustody:  Math.max(0, totalCustody),
+      totalCustody,
       cashBalance,
-      cardsValue:    Math.max(0, cardsValue),
+      cardsValue:   Math.max(0, cardsValue),
       agentCustody,
+      broadbandSales,
       totalLoans,
       totalDebts,
     });

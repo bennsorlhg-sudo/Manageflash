@@ -7,7 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { apiGet, apiPatch, formatCurrency, formatDate } from "@/utils/api";
 
 /* ─────────────────────────────────────────
@@ -126,6 +126,8 @@ export default function FinanceDashboard() {
   }, [token]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
 
   /* ─── تنفيذ مهمة ─── */
   const handleCompleteTask = async (id: number) => {
