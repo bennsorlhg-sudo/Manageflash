@@ -1,11 +1,12 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
-  Linking, ActivityIndicator, Platform, Modal,
+  Linking, ActivityIndicator, Platform, Modal, Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPost } from "@/utils/api";
@@ -37,6 +38,7 @@ export default function RepairTicketScreen() {
   const [fetching, setFetching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [engineers, setEngineers] = useState<{ id: number; name: string; phone: string }[]>([]);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
 
   const [modal, setModal] = useState({
     visible: false, title: "", message: "", color: Colors.success, goBack: false,
@@ -66,31 +68,61 @@ export default function RepairTicketScreen() {
     setFetching(true);
     setClientData(null);
     const type = detectType(cleaned);
+    const numericPart = parseInt(cleaned.replace(/\D/g, "")) || 0;
     try {
-      const endpoint = type === "broadband" ? "/network/broadband-points" : "/network/hotspot-points";
-      const points = await apiGet(endpoint, token).catch(() => []);
-      const numericId = parseInt(cleaned.replace(/\D/g, ""));
-      const match = (points as any[]).find(
-        (p: any) => p.id === numericId || p.flashNumber === cleaned || p.name?.includes(cleaned)
-      );
+      /* الـ API يُرجع { data: [...], total: N } وليس مصفوفة مباشرة */
+      const endpoint = type === "broadband"
+        ? `/network/broadband-points?search=${numericPart}&limit=50`
+        : `/network/hotspot-points?search=${numericPart}&limit=50`;
+      const res = await apiGet(endpoint, token).catch(() => ({ data: [] }));
+      const rows: any[] = Array.isArray(res) ? res : (res?.data ?? []);
+
+      /* البحث بـ flashNumber رقمياً أولاً، ثم بالاسم */
+      const match = rows.find((p: any) =>
+        Number(p.flashNumber) === numericPart || p.id === numericPart
+      ) ?? rows[0] ?? null;
+
       if (match) {
         setClientData({
-          name: match.clientName ?? match.name,
-          phone: match.clientPhone ?? match.phone,
-          location: match.locationDescription ?? match.location,
-          locationUrl: match.locationUrl,
+          found: true,
+          name: match.clientName ?? match.name ?? `خدمة ${cleaned}`,
+          phone: match.clientPhone ?? null,
+          location: match.location ?? null,
+          locationUrl: match.locationUrl ?? null,
           type,
-          status: match.status,
-          subscriptionFee: match.subscriptionFee ?? match.price,
+          status: match.status ?? null,
+          subscriptionFee: match.subscriptionFee ?? null,
         });
       } else {
-        setClientData({ name: `عميل ${type === "broadband" ? "برودباند" : "هوتسبوت"} - ${cleaned}`, type });
+        /* لم يُعثر — يبقى النموذج قابلاً للإدخال اليدوي */
+        setClientData({
+          found: false,
+          name: "",
+          phone: "",
+          location: "",
+          locationUrl: "",
+          type,
+        });
+        showModal("لم يُعثر", `لم يُعثر على خدمة رقم ${cleaned}، يمكنك استكمال البيانات يدوياً`, Colors.warning);
       }
     } catch {
-      setClientData({ name: `خدمة رقم ${cleaned}`, type });
+      setClientData({ found: false, name: "", phone: "", location: "", locationUrl: "", type });
     } finally {
       setFetching(false);
     }
+  };
+
+  const pickPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== "granted") {
+      const camStatus = await ImagePicker.requestCameraPermissionsAsync();
+      if (camStatus.status !== "granted") return;
+      const result = await ImagePicker.launchCameraAsync({ quality: 0.7, base64: false });
+      if (!result.canceled) setPhotoUri(result.assets[0].uri);
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    if (!result.canceled) setPhotoUri(result.assets[0].uri);
   };
 
   const handleSubmit = async () => {
@@ -102,18 +134,19 @@ export default function RepairTicketScreen() {
     try {
       const newTicket = await apiPost("/tickets/repair", token, {
         serviceNumber: serviceNumber.trim(),
-        clientName: clientData?.name,
-        clientPhone: clientData?.phone,
+        clientName: clientData?.name?.trim() || null,
+        clientPhone: clientData?.phone?.trim() || null,
         serviceType: detectType(serviceNumber),
         problemDescription: description.trim() || null,
         notes: notes.trim() || null,
         assignedToId: assignMode === "specific" ? assignedToId : null,
         assignedToName: assignMode === "specific" ? assignedToName : null,
-        locationUrl: clientData?.locationUrl ?? null,
+        locationUrl: clientData?.locationUrl?.trim() || null,
       });
       setTickets((prev) => [newTicket, ...prev]);
       setServiceNumber(""); setClientData(null); setDescription(""); setNotes("");
       setAssignMode("all"); setAssignedToId(null); setAssignedToName("");
+      setPhotoUri(null);
       showModal("تم الإنشاء", "تم إنشاء تذكرة الإصلاح بنجاح", Colors.success);
       setActiveTab("open");
     } catch (e: any) {
@@ -260,9 +293,11 @@ export default function RepairTicketScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* بيانات العميل المجلوبة */}
+          {/* بيانات العميل — مجلوبة أو يدوية */}
           {clientData && (
-            <View style={styles.clientCard}>
+            <View style={[styles.clientCard, {
+              borderColor: clientData.found ? Colors.success + "60" : Colors.warning + "60",
+            }]}>
               <View style={styles.clientHeader}>
                 <View style={[styles.typeBadge, {
                   backgroundColor: (clientData.type === "broadband" ? Colors.info : Colors.primary) + "22",
@@ -273,20 +308,64 @@ export default function RepairTicketScreen() {
                     {clientData.type === "broadband" ? "برودباند" : "هوتسبوت"}
                   </Text>
                 </View>
-                <Text style={styles.clientName}>{clientData.name}</Text>
+                <Text style={[styles.foundBadge, {
+                  color: clientData.found ? Colors.success : Colors.warning,
+                }]}>
+                  {clientData.found ? "✔ تم الجلب" : "إدخال يدوي"}
+                </Text>
               </View>
-              {!!clientData.phone && (
-                <TouchableOpacity style={styles.infoRow} onPress={() => Linking.openURL(`tel:${clientData.phone}`)}>
-                  <Text style={[styles.infoText, { color: Colors.success }]}>{clientData.phone}</Text>
-                  <Ionicons name="call" size={14} color={Colors.success} />
-                </TouchableOpacity>
-              )}
-              {!!clientData.location && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoText}>{clientData.location}</Text>
-                  <Ionicons name="location" size={14} color={Colors.textSecondary} />
-                </View>
-              )}
+
+              <Text style={styles.fieldLabel}>الاسم / الجهة</Text>
+              <TextInput
+                style={styles.input}
+                value={clientData.name ?? ""}
+                onChangeText={v => setClientData((d: any) => ({ ...d, name: v }))}
+                placeholder="اسم العميل أو الجهة"
+                placeholderTextColor={Colors.textSecondary}
+                textAlign="right"
+              />
+
+              <Text style={styles.fieldLabel}>رقم الجوال</Text>
+              <TextInput
+                style={styles.input}
+                value={clientData.phone ?? ""}
+                onChangeText={v => setClientData((d: any) => ({ ...d, phone: v }))}
+                placeholder="رقم الجوال"
+                placeholderTextColor={Colors.textSecondary}
+                textAlign="right"
+                keyboardType="phone-pad"
+              />
+
+              <Text style={styles.fieldLabel}>وصف الموقع</Text>
+              <TextInput
+                style={styles.input}
+                value={clientData.location ?? ""}
+                onChangeText={v => setClientData((d: any) => ({ ...d, location: v }))}
+                placeholder="وصف الموقع"
+                placeholderTextColor={Colors.textSecondary}
+                textAlign="right"
+              />
+
+              <Text style={styles.fieldLabel}>رابط الموقع (اختياري)</Text>
+              <View style={styles.urlRow}>
+                <TextInput
+                  style={[styles.input, { flex: 1 }]}
+                  value={clientData.locationUrl ?? ""}
+                  onChangeText={v => setClientData((d: any) => ({ ...d, locationUrl: v }))}
+                  placeholder="https://maps.google.com/..."
+                  placeholderTextColor={Colors.textSecondary}
+                  textAlign="right"
+                  autoCapitalize="none"
+                />
+                {!!clientData.locationUrl && (
+                  <TouchableOpacity
+                    style={styles.mapBtn}
+                    onPress={() => Linking.openURL(clientData.locationUrl)}
+                  >
+                    <Ionicons name="map" size={18} color={Colors.info} />
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
           )}
 
@@ -315,6 +394,23 @@ export default function RepairTicketScreen() {
             textAlign="right"
             textAlignVertical="top"
           />
+
+          {/* صورة اختيارية */}
+          <Text style={styles.fieldLabel}>صورة (اختياري)</Text>
+          <TouchableOpacity style={styles.photoBtn} onPress={pickPhoto}>
+            <Ionicons name="camera-outline" size={20} color={Colors.textSecondary} />
+            <Text style={styles.photoBtnText}>
+              {photoUri ? "تغيير الصورة" : "إضافة صورة أو التقاط"}
+            </Text>
+          </TouchableOpacity>
+          {photoUri && (
+            <View style={styles.photoPreviewBox}>
+              <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
+              <TouchableOpacity style={styles.removePhoto} onPress={() => setPhotoUri(null)}>
+                <Ionicons name="close-circle" size={22} color={Colors.error} />
+              </TouchableOpacity>
+            </View>
+          )}
 
           {/* الفني المسؤول */}
           <Text style={styles.fieldLabel}>الفني المسؤول</Text>
@@ -521,6 +617,20 @@ const styles = StyleSheet.create({
 
   emptyBox:  { alignItems: "center", paddingVertical: 60, gap: 12 },
   emptyText: { fontSize: 14, color: Colors.textSecondary },
+
+  foundBadge: { fontSize: 12, fontWeight: "bold" },
+  urlRow:    { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  mapBtn:    { backgroundColor: Colors.info + "22", padding: 10, borderRadius: 10 },
+
+  photoBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 10,
+    backgroundColor: Colors.surface, borderRadius: 10, borderWidth: 1,
+    borderColor: Colors.border, borderStyle: "dashed", padding: 14,
+  },
+  photoBtnText: { fontSize: 14, color: Colors.textSecondary },
+  photoPreviewBox: { marginTop: 10, borderRadius: 12, overflow: "hidden", position: "relative" },
+  photoPreview: { width: "100%", height: 160, borderRadius: 12 },
+  removePhoto: { position: "absolute", top: 8, left: 8 },
 
   modalOverlay: { flex: 1, backgroundColor: "#00000088", justifyContent: "center", alignItems: "center", padding: 20 },
   modalCard:    { backgroundColor: Colors.surface, borderRadius: 16, padding: 24, alignItems: "center", width: "100%", gap: 12 },
