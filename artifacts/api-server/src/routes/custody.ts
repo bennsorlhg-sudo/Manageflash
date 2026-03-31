@@ -159,7 +159,8 @@ router.get("/custody/agents", requireAuth, async (_req, res) => {
         const remaining     = totalSent - totalReceived;
         return { agentName: s.agent_name, totalSent, totalReceived, remaining };
       })
-      .filter(a => a.remaining > 0.01); /* فقط العهد المفتوحة */
+      .filter(a => a.remaining > 0.01)           /* فقط العهد المفتوحة */
+      .sort((a, b) => b.remaining - a.remaining); /* أكبر مبلغ أولاً  */
 
     res.json(agents);
   } catch (err) {

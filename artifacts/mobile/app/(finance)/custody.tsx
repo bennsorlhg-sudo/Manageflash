@@ -6,7 +6,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPost, formatCurrency, formatDate } from "@/utils/api";
 
@@ -98,10 +98,14 @@ export default function CustodyScreen() {
   const [tab, setTab] = useState<Tab>("send");
 
   /* ─── تسليم عهدة ─── */
-  const [sendAgent,  setSendAgent]  = useState("");
-  const [sendAmount, setSendAmount] = useState("");
-  const [sendNotes,  setSendNotes]  = useState("");
-  const [sending,    setSending]    = useState(false);
+  const [sendAgent,    setSendAgent]    = useState("");
+  const [sendAmount,   setSendAmount]   = useState("");
+  const [sendNotes,    setSendNotes]    = useState("");
+  const [sending,      setSending]      = useState(false);
+  const [showPicker,   setShowPicker]   = useState(false);
+
+  /* ─── قائمة المهندسين (للاختيار عند التسليم) ─── */
+  const [engineers, setEngineers] = useState<string[]>([]);
 
   /* ─── استلام عهدة ─── */
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -114,6 +118,7 @@ export default function CustodyScreen() {
   const [agents,     setAgents]     = useState<any[]>([]);
   const [listLoad,   setListLoad]   = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [search,     setSearch]     = useState("");
 
   /* ─── مودال نتيجة ─── */
   const [modal, setModal] = useState({ visible: false, title: "", message: "", color: Colors.success });
@@ -130,7 +135,18 @@ export default function CustodyScreen() {
     }
   }, [token]);
 
-  useEffect(() => { fetchAgents(); }, [fetchAgents]);
+  const fetchEngineers = useCallback(async () => {
+    try {
+      const data = await apiGet("/users/engineers", token);
+      const names = (Array.isArray(data) ? data : []).map((e: any) => e.name ?? e.username ?? "");
+      setEngineers(names.filter(Boolean));
+    } catch {}
+  }, [token]);
+
+  useFocusEffect(useCallback(() => {
+    fetchAgents();
+    fetchEngineers();
+  }, [fetchAgents, fetchEngineers]));
 
   /* عند تغيير التبويب: امسح الاختيار */
   useEffect(() => {
@@ -239,7 +255,74 @@ export default function CustodyScreen() {
           </View>
 
           <View style={styles.card}>
-            <Field label="اسم المندوب *" value={sendAgent} onChange={setSendAgent} placeholder="مثال: مشعل" />
+
+            {/* ── اختيار المندوب ── */}
+            <Text style={styles.fieldLabel}>اسم المندوب *</Text>
+            <TouchableOpacity
+              style={[styles.fieldInput, styles.pickerBtn, sendAgent ? { borderColor: Colors.warning } : {}]}
+              onPress={() => setShowPicker(v => !v)}
+              activeOpacity={0.75}
+            >
+              <Ionicons
+                name={showPicker ? "chevron-up" : "chevron-down"}
+                size={16} color={Colors.textMuted}
+              />
+              <Text style={[styles.pickerBtnTxt, sendAgent ? { color: Colors.text, fontWeight: "700" } : {}]}>
+                {sendAgent || "اختر مندوباً..."}
+              </Text>
+            </TouchableOpacity>
+
+            {/* ── القائمة المنسدلة ── */}
+            {showPicker && (
+              <View style={styles.dropdownList}>
+                {engineers.length === 0 ? (
+                  <Text style={[styles.fieldHint, { padding: 10, textAlign: "center" }]}>
+                    لا يوجد مندوبون مسجّلون
+                  </Text>
+                ) : (
+                  engineers.map(eng => (
+                    <TouchableOpacity
+                      key={eng}
+                      style={[styles.dropdownItem, sendAgent === eng && styles.dropdownItemSel]}
+                      onPress={() => { setSendAgent(eng); setShowPicker(false); }}
+                    >
+                      {sendAgent === eng && (
+                        <Ionicons name="checkmark" size={14} color={Colors.warning} />
+                      )}
+                      <Text style={[styles.dropdownItemTxt, sendAgent === eng && { color: Colors.warning, fontWeight: "700" }]}>
+                        {eng}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                )}
+                {/* إدخال اسم مخصص */}
+                <View style={styles.dropdownCustom}>
+                  <Text style={styles.dropdownCustomLabel}>أو أدخل اسماً مخصصاً:</Text>
+                  <TextInput
+                    style={styles.dropdownCustomInput}
+                    value={sendAgent}
+                    onChangeText={setSendAgent}
+                    placeholder="اكتب الاسم..."
+                    placeholderTextColor={Colors.textMuted}
+                    textAlign="right"
+                    onSubmitEditing={() => setShowPicker(false)}
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* إذا لم تُعرَض القائمة — أدخل الاسم مباشرة */}
+            {!showPicker && !sendAgent && (
+              <TextInput
+                style={[styles.fieldInput, { marginTop: 8 }]}
+                value={sendAgent}
+                onChangeText={setSendAgent}
+                placeholder="أو اكتب اسم المندوب يدوياً..."
+                placeholderTextColor={Colors.textMuted}
+                textAlign="right"
+              />
+            )}
+
             <Field
               label="قيمة الكروت المُسلَّمة (ر.س) *"
               value={sendAmount}
@@ -438,6 +521,26 @@ export default function CustodyScreen() {
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAgents(); }} />}
         >
+          {/* ── بحث بالاسم ── */}
+          {agents.length > 0 && (
+            <View style={styles.searchWrap}>
+              <Ionicons name="search" size={16} color={Colors.textMuted} style={{ marginLeft: 8 }} />
+              <TextInput
+                style={styles.searchInput}
+                value={search}
+                onChangeText={setSearch}
+                placeholder="بحث بالاسم..."
+                placeholderTextColor={Colors.textMuted}
+                textAlign="right"
+              />
+              {!!search && (
+                <TouchableOpacity onPress={() => setSearch("")}>
+                  <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {listLoad ? (
             <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 60 }} />
           ) : agents.length === 0 ? (
@@ -446,10 +549,22 @@ export default function CustodyScreen() {
               <Text style={styles.emptyTitle}>لا توجد عهد مفتوحة</Text>
               <Text style={styles.emptyHint}>جميع العهد تم تصفيتها بالكامل</Text>
             </View>
-          ) : (
+          ) : (() => {
+            const filtered = search.trim()
+              ? agents.filter(a => a.agentName?.includes(search.trim()))
+              : agents;
+            return (
             <>
-              <Text style={styles.listCount}>{agents.length} عهدة مفتوحة</Text>
-              {agents.map((a, idx) => {
+              <Text style={styles.listCount}>
+                {filtered.length} {search ? `نتيجة من أصل ${agents.length}` : "عهدة مفتوحة"}
+              </Text>
+              {filtered.length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="search" size={40} color={Colors.textMuted} />
+                  <Text style={styles.emptyTitle}>لا توجد نتائج</Text>
+                  <Text style={styles.emptyHint}>جرّب اسماً مختلفاً</Text>
+                </View>
+              ) : filtered.map((a, idx) => {
                 const pct = a.totalSent > 0 ? ((a.totalSent - a.remaining) / a.totalSent) * 100 : 0;
                 return (
                   <View key={`${a.agentName}-${idx}`} style={styles.agentCard}>
@@ -500,7 +615,8 @@ export default function CustodyScreen() {
                 );
               })}
             </>
-          )}
+            );
+          })()}
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
@@ -654,6 +770,44 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: "center", paddingVertical: 60, gap: 10 },
   emptyTitle: { fontSize: 18, fontWeight: "700", color: Colors.text },
   emptyHint: { fontSize: 13, color: Colors.textMuted },
+
+  /* ─── Picker (send tab) ─── */
+  pickerBtn: {
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between",
+  },
+  pickerBtnTxt: { flex: 1, fontSize: 15, color: Colors.textMuted, textAlign: "right" },
+
+  dropdownList: {
+    backgroundColor: Colors.background, borderRadius: 12, borderWidth: 1,
+    borderColor: Colors.border, marginTop: 6, marginBottom: 4, overflow: "hidden",
+  },
+  dropdownItem: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 8,
+    paddingHorizontal: 14, paddingVertical: 13,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  dropdownItemSel: { backgroundColor: Colors.warning + "12" },
+  dropdownItemTxt: { fontSize: 15, color: Colors.text, flex: 1, textAlign: "right" },
+
+  dropdownCustom: {
+    padding: 12, backgroundColor: Colors.surface + "80",
+    borderTopWidth: 1, borderTopColor: Colors.border,
+  },
+  dropdownCustomLabel: {
+    fontSize: 11, color: Colors.textMuted, textAlign: "right", marginBottom: 6,
+  },
+  dropdownCustomInput: {
+    backgroundColor: Colors.background, borderRadius: 8, padding: 10,
+    color: Colors.text, fontSize: 14, borderWidth: 1, borderColor: Colors.border,
+  },
+
+  /* ─── Search (list tab) ─── */
+  searchWrap: {
+    flexDirection: "row-reverse", alignItems: "center",
+    backgroundColor: Colors.surface, borderRadius: 12, paddingHorizontal: 12,
+    paddingVertical: 10, borderWidth: 1, borderColor: Colors.border, marginBottom: 14, gap: 8,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: Colors.text, textAlign: "right" },
 
   /* ─── Alert Modal ─── */
   alertOverlay: {
