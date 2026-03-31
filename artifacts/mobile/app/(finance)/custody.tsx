@@ -148,19 +148,20 @@ export default function CustodyScreen() {
      تسليم عهدة
   ═══════════════════════════════════════════ */
   const handleSend = async () => {
-    const amount = parseFloat(sendAmount.replace(/[^0-9.]/g, "")) || 0;
+    const amount = parseFloat(sendCards.replace(/[^0-9.]/g, "")) || 0;
     if (!sendAgent.trim()) return showOk("خطأ", "أدخل اسم المندوب", Colors.error);
     if (amount <= 0)       return showOk("خطأ", "أدخل قيمة الكروت", Colors.error);
     setSending(true);
     try {
+      const agentName = sendAgent.trim();
       await apiPost("/custody/send", token, {
-        agentName: sendAgent.trim(), amount,
+        agentName, amount,
         notes: sendNotes.trim() || undefined,
       });
-      setSendAgent(""); setSendAmount(""); setSendNotes("");
+      setSendAgent(""); setSendCards(""); setSendNotes("");
       await fetchAgents();
       showOk("تم تسليم العهدة ✓",
-        `تم تسليم ${formatCurrency(amount)} كروت للمندوب ${sendAgent.trim()}\nتم تحديث العهدة عند المندوبين`);
+        `تم تسليم ${formatCurrency(amount)} كروت للمندوب ${agentName}\nتم خصم المبلغ من إجمالي الكروت`);
     } catch (e: any) {
       showOk("خطأ", e?.message ?? "فشل التسليم", Colors.error);
     } finally { setSending(false); }
@@ -197,7 +198,7 @@ export default function CustodyScreen() {
   /* ══════════════════════════════════════════════════
      RENDER
   ══════════════════════════════════════════════════ */
-  const sendValid = !!sendAgent.trim() && parseFloat(sendAmount || "0") > 0;
+  const sendValid = !!sendAgent.trim() && parseFloat(sendCards || "0") > 0;
   const recValid  = !!selectedAgent && (parseFloat(recCash || "0") > 0 || parseFloat(recCards || "0") > 0);
   const selectedAgentData = agents.find(a => a.agentName === selectedAgent);
 
@@ -243,78 +244,21 @@ export default function CustodyScreen() {
           </View>
 
           <View style={styles.card}>
-
-            {/* ── اختيار المندوب ── */}
+            {/* ── اسم المندوب ── */}
             <Text style={styles.fieldLabel}>اسم المندوب *</Text>
-            <TouchableOpacity
-              style={[styles.fieldInput, styles.pickerBtn, sendAgent ? { borderColor: Colors.warning } : {}]}
-              onPress={() => setShowPicker(v => !v)}
-              activeOpacity={0.75}
-            >
-              <Ionicons
-                name={showPicker ? "chevron-up" : "chevron-down"}
-                size={16} color={Colors.textMuted}
-              />
-              <Text style={[styles.pickerBtnTxt, sendAgent ? { color: Colors.text, fontWeight: "700" } : {}]}>
-                {sendAgent || "اختر مندوباً..."}
-              </Text>
-            </TouchableOpacity>
-
-            {/* ── القائمة المنسدلة ── */}
-            {showPicker && (
-              <View style={styles.dropdownList}>
-                {engineers.length === 0 ? (
-                  <Text style={[styles.fieldHint, { padding: 10, textAlign: "center" }]}>
-                    لا يوجد مندوبون مسجّلون
-                  </Text>
-                ) : (
-                  engineers.map(eng => (
-                    <TouchableOpacity
-                      key={eng}
-                      style={[styles.dropdownItem, sendAgent === eng && styles.dropdownItemSel]}
-                      onPress={() => { setSendAgent(eng); setShowPicker(false); }}
-                    >
-                      {sendAgent === eng && (
-                        <Ionicons name="checkmark" size={14} color={Colors.warning} />
-                      )}
-                      <Text style={[styles.dropdownItemTxt, sendAgent === eng && { color: Colors.warning, fontWeight: "700" }]}>
-                        {eng}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                )}
-                {/* إدخال اسم مخصص */}
-                <View style={styles.dropdownCustom}>
-                  <Text style={styles.dropdownCustomLabel}>أو أدخل اسماً مخصصاً:</Text>
-                  <TextInput
-                    style={styles.dropdownCustomInput}
-                    value={sendAgent}
-                    onChangeText={setSendAgent}
-                    placeholder="اكتب الاسم..."
-                    placeholderTextColor={Colors.textMuted}
-                    textAlign="right"
-                    onSubmitEditing={() => setShowPicker(false)}
-                  />
-                </View>
-              </View>
-            )}
-
-            {/* إذا لم تُعرَض القائمة — أدخل الاسم مباشرة */}
-            {!showPicker && !sendAgent && (
-              <TextInput
-                style={[styles.fieldInput, { marginTop: 8 }]}
-                value={sendAgent}
-                onChangeText={setSendAgent}
-                placeholder="أو اكتب اسم المندوب يدوياً..."
-                placeholderTextColor={Colors.textMuted}
-                textAlign="right"
-              />
-            )}
+            <TextInput
+              style={[styles.fieldInput, sendAgent ? { borderColor: Colors.warning } : {}]}
+              value={sendAgent}
+              onChangeText={setSendAgent}
+              placeholder="اكتب اسم المندوب..."
+              placeholderTextColor={Colors.textMuted}
+              textAlign="right"
+            />
 
             <Field
               label="قيمة الكروت المُسلَّمة (ر.س) *"
-              value={sendAmount}
-              onChange={v => setSendAmount(v.replace(/[^0-9.]/g, ""))}
+              value={sendCards}
+              onChange={v => setSendCards(v.replace(/[^0-9.]/g, ""))}
               placeholder="0" keyboard="decimal-pad"
               hint="يُدخَل المبلغ الإجمالي مباشرة"
             />
@@ -330,7 +274,7 @@ export default function CustodyScreen() {
               <View style={styles.summaryRow}>
                 <Text style={styles.summaryLabel}>قيمة الكروت</Text>
                 <Text style={[styles.summaryValue, { color: Colors.warning }]}>
-                  {formatCurrency(parseFloat(sendAmount))}
+                  {formatCurrency(parseFloat(sendCards))}
                 </Text>
               </View>
               <View style={[styles.summaryRow, styles.effectRow]}>
