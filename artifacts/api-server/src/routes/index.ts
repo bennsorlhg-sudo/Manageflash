@@ -13,6 +13,7 @@ import ticketsRouter from "./tickets";
 import subscriptionDeliveryRouter from "./subscription-delivery";
 import fieldTasksRouter from "./fieldTasks";
 import salesPointsRouter from "./salesPoints";
+import adminClearRouter from "./admin-clear";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(ticketsRouter);
 router.use(subscriptionDeliveryRouter);
 router.use(fieldTasksRouter);
 router.use(salesPointsRouter);
+router.use(adminClearRouter);
 
 export default router;
