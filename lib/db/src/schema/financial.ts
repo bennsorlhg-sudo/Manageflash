@@ -66,6 +66,7 @@ export const expensesTable = pgTable("expenses", {
 export const debtsTable = pgTable("debts", {
   id: serial("id").primaryKey(),
   personName: text("person_name").notNull(),
+  entityType: text("entity_type").default("other"),  /* hotspot | broadband | sales_point | other */
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   paidAmount: numeric("paid_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   status: debtStatusEnum("status").notNull().default("pending"),
@@ -78,6 +79,7 @@ export const debtsTable = pgTable("debts", {
 export const loansTable = pgTable("loans", {
   id: serial("id").primaryKey(),
   personName: text("person_name").notNull(),
+  entityType: text("entity_type").default("other"),  /* broadband | sales_point | supplier | other */
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   paidAmount: numeric("paid_amount", { precision: 10, scale: 2 }).notNull().default("0"),
   status: debtStatusEnum("status").notNull().default("pending"),

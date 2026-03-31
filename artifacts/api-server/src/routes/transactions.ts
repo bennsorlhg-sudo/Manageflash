@@ -60,6 +60,7 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
       } else {
         await tx.insert(debtsTable).values({
           personName: customerName ?? "عميل",
+          entityType: cardType === "broadband" ? "broadband" : "hotspot",
           amount: String(totalAmount),
           paidAmount: "0",
           status: "pending",
@@ -96,6 +97,7 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
       if (pt === "debt") {
         const [loan] = await tx.insert(loansTable).values({
           personName: personName ?? desc,
+          entityType: "supplier",
           amount: String(parsedAmount),
           paidAmount: "0",
           status: "pending",
@@ -352,7 +354,6 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
       const newPaid = parseFloat(debt.paidAmount) + parsedAmount;
       const status  = newPaid >= parseFloat(debt.amount) ? "paid" : "partial";
 
-      /* ── عملية ذرية ── */
       await db.transaction(async (tx) => {
         await tx.update(debtsTable)
           .set({ paidAmount: String(newPaid), status: status as any, updatedAt: new Date() })
@@ -362,7 +363,9 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
           type:        "sale",
           category:    "other" as any,
           amount:      String(parsedAmount),
-          description: `تحصيل سلفة من: ${debt.personName}`,
+          description: notes?.trim()
+            ? `تحصيل سلفة من: ${debt.personName} — ${notes.trim()}`
+            : `تحصيل سلفة من: ${debt.personName}`,
           role:        req.currentUser!.role,
           personName:  debt.personName,
           referenceId: `COLLECT-DEBT-${sourceId}-${Date.now()}`,
@@ -374,7 +377,7 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
         );
       });
 
-      return res.json({ success: true, amount: parsedAmount });
+      return res.json({ success: true, amount: parsedAmount, newPaid, status });
 
     } else if (sourceType === "loan") {
       /* ── سداد دين: نحن ندفع لجهة → ينقص الصندوق وينقص الدين ── */
@@ -384,7 +387,6 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
       const newPaid = parseFloat(loan.paidAmount) + parsedAmount;
       const status  = newPaid >= parseFloat(loan.amount) ? "paid" : "partial";
 
-      /* ── عملية ذرية ── */
       await db.transaction(async (tx) => {
         await tx.update(loansTable)
           .set({ paidAmount: String(newPaid), status: status as any, updatedAt: new Date() })
@@ -394,7 +396,9 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
           type:        "expense",
           category:    "other" as any,
           amount:      String(parsedAmount),
-          description: `سداد دين لـ: ${loan.personName}`,
+          description: notes?.trim()
+            ? `سداد دين لـ: ${loan.personName} — ${notes.trim()}`
+            : `سداد دين لـ: ${loan.personName}`,
           role:        req.currentUser!.role,
           personName:  loan.personName,
           referenceId: `PAY-LOAN-${sourceId}-${Date.now()}`,
@@ -406,7 +410,7 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
         );
       });
 
-      return res.json({ success: true, amount: parsedAmount });
+      return res.json({ success: true, amount: parsedAmount, newPaid, status });
     }
 
     return res.status(400).json({ error: "نوع المصدر غير صحيح (debt | loan)" });

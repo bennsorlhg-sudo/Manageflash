@@ -131,16 +131,28 @@ export default function DebtsLoansScreen() {
         ) : filtered.map((item: any) => {
           const pct    = Math.min((parseFloat(item.paidAmount) / parseFloat(item.amount)) * 100, 100);
           const isPaid = item.remaining < 0.01;
+          const ENTITY_LABELS: Record<string, { label: string; color: string }> = {
+            hotspot:     { label: "هوتسبوت",  color: Colors.info    },
+            broadband:   { label: "برودباند", color: Colors.primary },
+            sales_point: { label: "نقطة بيع", color: Colors.warning },
+            supplier:    { label: "مورّد",    color: "#9b59b6"       },
+            other:       { label: "أخرى",     color: Colors.textMuted },
+          };
+          const entityInfo = ENTITY_LABELS[item.entityType ?? "other"] ?? ENTITY_LABELS.other;
           return (
             <View key={item.id} style={[s.card, isPaid && s.cardPaid]}>
-              {/* اسم + متبقي */}
+              {/* اسم + نوع + متبقي */}
               <View style={s.cardTop}>
-                <View>
-                  {isPaid && (
+                <View style={{ alignItems: "flex-start", gap: 4 }}>
+                  {isPaid ? (
                     <View style={s.paidBadge}>
                       <Text style={s.paidBadgeTxt}>مسدد بالكامل</Text>
                     </View>
-                  )}
+                  ) : item.entityType ? (
+                    <View style={[s.entityBadge, { backgroundColor: entityInfo.color + "20", borderColor: entityInfo.color + "50" }]}>
+                      <Text style={[s.entityBadgeTxt, { color: entityInfo.color }]}>{entityInfo.label}</Text>
+                    </View>
+                  ) : null}
                   <Text style={[s.remaining, { color: isPaid ? Colors.textMuted : tabColor }]}>
                     {formatCurrency(item.remaining)}
                   </Text>
@@ -256,6 +268,8 @@ const s = StyleSheet.create({
   remainingLabel: { fontSize: 10, color: Colors.textMuted, textAlign: "left" },
   paidBadge:    { backgroundColor: Colors.success + "22", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 4 },
   paidBadgeTxt: { fontSize: 10, color: Colors.success, fontWeight: "700" },
+  entityBadge:    { borderRadius: 8, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 4 },
+  entityBadgeTxt: { fontSize: 10, fontWeight: "700" },
 
   progressBg:   { height: 7, backgroundColor: Colors.background, borderRadius: 4, overflow: "hidden" },
   progressFill: { height: "100%", borderRadius: 4 },

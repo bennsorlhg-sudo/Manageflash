@@ -11,6 +11,21 @@ const DEFAULT_USERS = [
   { name: "خالد وليد", phone: "737214609", role: "tech_engineer" as const, password: "123456" },
 ];
 
+/* ── ترقية تلقائية آمنة للأعمدة الجديدة ── */
+export async function runSafeMigrations() {
+  try {
+    await db.execute(sql`
+      ALTER TABLE debts ADD COLUMN IF NOT EXISTS entity_type TEXT DEFAULT 'other'
+    `);
+    await db.execute(sql`
+      ALTER TABLE loans ADD COLUMN IF NOT EXISTS entity_type TEXT DEFAULT 'other'
+    `);
+    logger.info("Safe column migrations complete");
+  } catch (err) {
+    logger.error({ err }, "Safe migration failed (non-fatal)");
+  }
+}
+
 export async function seedIfEmpty() {
   try {
     const result = await db.execute(sql`SELECT COUNT(*) as count FROM users`);
