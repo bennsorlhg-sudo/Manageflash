@@ -8,31 +8,47 @@ const router: IRouter = Router();
 
 /* ════════════════════════════════════════════════════
    POST /custody/send
-   المسؤول المالي يُسلّم كروتًا لمندوب
+   تسجيل نقد أو كروت واردة (تزيد الصندوق / إجمالي الكروت)
 ════════════════════════════════════════════════════ */
 router.post("/custody/send", requireAuth, async (req, res) => {
   try {
-    const { agentName, amount, notes } = req.body as {
-      agentName: string; amount: number; notes?: string;
+    const { agentName, cashAmount, cardsAmount, notes } = req.body as {
+      agentName?: string; cashAmount?: number; cardsAmount?: number; notes?: string;
     };
 
-    if (!agentName?.trim()) return res.status(400).json({ error: "أدخل اسم المندوب" });
-    const parsedAmount = parseFloat(String(amount ?? 0));
-    if (!parsedAmount || parsedAmount <= 0) return res.status(400).json({ error: "أدخل قيمة صحيحة" });
+    const cash  = parseFloat(String(cashAmount  ?? 0)) || 0;
+    const cards = parseFloat(String(cardsAmount ?? 0)) || 0;
+    const name  = (agentName ?? "").trim() || "غير محدد";
 
-    /* سجّل حركة إرسال عهدة (finance_manager → tech_engineer) */
-    const [record] = await db.insert(custodyRecordsTable).values({
-      type: "cards",
-      amount: String(parsedAmount),
-      denomination: null,
-      cardCount: null,
-      fromRole: "finance_manager",
-      toRole: "tech_engineer",
-      toPersonName: agentName.trim(),
-      notes: notes?.trim() ?? null,
-    }).returning();
+    if (cash <= 0 && cards <= 0)
+      return res.status(400).json({ error: "أدخل قيمة النقد أو الكروت" });
 
-    res.status(201).json(record);
+    await db.transaction(async (tx) => {
+      /* ─── نقد: يُضاف للصندوق ─── */
+      if (cash > 0) {
+        await tx.insert(custodyRecordsTable).values({
+          type: "cash", amount: String(cash),
+          denomination: null, cardCount: null,
+          fromRole: "tech_engineer", toRole: "finance_manager",
+          toPersonName: name, notes: notes?.trim() ?? null,
+        });
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance + ${cash}, updated_at = NOW() WHERE id = 1`
+        );
+      }
+
+      /* ─── كروت: تُضاف لإجمالي الكروت ─── */
+      if (cards > 0) {
+        await tx.insert(custodyRecordsTable).values({
+          type: "cards", amount: String(cards),
+          denomination: null, cardCount: null,
+          fromRole: "tech_engineer", toRole: "finance_manager",
+          toPersonName: name, notes: notes?.trim() ?? null,
+        });
+      }
+    });
+
+    res.status(201).json({ success: true, cashAmount: cash, cardsAmount: cards });
   } catch (err) {
     res.status(500).json({ error: "فشل تسجيل العهدة", details: String(err) });
   }

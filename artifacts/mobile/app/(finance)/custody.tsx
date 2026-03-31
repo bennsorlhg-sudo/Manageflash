@@ -98,14 +98,11 @@ export default function CustodyScreen() {
   const [tab, setTab] = useState<Tab>("send");
 
   /* ─── تسليم عهدة ─── */
-  const [sendAgent,    setSendAgent]    = useState("");
-  const [sendAmount,   setSendAmount]   = useState("");
-  const [sendNotes,    setSendNotes]    = useState("");
-  const [sending,      setSending]      = useState(false);
-  const [showPicker,   setShowPicker]   = useState(false);
-
-  /* ─── قائمة المهندسين (للاختيار عند التسليم) ─── */
-  const [engineers, setEngineers] = useState<string[]>([]);
+  const [sendAgent,  setSendAgent]  = useState("");
+  const [sendCash,   setSendCash]   = useState("");
+  const [sendCards,  setSendCards]  = useState("");
+  const [sendNotes,  setSendNotes]  = useState("");
+  const [sending,    setSending]    = useState(false);
 
   /* ─── استلام عهدة ─── */
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -135,18 +132,9 @@ export default function CustodyScreen() {
     }
   }, [token]);
 
-  const fetchEngineers = useCallback(async () => {
-    try {
-      const data = await apiGet("/users/engineers", token);
-      const names = (Array.isArray(data) ? data : []).map((e: any) => e.name ?? e.username ?? "");
-      setEngineers(names.filter(Boolean));
-    } catch {}
-  }, [token]);
-
   useFocusEffect(useCallback(() => {
     fetchAgents();
-    fetchEngineers();
-  }, [fetchAgents, fetchEngineers]));
+  }, [fetchAgents]));
 
   /* عند تغيير التبويب: امسح الاختيار */
   useEffect(() => {
