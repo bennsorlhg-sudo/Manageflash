@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Linking, Modal, TextInput, ActivityIndicator, RefreshControl,
+  Linking, Modal, TextInput, ActivityIndicator, RefreshControl, Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Clipboard from "expo-clipboard";
+import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
 import { apiGet, apiPost, apiPatch } from "@/utils/api";
@@ -20,6 +21,7 @@ interface UnifiedTask {
   source: "repair" | "install" | "field" | "general";
   sourceId: number;
   kind: string;
+  serviceType: string | null;     // hotspot / hotspot_external / broadband / etc
   serviceNumber: string;
   clientName: string | null;
   location: string | null;
@@ -32,6 +34,12 @@ interface UnifiedTask {
   notes: string | null;
   problemDescription: string | null;
 }
+
+/* هل يظهر الاسم والجوال؟ (لا للخارجي) */
+const showContactInfo = (task: UnifiedTask): boolean => {
+  if (task.source !== "repair") return true;
+  return task.serviceType !== "hotspot_external";
+};
 
 /* ═══════════════════════════════════════════
    تحويل الـ status → تبويب
@@ -50,20 +58,13 @@ const kindLabel = (source: string, rawType: string): string => {
   if (source === "install") return "تركيب";
   if (source === "general") return "مهمة";
   const m: Record<string, string> = {
-    repair: "إصلاح",
-    installation: "تركيب",
-    install: "تركيب",
-    external: "خارجي",
-    hotspot_external: "خارجي",
-    pull: "سحب",
-    sach: "سحب",
+    repair: "إصلاح", installation: "تركيب", install: "تركيب",
+    external: "خارجي", hotspot_external: "خارجي", pull: "سحب", sach: "سحب",
   };
   return m[rawType] ?? rawType;
 };
 
-/* ═══════════════════════════════════════════
-   ألوان الأنواع
-═══════════════════════════════════════════ */
+/* ألوان الأنواع */
 const kindColor = (kind: string): string => {
   if (kind === "إصلاح") return Colors.error;
   if (kind === "تركيب") return Colors.success;
@@ -72,15 +73,11 @@ const kindColor = (kind: string): string => {
   return Colors.roles.tech_engineer;
 };
 
-/* ═══════════════════════════════════════════
-   تنسيق الوقت
-═══════════════════════════════════════════ */
+/* تنسيق الوقت */
 const fmtTime = (iso: string | null): string => {
   if (!iso) return "";
   const d = new Date(iso);
-  const h = d.getHours().toString().padStart(2, "0");
-  const m = d.getMinutes().toString().padStart(2, "0");
-  return `${h}:${m}`;
+  return `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}`;
 };
 
 const isToday = (iso: string | null): boolean => {
@@ -88,9 +85,24 @@ const isToday = (iso: string | null): boolean => {
   const d = new Date(iso);
   const now = new Date();
   return d.getFullYear() === now.getFullYear() &&
-         d.getMonth() === now.getMonth() &&
-         d.getDate() === now.getDate();
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
 };
+
+/* تسمية نوع خدمة الإصلاح */
+const repairServiceLabel = (st: string | null): string => {
+  const m: Record<string, string> = {
+    hotspot: "هوتسبوت", hotspot_internal: "هوتسبوت داخلي",
+    hotspot_external: "هوتسبوت خارجي", broadband: "برودباند",
+    broadband_fiber: "فايبر",
+  };
+  return st ? (m[st] ?? st) : "";
+};
+
+/* ═══════════════════════════════════════════
+   مراحل مودال الإتمام
+═══════════════════════════════════════════ */
+type CompleteStep = "photo_prompt" | "notes_save";
 
 /* ═══════════════════════════════════════════
    الشاشة الرئيسية
@@ -104,17 +116,21 @@ export default function TechEngineerHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  /* مودال الإتمام */
   const [completeTask, setCompleteTask] = useState<UnifiedTask | null>(null);
+  const [completeStep, setCompleteStep] = useState<CompleteStep>("photo_prompt");
   const [completeNotes, setCompleteNotes] = useState("");
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  /* مودال العرض */
+  const [viewTask, setViewTask] = useState<UnifiedTask | null>(null);
+
+  /* تنبيه */
   const [alertVisible, setAlertVisible] = useState(false);
   const [alertMsg, setAlertMsg] = useState("");
 
-  const [viewTask, setViewTask] = useState<UnifiedTask | null>(null);
-
   const myName = user?.name?.trim() ?? "";
-
   const isAssignedToMe = (name: string | null | undefined) =>
     !name || name.trim() === "" || name.trim() === myName;
 
@@ -139,6 +155,7 @@ export default function TechEngineerHomeScreen() {
             source: "repair",
             sourceId: t.id,
             kind: "إصلاح",
+            serviceType: t.serviceType ?? null,
             serviceNumber: t.serviceNumber ?? `#${t.id}`,
             clientName: t.clientName ?? null,
             location: null,
@@ -163,6 +180,7 @@ export default function TechEngineerHomeScreen() {
             source: "install",
             sourceId: t.id,
             kind: "تركيب",
+            serviceType: t.serviceType ?? null,
             serviceNumber: `#${t.id}`,
             clientName: t.clientName ?? null,
             location: t.address ?? null,
@@ -181,15 +199,15 @@ export default function TechEngineerHomeScreen() {
       if (Array.isArray(ftRaw)) {
         for (const t of ftRaw) {
           if (!isAssignedToMe(t.assignedEngineerName)) continue;
-          const kLabel = kindLabel("field", t.taskType ?? "");
           unified.push({
             key: `field-${t.id}`,
             source: "field",
             sourceId: t.id,
-            kind: kLabel,
+            kind: kindLabel("field", t.taskType ?? ""),
+            serviceType: t.taskType ?? null,
             serviceNumber: t.serviceNumber ?? `#${t.id}`,
             clientName: t.clientName ?? null,
-            location: t.location ?? null,
+            location: t.location?.startsWith("http") ? null : (t.location ?? null),
             locationUrl: t.location?.startsWith("http") ? t.location : null,
             phone: t.phoneNumber ?? null,
             status: toTab(t.status),
@@ -210,6 +228,7 @@ export default function TechEngineerHomeScreen() {
             source: "general",
             sourceId: t.id,
             kind: "مهمة",
+            serviceType: null,
             serviceNumber: t.title ?? `#${t.id}`,
             clientName: null,
             location: t.description ?? null,
@@ -226,17 +245,13 @@ export default function TechEngineerHomeScreen() {
       }
 
       setTasks(unified);
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    } catch { /* silent */ }
+    finally { setLoading(false); setRefreshing(false); }
   }, [token, myName]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  /* ═══ الحسابات ═══ */
+  /* ═══ تجميع التبويبات ═══ */
   const newTasks = tasks.filter(t => t.status === "new");
   const inProgressTasks = tasks.filter(t => t.status === "inprogress");
   const completedTasks = tasks.filter(t => t.status === "completed");
@@ -247,56 +262,69 @@ export default function TechEngineerHomeScreen() {
     activeTab === "inprogress" ? inProgressTasks :
     completedTasks;
 
-  /* ═══ الإجراءات ═══ */
+  /* ═══ بدء التنفيذ ═══ */
   const startTask = async (task: UnifiedTask) => {
     setSaving(true);
     try {
-      if (task.source === "repair") {
+      if (task.source === "repair")
         await apiPatch(`/tickets/repair/${task.sourceId}`, token, { status: "in_progress" });
-      } else if (task.source === "install") {
+      else if (task.source === "install")
         await apiPatch(`/tickets/installation/${task.sourceId}`, token, { status: "in_progress" });
-      } else if (task.source === "field") {
+      else if (task.source === "field")
         await apiPost(`/field-tasks/${task.sourceId}/start`, token, {});
-      } else if (task.source === "general") {
+      else if (task.source === "general")
         await apiPatch(`/tasks/${task.sourceId}`, token, { status: "in_progress" });
-      }
+
       setTasks(prev => prev.map(t =>
         t.key === task.key ? { ...t, status: "inprogress", rawStatus: "in_progress" } : t
       ));
-    } catch {
-      showAlert("فشل بدء التنفيذ");
-    } finally {
-      setSaving(false);
-    }
+    } catch { showAlert("فشل بدء التنفيذ"); }
+    finally { setSaving(false); }
   };
 
+  /* ═══ فتح مودال الإتمام ═══ */
   const openCompleteModal = (task: UnifiedTask) => {
     setCompleteTask(task);
+    setCompleteStep("photo_prompt");
     setCompleteNotes("");
+    setPhotoUri(null);
   };
 
+  /* ═══ اختيار صورة ═══ */
+  const pickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        const camRes = await ImagePicker.requestCameraPermissionsAsync();
+        if (camRes.status !== "granted") { setCompleteStep("notes_save"); return; }
+        const cam = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+        if (!cam.canceled) setPhotoUri(cam.assets[0].uri);
+        setCompleteStep("notes_save");
+        return;
+      }
+      const lib = await ImagePicker.launchImageLibraryAsync({
+        quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      });
+      if (!lib.canceled) setPhotoUri(lib.assets[0].uri);
+      setCompleteStep("notes_save");
+    } catch { setCompleteStep("notes_save"); }
+  };
+
+  /* ═══ حفظ الإتمام ═══ */
   const saveComplete = async () => {
     if (!completeTask) return;
     setSaving(true);
     const task = completeTask;
     try {
-      if (task.source === "repair") {
-        await apiPatch(`/tickets/repair/${task.sourceId}`, token, {
-          status: "completed", notes: completeNotes || undefined,
-        });
-      } else if (task.source === "install") {
-        await apiPatch(`/tickets/installation/${task.sourceId}`, token, {
-          status: "completed", engineerNotes: completeNotes || undefined,
-        });
-      } else if (task.source === "field") {
-        await apiPost(`/field-tasks/${task.sourceId}/complete`, token, {
-          notes: completeNotes || undefined,
-        });
-      } else if (task.source === "general") {
-        await apiPatch(`/tasks/${task.sourceId}`, token, {
-          status: "completed", notes: completeNotes || undefined,
-        });
-      }
+      if (task.source === "repair")
+        await apiPatch(`/tickets/repair/${task.sourceId}`, token, { status: "completed", notes: completeNotes || undefined });
+      else if (task.source === "install")
+        await apiPatch(`/tickets/installation/${task.sourceId}`, token, { status: "completed", engineerNotes: completeNotes || undefined });
+      else if (task.source === "field")
+        await apiPost(`/field-tasks/${task.sourceId}/complete`, token, { notes: completeNotes || undefined });
+      else if (task.source === "general")
+        await apiPatch(`/tasks/${task.sourceId}`, token, { status: "completed", notes: completeNotes || undefined });
+
       const now = new Date().toISOString();
       setTasks(prev => prev.map(t =>
         t.key === task.key
@@ -304,22 +332,17 @@ export default function TechEngineerHomeScreen() {
           : t
       ));
       setCompleteTask(null);
-      setCompleteNotes("");
-    } catch {
-      showAlert("فشل حفظ التنفيذ");
-    } finally {
-      setSaving(false);
-    }
+    } catch { showAlert("فشل حفظ التنفيذ"); }
+    finally { setSaving(false); }
   };
 
-  const copyLocation = async (text: string) => {
+  const copyText = async (text: string, label = "تم النسخ") => {
     await Clipboard.setStringAsync(text);
-    showAlert("تم نسخ الموقع");
+    showAlert(label);
   };
 
   const showAlert = (msg: string) => {
-    setAlertMsg(msg);
-    setAlertVisible(true);
+    setAlertMsg(msg); setAlertVisible(true);
     setTimeout(() => setAlertVisible(false), 2000);
   };
 
@@ -346,7 +369,13 @@ export default function TechEngineerHomeScreen() {
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={Colors.roles.tech_engineer} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetchAll(); }}
+            tintColor={Colors.roles.tech_engineer}
+          />
+        }
         showsVerticalScrollIndicator={false}
       >
         {/* ── البطاقات السريعة ── */}
@@ -383,56 +412,96 @@ export default function TechEngineerHomeScreen() {
                   saving={saving}
                   onStart={() => startTask(task)}
                   onComplete={() => openCompleteModal(task)}
-                  onCopy={copyLocation}
+                  onCopy={copyText}
                 />
           )
         )}
-
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* ══ مودال إتمام التنفيذ ══ */}
+      {/* ══════════════════════════════════════════
+          مودال الإتمام — مرحلتان
+      ══════════════════════════════════════════ */}
       <Modal visible={!!completeTask} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
-            <Text style={styles.modalTitle}>تم التنفيذ</Text>
 
-            <Text style={styles.modalLabel}>ملاحظات التنفيذ</Text>
-            <TextInput
-              style={styles.modalInput}
-              multiline
-              numberOfLines={4}
-              placeholder="اكتب ملاحظاتك هنا (اختياري)"
-              placeholderTextColor={Colors.textMuted}
-              value={completeNotes}
-              onChangeText={setCompleteNotes}
-              textAlignVertical="top"
-            />
+            {completeStep === "photo_prompt" ? (
+              /* ── المرحلة ١: هل تريد إرفاق صورة؟ ── */
+              <>
+                <View style={styles.photoPromptIcon}>
+                  <Ionicons name="camera" size={40} color={Colors.roles.tech_engineer} />
+                </View>
+                <Text style={styles.modalTitle}>تم التنفيذ</Text>
+                <Text style={styles.photoPromptText}>هل تريد إرفاق صورة توثيقاً للعمل؟</Text>
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setCompleteTask(null)}
-                disabled={saving}
-              >
-                <Text style={styles.cancelBtnText}>إلغاء</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.saveBtn, saving && { opacity: 0.6 }]}
-                onPress={saveComplete}
-                disabled={saving}
-              >
-                {saving
-                  ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={styles.saveBtnText}>حفظ</Text>
-                }
-              </TouchableOpacity>
-            </View>
+                <TouchableOpacity style={styles.photoYesBtn} onPress={pickPhoto}>
+                  <Ionicons name="camera-outline" size={18} color="#fff" />
+                  <Text style={styles.photoYesBtnText}>نعم — إرفاق صورة</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.photoNoBtn}
+                  onPress={() => setCompleteStep("notes_save")}
+                >
+                  <Text style={styles.photoNoBtnText}>لا — متابعة بدون صورة</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.cancelLink} onPress={() => setCompleteTask(null)}>
+                  <Text style={styles.cancelLinkText}>إلغاء</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              /* ── المرحلة ٢: ملاحظات وحفظ ── */
+              <>
+                <Text style={styles.modalTitle}>ملاحظات التنفيذ</Text>
+
+                {photoUri && (
+                  <View style={styles.photoThumbBox}>
+                    <Image source={{ uri: photoUri }} style={styles.photoThumb} resizeMode="cover" />
+                    <TouchableOpacity style={styles.removePhoto} onPress={() => setPhotoUri(null)}>
+                      <Ionicons name="close-circle" size={20} color={Colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                <TextInput
+                  style={styles.modalInput}
+                  multiline
+                  numberOfLines={4}
+                  placeholder="اكتب ملاحظاتك هنا (اختياري)"
+                  placeholderTextColor={Colors.textMuted}
+                  value={completeNotes}
+                  onChangeText={setCompleteNotes}
+                  textAlignVertical="top"
+                />
+
+                <View style={styles.modalActions}>
+                  <TouchableOpacity
+                    style={styles.cancelBtn}
+                    onPress={() => setCompleteStep("photo_prompt")}
+                    disabled={saving}
+                  >
+                    <Text style={styles.cancelBtnText}>رجوع</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.saveBtn, saving && { opacity: 0.6 }]}
+                    onPress={saveComplete}
+                    disabled={saving}
+                  >
+                    {saving
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={styles.saveBtnText}>حفظ</Text>
+                    }
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* ══ مودال عرض المهمة المكتملة ══ */}
+      {/* ══ مودال عرض المكتملة ══ */}
       <Modal visible={!!viewTask} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
@@ -449,12 +518,8 @@ export default function TechEngineerHomeScreen() {
                 </View>
                 <Text style={styles.viewRef}>{viewTask.serviceNumber}</Text>
                 {viewTask.clientName ? <Text style={styles.viewClient}>{viewTask.clientName}</Text> : null}
-                {viewTask.problemDescription ? (
-                  <Text style={styles.viewDesc}>{viewTask.problemDescription}</Text>
-                ) : null}
-                {viewTask.location && !viewTask.location.startsWith("http") ? (
-                  <Text style={styles.viewDesc}>{viewTask.location}</Text>
-                ) : null}
+                {viewTask.problemDescription ? <Text style={styles.viewDesc}>{viewTask.problemDescription}</Text> : null}
+                {viewTask.location ? <Text style={styles.viewDesc}>{viewTask.location}</Text> : null}
                 {viewTask.notes ? (
                   <View style={styles.notesBox}>
                     <Text style={styles.notesLabel}>ملاحظات التنفيذ:</Text>
@@ -470,7 +535,7 @@ export default function TechEngineerHomeScreen() {
         </View>
       </Modal>
 
-      {/* ══ تنبيه بسيط ══ */}
+      {/* ══ تنبيه ══ */}
       {alertVisible && (
         <View style={styles.toast}>
           <Text style={styles.toastText}>{alertMsg}</Text>
@@ -481,88 +546,79 @@ export default function TechEngineerHomeScreen() {
 }
 
 /* ═══════════════════════════════════════════
-   مكوّنات مساعدة
+   مكوّن بطاقة المهمة
 ═══════════════════════════════════════════ */
-function CountCard({ label, count, color, onPress, active }: {
-  label: string; count: number; color: string; onPress: () => void; active: boolean;
-}) {
-  return (
-    <TouchableOpacity
-      style={[styles.countCard, active && { borderColor: color, borderWidth: 2 }]}
-      onPress={onPress}
-      activeOpacity={0.8}
-    >
-      <Text style={[styles.countNum, { color }]}>{count}</Text>
-      <Text style={styles.countLabel}>{label}</Text>
-    </TouchableOpacity>
-  );
-}
-
-function TabBtn({ label, tab, active, onPress, count }: {
-  label: string; tab: TabKey; active: TabKey; onPress: (t: TabKey) => void; count: number;
-}) {
-  const isActive = tab === active;
-  return (
-    <TouchableOpacity
-      style={[styles.tabBtn, isActive && styles.tabBtnActive]}
-      onPress={() => onPress(tab)}
-      activeOpacity={0.8}
-    >
-      <Text style={[styles.tabBtnText, isActive && styles.tabBtnTextActive]}>
-        {label} {count > 0 ? `(${count})` : ""}
-      </Text>
-    </TouchableOpacity>
-  );
-}
-
 function TaskCard({ task, tab, saving, onStart, onComplete, onCopy }: {
   task: UnifiedTask;
   tab: TabKey;
   saving: boolean;
   onStart: () => void;
   onComplete: () => void;
-  onCopy: (s: string) => void;
+  onCopy: (text: string, label?: string) => void;
 }) {
   const color = kindColor(task.kind);
-  const locationText = task.location && !task.location.startsWith("http") ? task.location : null;
+  const showContact = showContactInfo(task);
+  const hasPhone = showContact && !!task.phone;
   const hasUrl = !!task.locationUrl;
-  const hasPhone = !!task.phone;
-  const hasLocation = !!(locationText || hasUrl);
+  const hasLocationText = !!task.location;
+  const isRepair = task.source === "repair";
+  const serviceLabel = isRepair ? repairServiceLabel(task.serviceType) : null;
 
   return (
     <View style={[styles.taskCard, { borderRightColor: color, borderRightWidth: 4 }]}>
-      {/* ─ رأس البطاقة ─ */}
+
+      {/* ─ رأس البطاقة: نوع + رقم ─ */}
       <View style={styles.cardTop}>
-        <View style={[styles.kindBadge, { backgroundColor: color + "20" }]}>
-          <Text style={[styles.kindBadgeText, { color }]}>{task.kind}</Text>
+        <View style={styles.cardTopLeft}>
+          <View style={[styles.kindBadge, { backgroundColor: color + "20" }]}>
+            <Text style={[styles.kindBadgeText, { color }]}>{task.kind}</Text>
+          </View>
+          {serviceLabel ? (
+            <Text style={styles.serviceLabel}>{serviceLabel}</Text>
+          ) : null}
         </View>
         <Text style={styles.refNum}>{task.serviceNumber}</Text>
       </View>
 
-      {/* ─ اسم العميل ─ */}
-      {task.clientName ? (
+      {/* ─ الاسم (للهوتسبوت الداخلي والبرودباند فقط) ─ */}
+      {showContact && task.clientName ? (
         <Text style={styles.clientName}>{task.clientName}</Text>
       ) : null}
 
-      {/* ─ وصف/ملاحظة ─ */}
-      {task.problemDescription ? (
-        <Text style={styles.descText} numberOfLines={2}>{task.problemDescription}</Text>
+      {/* ─ رقم الجوال (مع نسخ) ─ */}
+      {hasPhone ? (
+        <View style={styles.infoRow}>
+          <Ionicons name="call-outline" size={15} color={Colors.textMuted} />
+          <Text style={styles.infoText}>{task.phone}</Text>
+          <TouchableOpacity onPress={() => onCopy(task.phone!, "تم نسخ الجوال")} style={styles.copyIcon}>
+            <Ionicons name="copy-outline" size={14} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </View>
       ) : null}
 
-      {/* ─ الموقع ─ */}
-      {hasLocation ? (
-        <View style={styles.locationRow}>
+      {/* ─ وصف الموقع (مع نسخ) ─ */}
+      {hasLocationText ? (
+        <View style={styles.infoRow}>
           <Ionicons name="location-outline" size={15} color={Colors.textMuted} />
-          {locationText ? (
-            <Text style={styles.locationText} numberOfLines={1}>{locationText}</Text>
-          ) : (
-            <Text style={styles.locationText}>رابط الموقع</Text>
-          )}
+          <Text style={styles.infoText} numberOfLines={2}>{task.location}</Text>
+          <TouchableOpacity onPress={() => onCopy(task.location!, "تم نسخ الموقع")} style={styles.copyIcon}>
+            <Ionicons name="copy-outline" size={14} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      {/* ─ وصف المشكلة ─ */}
+      {task.problemDescription ? (
+        <View style={styles.problemBox}>
+          <Ionicons name="alert-circle-outline" size={14} color={Colors.warning} />
+          <Text style={styles.problemText} numberOfLines={3}>{task.problemDescription}</Text>
         </View>
       ) : null}
 
       {/* ─ أزرار الإجراء ─ */}
       <View style={styles.actionRow}>
+
+        {/* زر الاتصال (فقط إذا يوجد جوال وليس خارجي) */}
         {hasPhone && (
           <TouchableOpacity
             style={styles.iconBtn}
@@ -573,33 +629,20 @@ function TaskCard({ task, tab, saving, onStart, onComplete, onCopy }: {
           </TouchableOpacity>
         )}
 
-        {hasLocation && (
+        {/* فتح خرائط جوجل */}
+        {hasUrl && (
           <TouchableOpacity
             style={styles.iconBtn}
-            onPress={() => hasUrl
-              ? Linking.openURL(task.locationUrl!)
-              : onCopy(locationText!)
-            }
+            onPress={() => Linking.openURL(task.locationUrl!)}
           >
-            <Ionicons name={hasUrl ? "map" : "copy-outline"} size={16} color={Colors.primary} />
-            <Text style={[styles.iconBtnText, { color: Colors.primary }]}>
-              {hasUrl ? "الخريطة" : "نسخ الموقع"}
-            </Text>
-          </TouchableOpacity>
-        )}
-
-        {hasLocation && locationText && (
-          <TouchableOpacity
-            style={styles.iconBtn}
-            onPress={() => onCopy(locationText)}
-          >
-            <Ionicons name="copy-outline" size={16} color={Colors.textMuted} />
-            <Text style={[styles.iconBtnText, { color: Colors.textMuted }]}>نسخ</Text>
+            <Ionicons name="map" size={16} color={Colors.primary} />
+            <Text style={[styles.iconBtnText, { color: Colors.primary }]}>الخريطة</Text>
           </TouchableOpacity>
         )}
 
         <View style={{ flex: 1 }} />
 
+        {/* بدء / تم التنفيذ */}
         {tab === "new" ? (
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: Colors.warning }]}
@@ -615,7 +658,7 @@ function TaskCard({ task, tab, saving, onStart, onComplete, onCopy }: {
             onPress={onComplete}
             disabled={saving}
           >
-            <Ionicons name="checkmark" size={14} color="#fff" />
+            <Ionicons name="checkmark-done" size={14} color="#fff" />
             <Text style={styles.actionBtnText}>تم التنفيذ</Text>
           </TouchableOpacity>
         )}
@@ -624,6 +667,9 @@ function TaskCard({ task, tab, saving, onStart, onComplete, onCopy }: {
   );
 }
 
+/* ═══════════════════════════════════════════
+   بطاقة المكتملة
+═══════════════════════════════════════════ */
 function CompletedCard({ task, onView }: { task: UnifiedTask; onView: () => void }) {
   const color = kindColor(task.kind);
   return (
@@ -646,6 +692,44 @@ function CompletedCard({ task, onView }: { task: UnifiedTask; onView: () => void
 }
 
 /* ═══════════════════════════════════════════
+   بطاقة العداد
+═══════════════════════════════════════════ */
+function CountCard({ label, count, color, onPress, active }: {
+  label: string; count: number; color: string; onPress: () => void; active: boolean;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.countCard, active && { borderColor: color, borderWidth: 2 }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
+      <Text style={[styles.countNum, { color }]}>{count}</Text>
+      <Text style={styles.countLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   زر التبويب
+═══════════════════════════════════════════ */
+function TabBtn({ label, tab, active, onPress, count }: {
+  label: string; tab: TabKey; active: TabKey; onPress: (t: TabKey) => void; count: number;
+}) {
+  const isActive = tab === active;
+  return (
+    <TouchableOpacity
+      style={[styles.tabBtn, isActive && styles.tabBtnActive]}
+      onPress={() => onPress(tab)}
+      activeOpacity={0.8}
+    >
+      <Text style={[styles.tabBtnText, isActive && styles.tabBtnTextActive]}>
+        {label}{count > 0 ? ` (${count})` : ""}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+/* ═══════════════════════════════════════════
    الأنماط
 ═══════════════════════════════════════════ */
 const styles = StyleSheet.create({
@@ -653,16 +737,10 @@ const styles = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { padding: 16, paddingTop: 8 },
 
-  /* header */
   header: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
+    flexDirection: "row-reverse", alignItems: "center", gap: 10,
+    paddingHorizontal: 16, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.surface,
   },
   headerTitle: { fontSize: 17, color: Colors.text, fontWeight: "700", textAlign: "right" },
   engineerName: { color: Colors.roles.tech_engineer },
@@ -697,22 +775,46 @@ const styles = StyleSheet.create({
     padding: 14, marginBottom: 12,
     shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
-  cardTop: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
+  cardTop: {
+    flexDirection: "row-reverse", justifyContent: "space-between",
+    alignItems: "flex-start", marginBottom: 10,
+  },
+  cardTopLeft: { flexDirection: "row-reverse", alignItems: "center", gap: 6, flexWrap: "wrap" },
   kindBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 20 },
   kindBadgeText: { fontSize: 12, fontWeight: "700" },
-  refNum: { fontSize: 15, color: Colors.text, fontWeight: "700" },
-  clientName: { fontSize: 15, color: Colors.text, fontWeight: "600", textAlign: "right", marginBottom: 4 },
-  descText: { fontSize: 13, color: Colors.textMuted, textAlign: "right", marginBottom: 6, lineHeight: 19 },
+  serviceLabel: { fontSize: 11, color: Colors.textMuted },
+  refNum: { fontSize: 16, color: Colors.text, fontWeight: "800" },
 
-  /* location */
-  locationRow: { flexDirection: "row-reverse", alignItems: "center", gap: 5, marginBottom: 10 },
-  locationText: { fontSize: 13, color: Colors.textMuted, flex: 1, textAlign: "right" },
+  clientName: {
+    fontSize: 15, color: Colors.text, fontWeight: "600",
+    textAlign: "right", marginBottom: 6,
+  },
 
-  /* action row */
-  actionRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginTop: 4 },
-  iconBtn: { flexDirection: "row-reverse", alignItems: "center", gap: 4, paddingVertical: 5, paddingHorizontal: 8, borderRadius: 8, backgroundColor: Colors.background },
+  infoRow: {
+    flexDirection: "row-reverse", alignItems: "center",
+    gap: 6, marginBottom: 5,
+  },
+  infoText: { fontSize: 13, color: Colors.textSecondary, flex: 1, textAlign: "right" },
+  copyIcon: { padding: 4 },
+
+  problemBox: {
+    flexDirection: "row-reverse", alignItems: "flex-start", gap: 6,
+    backgroundColor: Colors.warning + "12", borderRadius: 8,
+    padding: 8, marginTop: 4, marginBottom: 8,
+  },
+  problemText: { fontSize: 13, color: Colors.text, flex: 1, textAlign: "right", lineHeight: 19 },
+
+  actionRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginTop: 8 },
+  iconBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 4,
+    paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8,
+    backgroundColor: Colors.background,
+  },
   iconBtnText: { fontSize: 12, fontWeight: "600" },
-  actionBtn: { flexDirection: "row-reverse", alignItems: "center", gap: 5, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 10 },
+  actionBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 5,
+    paddingVertical: 9, paddingHorizontal: 16, borderRadius: 10,
+  },
   actionBtnText: { fontSize: 13, color: "#fff", fontWeight: "700" },
 
   /* completed card */
@@ -733,23 +835,52 @@ const styles = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
   modalBox: {
     backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, paddingBottom: 40,
+    padding: 24, paddingBottom: 44,
   },
-  viewHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  modalTitle: { fontSize: 18, color: Colors.text, fontWeight: "800", textAlign: "right", marginBottom: 16 },
-  modalLabel: { fontSize: 14, color: Colors.textMuted, textAlign: "right", marginBottom: 8 },
+  modalTitle: {
+    fontSize: 18, color: Colors.text, fontWeight: "800",
+    textAlign: "right", marginBottom: 12,
+  },
+
+  /* photo prompt */
+  photoPromptIcon: { alignItems: "center", marginBottom: 8 },
+  photoPromptText: { fontSize: 15, color: Colors.textSecondary, textAlign: "center", marginBottom: 20, lineHeight: 22 },
+  photoYesBtn: {
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 8, backgroundColor: Colors.roles.tech_engineer,
+    paddingVertical: 13, borderRadius: 12, marginBottom: 10,
+  },
+  photoYesBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
+  photoNoBtn: {
+    paddingVertical: 13, borderRadius: 12, borderWidth: 1,
+    borderColor: Colors.border, alignItems: "center", marginBottom: 10,
+  },
+  photoNoBtnText: { fontSize: 14, color: Colors.textSecondary, fontWeight: "600" },
+  cancelLink: { alignItems: "center", paddingVertical: 6 },
+  cancelLinkText: { fontSize: 14, color: Colors.textMuted },
+
+  /* photo thumb in notes step */
+  photoThumbBox: { borderRadius: 10, overflow: "hidden", marginBottom: 12, position: "relative" },
+  photoThumb: { width: "100%", height: 130, borderRadius: 10 },
+  removePhoto: { position: "absolute", top: 6, left: 6 },
+
+  /* notes input */
   modalInput: {
     backgroundColor: Colors.background, borderRadius: 12, borderWidth: 1,
     borderColor: Colors.border, padding: 12, color: Colors.text,
-    fontSize: 14, textAlign: "right", minHeight: 100, marginBottom: 20,
+    fontSize: 14, textAlign: "right", minHeight: 90, marginBottom: 20,
   },
   modalActions: { flexDirection: "row-reverse", gap: 12 },
-  cancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, borderWidth: 1, borderColor: Colors.border, alignItems: "center" },
+  cancelBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 12,
+    borderWidth: 1, borderColor: Colors.border, alignItems: "center",
+  },
   cancelBtnText: { fontSize: 15, color: Colors.textMuted, fontWeight: "600" },
   saveBtn: { flex: 2, paddingVertical: 14, borderRadius: 12, backgroundColor: Colors.success, alignItems: "center" },
   saveBtnText: { fontSize: 15, color: "#fff", fontWeight: "700" },
 
-  /* view modal details */
+  /* view modal */
+  viewHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   viewRef: { fontSize: 18, color: Colors.text, fontWeight: "800", textAlign: "right", marginTop: 8, marginBottom: 4 },
   viewClient: { fontSize: 15, color: Colors.text, textAlign: "right", marginBottom: 4 },
   viewDesc: { fontSize: 14, color: Colors.textMuted, textAlign: "right", lineHeight: 20, marginBottom: 8 },
