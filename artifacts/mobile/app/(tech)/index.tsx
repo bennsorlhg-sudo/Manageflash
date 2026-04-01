@@ -146,8 +146,14 @@ export default function TechEngineerScreen() {
   /* ─── التذاكر حسب القسم ─── */
   const newRepairs   = repairs.filter(t => ["new","pending","draft"].includes(t.status)).map(t => toTicket(t, "repair"));
   const ipRepairs    = repairs.filter(t => t.status === "in_progress").map(t => toTicket(t, "repair"));
-  /* التذاكر المجهّزة فقط تظهر للمهندس (preparing = جاهزة للتنفيذ) */
-  const newInstalls  = installs.filter(t => t.status === "preparing").map(t => toTicket(t, "install"));
+  /*
+   * نقاط البث الوسيطة (isRelayPoint=true) تبدأ بحالة "new"
+   * التذاكر الرئيسية تبدأ بحالة "preparing"
+   * كلاهما يظهر في تبويب "جديد"
+   */
+  const newInstalls  = installs.filter(t =>
+    t.isRelayPoint ? t.status === "new" : t.status === "preparing"
+  ).map(t => toTicket(t, "install"));
   const ipInstalls   = installs.filter(t => t.status === "in_progress").map(t => toTicket(t, "install"));
 
   const newItems  = [...newRepairs, ...newInstalls].sort((a, b) => 0);
@@ -212,19 +218,21 @@ export default function TechEngineerScreen() {
     if (!completeTicket) return;
     setCsaving(true);
     try {
-      const endpoint = completeTicket.source === "repair"
-        ? `/tickets/repair/${completeTicket.sourceId}`
-        : `/tickets/installation/${completeTicket.sourceId}`;
-      await apiPatch(endpoint, token, {
-        status:        "completed",
-        assignedToName: myName || undefined,
-        ...(cNotes ? { notes: cNotes } : {}),
-        ...(completeTicket.source === "install" && cNotes ? { engineerNotes: cNotes } : {}),
-      });
       if (completeTicket.source === "repair") {
+        /* تذاكر الصيانة: PATCH بالحالة */
+        await apiPatch(`/tickets/repair/${completeTicket.sourceId}`, token, {
+          status: "completed",
+          assignedToName: myName || undefined,
+          ...(cNotes ? { notes: cNotes } : {}),
+        });
         setRepairs(prev => prev.filter(r => r.id !== completeTicket.sourceId));
       } else {
-        setInstalls(prev => prev.filter(r => r.id !== completeTicket.sourceId));
+        /* تذاكر التركيب: archive endpoint — يتحقق من نقاط البث ويفك القيد عن الأصل */
+        await apiPost(`/tickets/installation/${completeTicket.sourceId}/archive`, token, {
+          engineerNotes: cNotes || null,
+        });
+        /* بعد أرشفة نقطة بث → refresh الكل لأن الأصل قد يكون تغيّر hasRelayPoints */
+        await fetchAll(true);
       }
       setCompleteTicket(null);
       setSection("new");

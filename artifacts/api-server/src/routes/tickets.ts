@@ -374,6 +374,24 @@ router.post("/tickets/installation/:id/archive", requireAuth, async (req, res) =
       updatedAt: new Date(),
     }).where(eq(installationTicketsTable.id, id)).returning();
 
+    /* ── إذا كانت هذه نقطة بث وسيطة → تحقق هل اكتملت كل النقاط ──
+       إذا نعم → ارفع القيد عن التذكرة الأصلية (hasRelayPoints = false)
+       حتى يظهر زر "بدء التنفيذ" للمهندس على التذكرة الرئيسية        */
+    if (t.isRelayPoint && t.parentTicketId) {
+      const siblings = await db.select().from(installationTicketsTable)
+        .where(eq(installationTicketsTable.parentTicketId, t.parentTicketId));
+
+      const allDone = siblings.every(
+        s => s.id === id || s.status === "archived" || s.status === "completed"
+      );
+
+      if (allDone) {
+        await db.update(installationTicketsTable)
+          .set({ hasRelayPoints: false, updatedAt: new Date() })
+          .where(eq(installationTicketsTable.id, t.parentTicketId));
+      }
+    }
+
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: "فشل في أرشفة التذكرة", details: String(error) });
