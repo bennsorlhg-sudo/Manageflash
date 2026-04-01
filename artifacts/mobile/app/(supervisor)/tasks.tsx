@@ -470,6 +470,26 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
   const prioInfo  = PRIORITY_AR[item.priority] ?? { label: item.priority ?? "—", color: Colors.textMuted };
   const showContact = item.serviceType !== "hotspot_external";
   const isCompleted = item.status === "completed";
+  const hasPhone    = showContact && !!item.clientPhone;
+  const hasMap      = !!item.locationUrl;
+
+  const openMap = async (rawUrl: string) => {
+    const coordMatch = rawUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    const plainCoord = rawUrl.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+    let mapsUrl: string;
+    if (coordMatch) {
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${coordMatch[1]},${coordMatch[2]}`;
+    } else if (plainCoord) {
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${plainCoord[1]},${plainCoord[2]}`;
+    } else if (rawUrl.startsWith("http")) {
+      mapsUrl = rawUrl;
+    } else {
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawUrl)}`;
+    }
+    const canOpen = await Linking.canOpenURL(mapsUrl);
+    if (canOpen) { Linking.openURL(mapsUrl); }
+    else { Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(rawUrl)}`); }
+  };
 
   return (
     <View style={[rc.card, { borderLeftColor: typeColor }]}>
@@ -477,6 +497,9 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
       {/* ══ رأس البطاقة ══ */}
       <View style={rc.head}>
         <Text style={rc.num}>#{item.id}</Text>
+        {item.serviceNumber && (
+          <Text style={rc.serviceNum}>{item.serviceNumber}</Text>
+        )}
         <View style={[rc.typeBadge, { backgroundColor: typeColor + "22" }]}>
           <Text style={[rc.typeBadgeText, { color: typeColor }]}>{typeLabel}</Text>
         </View>
@@ -512,29 +535,18 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
 
       {/* ══ الجوال ══ */}
       {showContact && item.clientPhone && (
-        <TouchableOpacity style={rc.row} onPress={() => Linking.openURL(`tel:${item.clientPhone}`)}>
+        <View style={rc.row}>
           <Ionicons name="call-outline" size={14} color={Colors.success} />
-          <Text style={[rc.rowText, { color: Colors.success }]}>{item.clientPhone}</Text>
-        </TouchableOpacity>
+          <Text style={[rc.rowText, { color: Colors.success, flex: 1 }]}>{item.clientPhone}</Text>
+        </View>
       )}
 
-      {/* ══ الموقع ══ */}
+      {/* ══ الموقع (نص فقط — بدون أيقونة التوجيه) ══ */}
       {item.location && (
         <View style={rc.row}>
           <Ionicons name="location-outline" size={14} color={Colors.textSecondary} />
           <Text style={[rc.rowText, { flex: 1 }]}>{item.location}</Text>
-          {item.locationUrl && (
-            <TouchableOpacity onPress={() => Linking.openURL(item.locationUrl)} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
-              <Ionicons name="navigate" size={15} color={Colors.info} />
-            </TouchableOpacity>
-          )}
         </View>
-      )}
-      {!item.location && item.locationUrl && (
-        <TouchableOpacity style={rc.row} onPress={() => Linking.openURL(item.locationUrl)}>
-          <Ionicons name="map-outline" size={14} color={Colors.info} />
-          <Text style={[rc.rowText, { color: Colors.info }]}>فتح الموقع في الخريطة</Text>
-        </TouchableOpacity>
       )}
 
       {/* ══ المشكلة ══ */}
@@ -556,19 +568,47 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
       {/* ══ التفاصيل الموسّعة ══ */}
       {expanded && (
         <View style={rc.expandedBox}>
-          {item.notes && <InfoLine icon="document-text-outline" label="ملاحظات"      value={item.notes} />}
-          {item.createdByName && <InfoLine icon="create-outline"        label="أنشأه"          value={item.createdByName} />}
-          <InfoLine icon="calendar-outline" label="تاريخ الإنشاء"  value={formatDate(item.createdAt)} />
-          {item.startedAt  && <InfoLine icon="play-outline"            label="بدء التنفيذ"     value={formatDate(item.startedAt)} />}
-          {item.resolvedAt && <InfoLine icon="checkmark-circle-outline" label="وقت الإنجاز"    value={formatDate(item.resolvedAt)} />}
+          {item.notes && <InfoLine icon="document-text-outline" label="ملاحظات"       value={item.notes} />}
+          {item.createdByName && <InfoLine icon="create-outline" label="أنشأه"         value={item.createdByName} />}
+          <InfoLine icon="calendar-outline" label="تاريخ الإنشاء"   value={formatDate(item.createdAt)} />
+          {item.startedAt  && <InfoLine icon="play-outline"           label="بدء التنفيذ"  value={formatDate(item.startedAt)} />}
+          {item.resolvedAt && <InfoLine icon="checkmark-circle-outline" label="وقت الإنجاز" value={formatDate(item.resolvedAt)} />}
         </View>
       )}
 
-      {/* ══ أزرار الإجراءات ══ */}
-      <View style={rc.btnRow}>
+      {/* ══ صف ثانوي: تفاصيل + متابعة ══ */}
+      <View style={rc.secRow}>
         <SuperActionBtn icon={expanded ? "chevron-up" : "chevron-down"} label={expanded ? "إخفاء" : "تفاصيل"} color={Colors.textSecondary} onPress={onExpand} />
-        <SuperActionBtn icon="time-outline"  label="متابعة" color={SUPERVISOR_COLOR}  onPress={onTimeline} />
-        <SuperActionBtn icon="trash-outline" label="حذف"    color={Colors.error}      onPress={onDelete} />
+        <SuperActionBtn icon="time-outline" label="متابعة" color={SUPERVISOR_COLOR} onPress={onTimeline} />
+      </View>
+
+      {/* ══ صف أساسي: اتصال + خريطة + حذف ══ */}
+      <View style={rc.mainBtnRow}>
+        {hasPhone && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: Colors.success + "22", borderColor: Colors.success + "55" }]}
+            onPress={() => Linking.openURL(`tel:${item.clientPhone}`)}
+          >
+            <Ionicons name="call" size={16} color={Colors.success} />
+            <Text style={[rc.mainBtnText, { color: Colors.success }]}>اتصال</Text>
+          </TouchableOpacity>
+        )}
+        {hasMap && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: Colors.info + "22", borderColor: Colors.info + "55" }]}
+            onPress={() => openMap(item.locationUrl)}
+          >
+            <Ionicons name="map" size={16} color={Colors.info} />
+            <Text style={[rc.mainBtnText, { color: Colors.info }]}>خريطة</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          style={[rc.mainBtn, { backgroundColor: Colors.error + "18", borderColor: Colors.error + "55" }]}
+          onPress={onDelete}
+        >
+          <Ionicons name="trash" size={16} color={Colors.error} />
+          <Text style={[rc.mainBtnText, { color: Colors.error }]}>حذف</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -798,6 +838,12 @@ const rc = StyleSheet.create({
     borderRadius: 10, padding: 10, gap: 6,
     borderWidth: 1, borderColor: Colors.border,
   },
+  serviceNum: { fontSize: 14, fontWeight: "bold", color: Colors.primary },
+  secRow: {
+    flexDirection: "row-reverse",
+    borderTopWidth: 1, borderTopColor: Colors.border,
+    paddingTop: 8, gap: 6,
+  },
   btnRow: {
     flexDirection: "row-reverse",
     borderTopWidth: 1, borderTopColor: Colors.border,
@@ -814,6 +860,21 @@ const rc = StyleSheet.create({
     backgroundColor: Colors.surfaceElevated,
   },
   btnText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+  mainBtnRow: {
+    flexDirection: "row-reverse",
+    gap: 8,
+  },
+  mainBtn: {
+    flex: 1,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  mainBtnText: { fontSize: 13, fontWeight: "bold" },
 });
 
 /* ════════════════════════════════════════════════

@@ -35,6 +35,7 @@ interface Ticket {
   sourceId: number;
   source: "repair" | "install";
   serviceType: string;
+  serviceNumber: string | null;
   clientName: string | null;
   clientPhone: string | null;
   location: string | null;
@@ -104,6 +105,7 @@ export default function TechEngineerScreen() {
     sourceId:         raw.id,
     source,
     serviceType:      raw.serviceType ?? "",
+    serviceNumber:    raw.serviceNumber ?? null,
     clientName:       raw.clientName ?? null,
     clientPhone:      raw.clientPhone ?? null,
     location:         source === "repair" ? (raw.location ?? null) : (raw.address ?? null),
@@ -461,6 +463,9 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOp
       {/* رأس البطاقة */}
       <View style={c.cardHead}>
         <Text style={c.cardNum}>#{ticket.sourceId}</Text>
+        {ticket.serviceNumber && (
+          <Text style={c.serviceNum}>{ticket.serviceNumber}</Text>
+        )}
         <View style={[c.typeBadge, { backgroundColor: typeInfo.color + "22" }]}>
           <Text style={[c.typeBadgeText, { color: typeInfo.color }]}>{typeInfo.label}</Text>
         </View>
@@ -488,28 +493,19 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOp
         </View>
       )}
 
-      {/* الموقع + أيقونتا فتح ونسخ */}
+      {/* الموقع + نسخ فقط (بدون أيقونة التوجيه) */}
       {ticket.location && (
         <View style={c.row}>
           <Ionicons name="location-outline" size={15} color={Colors.textSecondary} />
           <Text style={[c.rowText, { flex: 1 }]}>{ticket.location}</Text>
           {hasMap && (
-            <>
-              <TouchableOpacity
-                onPress={() => onOpenMap(ticket.locationUrl!)}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                style={c.mapIconBtn}
-              >
-                <Ionicons name="navigate" size={16} color={Colors.info} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => onCopyMap(ticket.locationUrl!)}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                style={c.mapIconBtn}
-              >
-                <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              onPress={() => onCopyMap(ticket.locationUrl!)}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              style={c.mapIconBtn}
+            >
+              <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -586,6 +582,9 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
       {/* رأس البطاقة */}
       <View style={c.cardHead}>
         <Text style={c.cardNum}>#{ticket.sourceId}</Text>
+        {ticket.serviceNumber && (
+          <Text style={c.serviceNum}>{ticket.serviceNumber}</Text>
+        )}
         <View style={[c.typeBadge, { backgroundColor: Colors.success + "22" }]}>
           <Text style={[c.typeBadgeText, { color: Colors.success }]}>{typeLabel}</Text>
         </View>
@@ -611,28 +610,19 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
         </View>
       )}
 
-      {/* الموقع + أيقونتا فتح ونسخ */}
+      {/* الموقع + نسخ فقط (بدون أيقونة التوجيه) */}
       {ticket.location && (
         <View style={c.row}>
           <Ionicons name="location-outline" size={15} color={Colors.textSecondary} />
           <Text style={[c.rowText, { flex: 1 }]}>{ticket.location}</Text>
           {hasMap && (
-            <>
-              <TouchableOpacity
-                onPress={() => onOpenMap(ticket.locationUrl!)}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                style={c.mapIconBtn}
-              >
-                <Ionicons name="navigate" size={16} color={Colors.info} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => onCopyMap(ticket.locationUrl!)}
-                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
-                style={c.mapIconBtn}
-              >
-                <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity
+              onPress={() => onCopyMap(ticket.locationUrl!)}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              style={c.mapIconBtn}
+            >
+              <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -884,6 +874,7 @@ const c = StyleSheet.create({
   },
   cardHead: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
   cardNum: { fontSize: 13, fontWeight: "bold", color: Colors.textMuted },
+  serviceNum: { fontSize: 14, fontWeight: "bold", color: Colors.primary },
   typeBadge: { flex: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   typeBadgeText: { fontSize: 12, fontWeight: "bold", textAlign: "center" },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
