@@ -91,7 +91,7 @@ export default function TaskTrackingScreen() {
   const { token, user } = useAuth();
 
   const [section,        setSection]        = useState<Section>("repair");
-  const [statusFilter,   setStatusFilter]   = useState("all");
+  const [statusFilter,   setStatusFilter]   = useState("pending");
   const [repairTickets,  setRepairTickets]  = useState<any[]>([]);
   const [installTickets, setInstallTickets] = useState<any[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -114,6 +114,8 @@ export default function TaskTrackingScreen() {
   const [archSubmitting, setArchSubmitting] = useState(false);
   /* engineers list */
   const [engineers, setEngineers] = useState<{id:number;name:string}[]>([]);
+  /* عرض صورة الإتمام */
+  const [viewImageUrl, setViewImageUrl] = useState<string | null>(null);
 
   /* ─── جلب البيانات ─── */
   const fetchAll = useCallback(async (silent = false) => {
@@ -142,7 +144,7 @@ export default function TaskTrackingScreen() {
     if (statusFilter === "all")         return true;
     if (statusFilter === "pending")     return ["pending", "new", "draft"].includes(s);
     if (statusFilter === "in_progress") return ["in_progress", "preparing"].includes(s);
-    if (statusFilter === "completed")   return ["completed", "archived"].includes(s);
+    if (statusFilter === "completed")   return s === "completed";
     return true;
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
@@ -318,6 +320,7 @@ export default function TaskTrackingScreen() {
               onDelete={() => openDelete(item.id, `#${item.id}`, "install")}
               onPrepare={() => setPrepareItem(item)}
               onArchive={() => setArchiveItem(item)}
+              onViewImage={setViewImageUrl}
             />
           ))
         )}
@@ -426,6 +429,24 @@ export default function TaskTrackingScreen() {
           onSubmit={(payload) => handleArchive(archiveItem.id, payload)}
         />
       )}
+
+      {/* ════ مودال عرض صورة الإتمام ════ */}
+      <Modal visible={!!viewImageUrl} transparent animationType="fade">
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: "#000000CC", justifyContent: "center", alignItems: "center" }}
+          activeOpacity={1}
+          onPress={() => setViewImageUrl(null)}
+        >
+          {!!viewImageUrl && (
+            <Image
+              source={{ uri: viewImageUrl }}
+              style={{ width: "94%", height: 400, borderRadius: 12 }}
+              resizeMode="contain"
+            />
+          )}
+          <Text style={{ color: "#fff", marginTop: 12, fontSize: 13 }}>اضغط للإغلاق</Text>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -438,7 +459,7 @@ function countByKey(items: any[], key: string) {
     const s = it.status ?? "";
     if (key === "pending")     return ["pending", "new", "draft"].includes(s);
     if (key === "in_progress") return ["in_progress", "preparing"].includes(s);
-    if (key === "completed")   return ["completed", "archived"].includes(s);
+    if (key === "completed")   return s === "completed";
     return false;
   }).length;
 }
@@ -694,10 +715,11 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
 /* ════════════════════════════════════════════════
    بطاقة تذكرة التركيب
 ════════════════════════════════════════════════ */
-function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare, onArchive }: {
+function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare, onArchive, onViewImage }: {
   item: any; expanded: boolean;
   onExpand: () => void; onTimeline: () => void; onDelete: () => void;
   onPrepare: () => void; onArchive: () => void;
+  onViewImage?: (url: string) => void;
 }) {
   const si        = STATUS[item.status] ?? STATUS["pending"];
   const typeLabel = INSTALL_TYPE_AR[item.serviceType] ?? `تركيب ${item.serviceType ?? ""}`;
@@ -922,6 +944,16 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
           >
             <Ionicons name="archive" size={16} color={Colors.success} />
             <Text style={[rc.mainBtnText, { color: Colors.success }]}>أرشفة</Text>
+          </TouchableOpacity>
+        )}
+        {/* عرض صورة الإتمام — بعد اكتمال المهندس */}
+        {isCompleted && !!item.completionPhotoUrl && onViewImage && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: Colors.primary + "22", borderColor: Colors.primary + "55" }]}
+            onPress={() => onViewImage(item.completionPhotoUrl)}
+          >
+            <Ionicons name="image" size={16} color={Colors.primary} />
+            <Text style={[rc.mainBtnText, { color: Colors.primary }]}>صورة</Text>
           </TouchableOpacity>
         )}
 
@@ -1485,15 +1517,23 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
   item: any; submitting: boolean;
   onClose: () => void; onSubmit: (payload: any) => Promise<void>;
 }) {
-  const [notes, setNotes] = useState("");
-  const [errMsg, setErrMsg] = useState("");
+  const [notes,       setNotes]       = useState("");
+  const [address,     setAddress]     = useState(item.address ?? "");
+  const [locationUrl, setLocationUrl] = useState(item.locationUrl ?? "");
+  const [errMsg,      setErrMsg]      = useState("");
+  const [imgVisible,  setImgVisible]  = useState(false);
   const svcLabel = INSTALL_TYPE_AR[item.serviceType] ?? item.serviceType;
   const svcColor = INSTALL_TYPE_COLOR[item.serviceType] ?? Colors.primary;
+  const hasPhoto = !!item.completionPhotoUrl;
 
   const handleSubmit = async () => {
     setErrMsg("");
     try {
-      await onSubmit({ archiveNotes: notes.trim() || null });
+      await onSubmit({
+        archiveNotes: notes.trim() || null,
+        address:     address.trim()     || null,
+        locationUrl: locationUrl.trim() || null,
+      });
     } catch (e: any) {
       setErrMsg(e?.message ?? "فشل الأرشفة");
     }
@@ -1502,94 +1542,172 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
   return (
     <Modal visible transparent animationType="fade">
       <View style={am.overlay}>
-        <View style={am.card}>
-          {/* أيقونة + عنوان */}
-          <View style={am.iconCircle}>
-            <Ionicons name="archive" size={36} color={Colors.success} />
-          </View>
-          <Text style={am.title}>تأكيد الأرشفة #{item.id}</Text>
-
-          {/* ملخص التذكرة */}
-          <View style={am.summaryBox}>
-            <View style={[am.badge, { backgroundColor: svcColor + "22" }]}>
-              <Text style={[am.badgeText, { color: svcColor }]}>{svcLabel}</Text>
+        <ScrollView
+          contentContainerStyle={am.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={am.card}>
+            {/* أيقونة + عنوان */}
+            <View style={am.iconCircle}>
+              <Ionicons name="archive" size={36} color={Colors.success} />
             </View>
-            {item.clientName   && <Text style={am.summaryText}>العميل: {item.clientName}</Text>}
-            {item.deviceName   && <Text style={am.summaryText}>الجهاز: {item.deviceName} — {item.deviceSerial ?? "—"}</Text>}
-            {item.address      && <Text style={am.summaryText}>الموقع: {item.address}</Text>}
-            {item.subscriptionFee && <Text style={am.summaryText}>الاشتراك: {item.subscriptionFee} ريال</Text>}
-            {item.internetFee  && <Text style={am.summaryText}>رسوم الإنترنت: {item.internetFee} ريال</Text>}
-            {item.assignedToName && <Text style={am.summaryText}>المهندس: {item.assignedToName}</Text>}
-          </View>
+            <Text style={am.title}>تأكيد الأرشفة #{item.id}</Text>
 
-          <Text style={am.fieldLabel}>ملاحظات الأرشفة — اختياري</Text>
-          <TextInput
-            style={[am.input, {height:60}]}
-            value={notes}
-            onChangeText={setNotes}
-            placeholder="أضف ملاحظة..."
-            placeholderTextColor={Colors.textSecondary}
-            textAlign="right"
-            textAlignVertical="top"
-            multiline
-          />
-
-          {!!errMsg && (
-            <View style={am.errBox}>
-              <Ionicons name="alert-circle-outline" size={14} color={Colors.error} />
-              <Text style={am.errText}>{errMsg}</Text>
+            {/* ملخص التذكرة */}
+            <View style={am.summaryBox}>
+              <View style={[am.badge, { backgroundColor: svcColor + "22" }]}>
+                <Text style={[am.badgeText, { color: svcColor }]}>{svcLabel}</Text>
+              </View>
+              {item.clientName    && <Text style={am.summaryText}>العميل: {item.clientName}</Text>}
+              {item.deviceName    && <Text style={am.summaryText}>الجهاز: {item.deviceName} — {item.deviceSerial ?? "—"}</Text>}
+              {item.subscriptionFee && <Text style={am.summaryText}>الاشتراك: {item.subscriptionFee} ريال</Text>}
+              {item.internetFee   && <Text style={am.summaryText}>رسوم الإنترنت: {item.internetFee} ريال</Text>}
+              {item.assignedToName && <Text style={am.summaryText}>المهندس: {item.assignedToName}</Text>}
             </View>
-          )}
 
-          <View style={am.actions}>
-            <TouchableOpacity style={am.cancelBtn} onPress={onClose} disabled={submitting}>
-              <Text style={am.cancelTxt}>إلغاء</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[am.confirmBtn, submitting && {opacity:0.6}]} onPress={handleSubmit} disabled={submitting}>
-              {submitting
-                ? <ActivityIndicator size="small" color="#fff" />
-                : <Text style={am.confirmTxt}>تأكيد الأرشفة</Text>
-              }
-            </TouchableOpacity>
+            {/* صورة إتمام المهندس */}
+            {hasPhoto && (
+              <View style={{ width: "100%", gap: 6 }}>
+                <View style={am.photoHeader}>
+                  <Ionicons name="image-outline" size={14} color={Colors.success} />
+                  <Text style={[am.fieldLabel, { color: Colors.success }]}>صورة إتمام المهندس</Text>
+                </View>
+                <TouchableOpacity onPress={() => setImgVisible(true)} activeOpacity={0.85}>
+                  <Image
+                    source={{ uri: item.completionPhotoUrl }}
+                    style={am.photoPreview}
+                    resizeMode="cover"
+                  />
+                  <View style={am.photoTapHint}>
+                    <Ionicons name="expand-outline" size={14} color="#fff" />
+                    <Text style={am.photoTapText}>اضغط للتكبير</Text>
+                  </View>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* العنوان — قابل للتعديل */}
+            <Text style={am.fieldLabel}>عنوان التركيب</Text>
+            <TextInput
+              style={am.input}
+              value={address}
+              onChangeText={setAddress}
+              placeholder="أدخل العنوان..."
+              placeholderTextColor={Colors.textSecondary}
+              textAlign="right"
+            />
+
+            {/* رابط الموقع — قابل للتعديل */}
+            <Text style={am.fieldLabel}>رابط الموقع (Google Maps)</Text>
+            <TextInput
+              style={am.input}
+              value={locationUrl}
+              onChangeText={setLocationUrl}
+              placeholder="https://maps.google.com/..."
+              placeholderTextColor={Colors.textSecondary}
+              textAlign="right"
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+
+            {/* ملاحظات */}
+            <Text style={am.fieldLabel}>ملاحظات الأرشفة — اختياري</Text>
+            <TextInput
+              style={[am.input, { height: 60 }]}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="أضف ملاحظة..."
+              placeholderTextColor={Colors.textSecondary}
+              textAlign="right"
+              textAlignVertical="top"
+              multiline
+            />
+
+            {!!errMsg && (
+              <View style={am.errBox}>
+                <Ionicons name="alert-circle-outline" size={14} color={Colors.error} />
+                <Text style={am.errText}>{errMsg}</Text>
+              </View>
+            )}
+
+            <View style={am.actions}>
+              <TouchableOpacity style={am.cancelBtn} onPress={onClose} disabled={submitting}>
+                <Text style={am.cancelTxt}>إلغاء</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[am.confirmBtn, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
+                {submitting
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={am.confirmTxt}>تأكيد الأرشفة</Text>
+                }
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ScrollView>
       </View>
+
+      {/* عرض الصورة كاملة */}
+      {hasPhoto && (
+        <Modal visible={imgVisible} transparent animationType="fade">
+          <TouchableOpacity
+            style={{ flex: 1, backgroundColor: "#000000CC", justifyContent: "center", alignItems: "center" }}
+            activeOpacity={1}
+            onPress={() => setImgVisible(false)}
+          >
+            <Image
+              source={{ uri: item.completionPhotoUrl }}
+              style={{ width: "94%", height: 400, borderRadius: 12 }}
+              resizeMode="contain"
+            />
+            <Text style={{ color: "#fff", marginTop: 12, fontSize: 13 }}>اضغط للإغلاق</Text>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </Modal>
   );
 }
 
 const am = StyleSheet.create({
-  overlay: { flex:1, backgroundColor:"#000000BB", alignItems:"center", justifyContent:"center" },
+  overlay:       { flex: 1, backgroundColor: "#000000BB" },
+  scrollContent: { alignItems: "center", justifyContent: "center", flexGrow: 1, paddingVertical: 24, paddingHorizontal: 16 },
   card: {
-    backgroundColor: Colors.surface, borderRadius:20, padding:22,
-    width:"88%", gap:10, alignItems:"center",
+    backgroundColor: Colors.surface, borderRadius: 20, padding: 22,
+    width: "100%", gap: 10, alignItems: "center",
   },
   iconCircle: {
-    width:70, height:70, borderRadius:35,
+    width: 70, height: 70, borderRadius: 35,
     backgroundColor: Colors.success + "18",
-    alignItems:"center", justifyContent:"center", marginBottom:4,
+    alignItems: "center", justifyContent: "center", marginBottom: 4,
   },
-  title: { fontSize:18, fontWeight:"bold", color:Colors.text, textAlign:"center" },
+  title: { fontSize: 18, fontWeight: "bold", color: Colors.text, textAlign: "center" },
   summaryBox: {
-    backgroundColor: Colors.surfaceElevated, borderRadius:12,
-    padding:12, width:"100%", gap:4, alignItems:"flex-end",
+    backgroundColor: Colors.surfaceElevated, borderRadius: 12,
+    padding: 12, width: "100%", gap: 4, alignItems: "flex-end",
   },
-  badge:     { paddingHorizontal:10, paddingVertical:4, borderRadius:8, marginBottom:4 },
-  badgeText: { fontSize:12, fontWeight:"bold" },
-  summaryText: { fontSize:13, color:Colors.textSecondary, textAlign:"right" },
-  fieldLabel: { fontSize:13, fontWeight:"600", color:Colors.textSecondary, textAlign:"right", alignSelf:"flex-end" },
+  badge:       { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 4 },
+  badgeText:   { fontSize: 12, fontWeight: "bold" },
+  summaryText: { fontSize: 13, color: Colors.textSecondary, textAlign: "right" },
+  fieldLabel:  { fontSize: 13, fontWeight: "600", color: Colors.textSecondary, textAlign: "right", alignSelf: "flex-end" },
   input: {
-    backgroundColor: Colors.surfaceElevated, borderRadius:10,
-    borderWidth:1, borderColor:Colors.border, padding:10,
-    fontSize:14, color:Colors.text, textAlign:"right", width:"100%",
+    backgroundColor: Colors.surfaceElevated, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.border, padding: 10,
+    fontSize: 14, color: Colors.text, textAlign: "right", width: "100%",
   },
-  errBox: { flexDirection:"row-reverse", alignItems:"center", gap:6, backgroundColor:Colors.error+"18", borderRadius:8, padding:8, width:"100%" },
-  errText: { fontSize:13, color:Colors.error, flex:1, textAlign:"right" },
-  actions: { flexDirection:"row-reverse", gap:10, width:"100%", marginTop:4 },
-  cancelBtn: { flex:1, paddingVertical:12, borderRadius:12, alignItems:"center", backgroundColor:Colors.surfaceElevated },
-  cancelTxt: { fontSize:15, fontWeight:"bold", color:Colors.textSecondary },
-  confirmBtn:{ flex:1, paddingVertical:12, borderRadius:12, alignItems:"center", backgroundColor:Colors.success },
-  confirmTxt:{ fontSize:15, fontWeight:"bold", color:"#fff" },
+  photoHeader:  { flexDirection: "row-reverse", alignItems: "center", gap: 5 },
+  photoPreview: { width: "100%", height: 160, borderRadius: 10 },
+  photoTapHint: {
+    position: "absolute", bottom: 6, right: 8,
+    flexDirection: "row-reverse", alignItems: "center", gap: 4,
+    backgroundColor: "#00000066", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
+  },
+  photoTapText: { fontSize: 11, color: "#fff" },
+  errBox:  { flexDirection: "row-reverse", alignItems: "center", gap: 6, backgroundColor: Colors.error + "18", borderRadius: 8, padding: 8, width: "100%" },
+  errText: { fontSize: 13, color: Colors.error, flex: 1, textAlign: "right" },
+  actions:    { flexDirection: "row-reverse", gap: 10, width: "100%", marginTop: 4 },
+  cancelBtn:  { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: Colors.surfaceElevated },
+  cancelTxt:  { fontSize: 15, fontWeight: "bold", color: Colors.textSecondary },
+  confirmBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: Colors.success },
+  confirmTxt: { fontSize: 15, fontWeight: "bold", color: "#fff" },
 });
 
 /* ════════════════════════════════════════════════

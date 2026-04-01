@@ -195,6 +195,7 @@ export const installationTicketsTable = pgTable("installation_tickets", {
   internetFee: numeric("internet_fee", { precision: 10, scale: 2 }),
   contractImageUrl: text("contract_image_url"),
   engineerNotes: text("engineer_notes"),
+  completionPhotoUrl: text("completion_photo_url"),
   /* ─── نقاط البث الوسيطة ─── */
   relayPointsJson: text("relay_points_json"),
   hasRelayPoints: boolean("has_relay_points").default(false),

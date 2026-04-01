@@ -61,25 +61,33 @@ interface Ticket {
   deviceSerial:           string | null;
 }
 
+/* ─────────────── نوع مجموعة التركيب ─────────────── */
+interface InstallGroup {
+  parent:    Ticket;
+  parentRaw: any;
+  relays:    Ticket[];
+}
+
 /* ─────────────── المكوّن الرئيسي ─────────────── */
 export default function TechEngineerScreen() {
   const insets  = useSafeAreaInsets();
   const { user, token } = useAuth();
 
   type Section = "new" | "inprogress";
-  const [section,    setSection]    = useState<Section>("new");
-  const [repairs,    setRepairs]    = useState<any[]>([]);
-  const [installs,   setInstalls]   = useState<any[]>([]);
+  const [section,     setSection]     = useState<Section>("new");
+  const [repairs,     setRepairs]     = useState<any[]>([]);
+  const [allInstalls, setAllInstalls] = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving,     setSaving]     = useState<string | null>(null); // ticket id being saved
 
   /* مودال الإتمام */
   const [completeTicket, setCompleteTicket] = useState<Ticket | null>(null);
-  const [cStep,  setCStep]  = useState<"photo" | "notes">("photo");
-  const [cNotes, setCNotes] = useState("");
-  const [cPhoto, setCPhoto] = useState<string | null>(null);
-  const [cSaving, setCsaving] = useState(false);
+  const [cStep,         setCStep]         = useState<"photo" | "notes">("photo");
+  const [cNotes,        setCNotes]        = useState("");
+  const [cPhoto,        setCPhoto]        = useState<string | null>(null);
+  const [cPhotoBase64,  setCPhotoBase64]  = useState<string | null>(null);
+  const [cSaving,       setCsaving]       = useState(false);
 
   /* مودال صورة الموقع */
   const [viewImageUrl, setViewImageUrl] = useState<string | null>(null);
@@ -108,7 +116,7 @@ export default function TechEngineerScreen() {
         apiGet("/tickets/installation?techMode=true", token).catch(() => []),
       ]);
       setRepairs(Array.isArray(r) ? r.filter(isVisible) : []);
-      setInstalls(Array.isArray(i) ? i.filter(isVisible) : []);
+      setAllInstalls(Array.isArray(i) ? i : []);
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
   }, [token, myName, myId]);
@@ -143,23 +151,32 @@ export default function TechEngineerScreen() {
     deviceSerial:           raw.deviceSerial ?? null,
   });
 
-  /* ─── التذاكر حسب القسم ─── */
-  const newRepairs   = repairs.filter(t => ["new","pending","draft"].includes(t.status)).map(t => toTicket(t, "repair"));
-  const ipRepairs    = repairs.filter(t => t.status === "in_progress").map(t => toTicket(t, "repair"));
-  /*
-   * نقاط البث الوسيطة (isRelayPoint=true) تبدأ بحالة "new"
-   * التذاكر الرئيسية تبدأ بحالة "preparing"
-   * كلاهما يظهر في تبويب "جديد"
-   */
-  const newInstalls  = installs.filter(t =>
-    t.isRelayPoint ? t.status === "new" : t.status === "preparing"
-  ).map(t => toTicket(t, "install"));
-  const ipInstalls   = installs.filter(t => t.status === "in_progress").map(t => toTicket(t, "install"));
+  /* ─── بناء مجموعات التركيب (أب + نقاط بث وسيطة) ─── */
+  const newRepairs = repairs.filter(t => ["new","pending","draft"].includes(t.status)).map(t => toTicket(t, "repair"));
+  const ipRepairs  = repairs.filter(t => t.status === "in_progress").map(t => toTicket(t, "repair"));
 
-  const newItems  = [...newRepairs, ...newInstalls].sort((a, b) => 0);
+  /* التذاكر الرئيسية في مرحلة التجهيز */
+  const mainPreparing = allInstalls.filter(t => !t.isRelayPoint && t.status === "preparing");
+  /* نقاط البث المرئية لهذا المهندس بحالة جديدة */
+  const myNewRelays   = allInstalls.filter(t => t.isRelayPoint && t.status === "new" && isVisible(t));
+  /* in_progress (رئيسية ووسيطة) مرئية لهذا المهندس */
+  const ipInstalls    = allInstalls.filter(t => t.status === "in_progress" && isVisible(t)).map(t => toTicket(t, "install"));
+
+  const installGroups: InstallGroup[] = mainPreparing
+    .filter(t => isVisible(t) || myNewRelays.some(r => r.parentTicketId === t.id))
+    .map(t => ({
+      parent:    toTicket(t, "install"),
+      parentRaw: t,
+      relays:    myNewRelays
+        .filter(r => r.parentTicketId === t.id)
+        .sort((a, b) => (a.sequenceOrder ?? 0) - (b.sequenceOrder ?? 0))
+        .map(r => toTicket(r, "install")),
+    }))
+    .sort((a, b) => new Date(b.parentRaw.createdAt).getTime() - new Date(a.parentRaw.createdAt).getTime());
+
   const ipItems   = [...ipRepairs, ...ipInstalls];
-
-  const shownItems = section === "new" ? newItems : ipItems;
+  const newCount  = newRepairs.length + installGroups.length;
+  const ipCount   = ipItems.length;
 
   /* ─── بدء التنفيذ ─── */
   const startTicket = async (t: Ticket) => {
@@ -172,9 +189,9 @@ export default function TechEngineerScreen() {
         });
         setRepairs(prev => prev.map(r => r.id === t.sourceId ? { ...r, status: "in_progress", assignedToName: myName } : r));
       } else {
-        /* تركيب: يستخدم execute — يتحقق من نقاط البث */
-        const result = await apiPost(`/tickets/installation/${t.sourceId}/execute`, token, { assignedToName: myName || undefined });
-        setInstalls(prev => prev.map(r => r.id === t.sourceId ? { ...r, status: "in_progress", assignedToName: myName } : r));
+        /* تركيب أو نقطة بث وسيطة: يستخدم execute — يتحقق من نقاط البث */
+        await apiPost(`/tickets/installation/${t.sourceId}/execute`, token, { assignedToName: myName || undefined });
+        setAllInstalls(prev => prev.map(r => r.id === t.sourceId ? { ...r, status: "in_progress", assignedToName: myName } : r));
       }
       setSection("inprogress");
       showToast("بدأ التنفيذ");
@@ -195,6 +212,7 @@ export default function TechEngineerScreen() {
     setCStep("photo");
     setCNotes("");
     setCPhoto(null);
+    setCPhotoBase64(null);
   };
 
   /* ─── اختيار صورة ─── */
@@ -203,12 +221,16 @@ export default function TechEngineerScreen() {
       let result;
       if (fromCamera) {
         await ImagePicker.requestCameraPermissionsAsync();
-        result = await ImagePicker.launchCameraAsync({ quality: 0.7 });
+        result = await ImagePicker.launchCameraAsync({ quality: 0.3, base64: true });
       } else {
         await ImagePicker.requestMediaLibraryPermissionsAsync();
-        result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, mediaTypes: ["images"] as any });
+        result = await ImagePicker.launchImageLibraryAsync({ quality: 0.3, base64: true, mediaTypes: ["images"] as any });
       }
-      if (!result.canceled) setCPhoto(result.assets[0].uri);
+      if (!result.canceled) {
+        const asset = result.assets[0];
+        setCPhoto(asset.uri);
+        setCPhotoBase64(asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : null);
+      }
     } catch {}
     setCStep("notes");
   };
@@ -226,13 +248,19 @@ export default function TechEngineerScreen() {
           ...(cNotes ? { notes: cNotes } : {}),
         });
         setRepairs(prev => prev.filter(r => r.id !== completeTicket.sourceId));
-      } else {
-        /* تذاكر التركيب: archive endpoint — يتحقق من نقاط البث ويفك القيد عن الأصل */
+      } else if (completeTicket.isRelayPoint) {
+        /* نقطة بث وسيطة: archive — يتحقق من الإخوة ويفك القيد عن الأصل */
         await apiPost(`/tickets/installation/${completeTicket.sourceId}/archive`, token, {
           engineerNotes: cNotes || null,
         });
-        /* بعد أرشفة نقطة بث → refresh الكل لأن الأصل قد يكون تغيّر hasRelayPoints */
-        await fetchAll(true);
+        await fetchAll(true); /* refresh: قد تغيّر hasRelayPoints على الأصل */
+      } else {
+        /* تذكرة تركيب رئيسية: complete — يحفظ الصورة، لا يكتب في قاعدة الشبكة */
+        await apiPost(`/tickets/installation/${completeTicket.sourceId}/complete`, token, {
+          engineerNotes: cNotes || null,
+          completionPhotoUrl: cPhotoBase64 || null,
+        });
+        setAllInstalls(prev => prev.filter(t => t.id !== completeTicket.sourceId));
       }
       setCompleteTicket(null);
       setSection("new");
@@ -318,8 +346,8 @@ export default function TechEngineerScreen() {
 
       {/* ══ ملخص سريع ══ */}
       <View style={s.summaryRow}>
-        <SummaryPill label="جديدة" count={newItems.length}  color="#2196F3" active={section === "new"}    onPress={() => setSection("new")} />
-        <SummaryPill label="جاري"  count={ipItems.length}   color={TECH_COLOR} active={section === "inprogress"} onPress={() => setSection("inprogress")} />
+        <SummaryPill label="جديدة" count={newCount}  color="#2196F3" active={section === "new"}        onPress={() => setSection("new")} />
+        <SummaryPill label="جاري"  count={ipCount}   color={TECH_COLOR} active={section === "inprogress"} onPress={() => setSection("inprogress")} />
       </View>
 
       {/* ══ عنوان القسم ══ */}
@@ -332,7 +360,7 @@ export default function TechEngineerScreen() {
         <Text style={[s.sectionTitle, { color: section === "new" ? "#2196F3" : TECH_COLOR }]}>
           {section === "new" ? "تذاكر جديدة" : "تذاكر قيد التنفيذ"}
         </Text>
-        <Text style={s.sectionCount}>{shownItems.length}</Text>
+        <Text style={s.sectionCount}>{section === "new" ? newCount : ipCount}</Text>
       </View>
 
       {/* ══ قائمة التذاكر ══ */}
@@ -346,24 +374,16 @@ export default function TechEngineerScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {shownItems.length === 0 ? (
-          <View style={s.emptyBox}>
-            <Ionicons name={section === "new" ? "checkmark-circle-outline" : "hourglass-outline"} size={56} color={Colors.textMuted} />
-            <Text style={s.emptyTitle}>
-              {section === "new" ? "لا توجد تذاكر جديدة" : "لا توجد تذاكر قيد التنفيذ"}
-            </Text>
-            <Text style={s.emptyHint}>
-              {section === "new" ? "ستظهر هنا التذاكر المخصصة لك أو للجميع" : "ابدأ تنفيذ تذكرة من قسم الجديدة"}
-            </Text>
-          </View>
-        ) : (
-          shownItems.map(ticket =>
-            ticket.source === "repair" ? (
+        {section === "new" ? (
+          <>
+            {/* تذاكر الإصلاح الجديدة */}
+            {newRepairs.map(ticket => (
               <RepairCard
                 key={ticket.id}
                 ticket={ticket}
-                section={section}
+                section="new"
                 saving={saving === ticket.id}
                 onStart={() => startTicket(ticket)}
                 onComplete={() => openComplete(ticket)}
@@ -371,21 +391,69 @@ export default function TechEngineerScreen() {
                 onOpenMap={openMap}
                 onCopyMap={copyMapUrl}
               />
+            ))}
+            {/* مجموعات التركيب (أب + نقاط بث وسيطة) */}
+            {installGroups.map(group => (
+              <InstallGroupView
+                key={group.parent.id}
+                group={group}
+                saving={saving}
+                onStartParent={startTicket}
+                onStartRelay={startTicket}
+                onComplete={openComplete}
+                onCopy={copyPhone}
+                onOpenMap={openMap}
+                onCopyMap={copyMapUrl}
+                onViewImage={setViewImageUrl}
+              />
+            ))}
+            {newCount === 0 && (
+              <View style={s.emptyBox}>
+                <Ionicons name="checkmark-circle-outline" size={56} color={Colors.textMuted} />
+                <Text style={s.emptyTitle}>لا توجد تذاكر جديدة</Text>
+                <Text style={s.emptyHint}>ستظهر هنا التذاكر المخصصة لك أو للجميع</Text>
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            {ipItems.length === 0 ? (
+              <View style={s.emptyBox}>
+                <Ionicons name="hourglass-outline" size={56} color={Colors.textMuted} />
+                <Text style={s.emptyTitle}>لا توجد تذاكر قيد التنفيذ</Text>
+                <Text style={s.emptyHint}>ابدأ تنفيذ تذكرة من قسم الجديدة</Text>
+              </View>
             ) : (
-              <InstallCard
-                key={ticket.id}
-                ticket={ticket}
-                section={section}
-                saving={saving === ticket.id}
-                onStart={() => startTicket(ticket)}
-                onComplete={() => openComplete(ticket)}
-                onCopy={copyPhone}
-                onOpenMap={openMap}
-                onCopyMap={copyMapUrl}
-                onViewImage={(url) => setViewImageUrl(url)}
-              />
-            )
-          )
+              ipItems.map(ticket =>
+                ticket.source === "repair" ? (
+                  <RepairCard
+                    key={ticket.id}
+                    ticket={ticket}
+                    section="inprogress"
+                    saving={saving === ticket.id}
+                    onStart={() => startTicket(ticket)}
+                    onComplete={() => openComplete(ticket)}
+                    onCopy={copyPhone}
+                    onOpenMap={openMap}
+                    onCopyMap={copyMapUrl}
+                  />
+                ) : (
+                  <InstallCard
+                    key={ticket.id}
+                    ticket={ticket}
+                    section="inprogress"
+                    saving={saving === ticket.id}
+                    onStart={() => startTicket(ticket)}
+                    onComplete={() => openComplete(ticket)}
+                    onCopy={copyPhone}
+                    onOpenMap={openMap}
+                    onCopyMap={copyMapUrl}
+                    onViewImage={setViewImageUrl}
+                  />
+                )
+              )
+            )}
+          </>
         )}
         <View style={{ height: 80 }} />
       </ScrollView>
@@ -793,7 +861,13 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
 
       {/* الأزرار */}
       <View style={c.btnRow}>
-        {/* زر بدء التنفيذ — مخفي إذا كانت التذكرة مقيّدة بنقاط بث */}
+        {/* زر بدء التنفيذ — معطَّل (رمادي) إذا كانت التذكرة مقيّدة بنقاط بث */}
+        {section === "new" && isBlocked && (
+          <View style={[ab.btn, { flex: 2, backgroundColor: Colors.surfaceElevated, borderColor: Colors.border }]}>
+            <Ionicons name="lock-closed" size={16} color={Colors.textMuted} />
+            <Text style={[ab.label, { color: Colors.textMuted }]}>بدء التنفيذ</Text>
+          </View>
+        )}
         {section === "new" && !isBlocked && (
           <ActionBtn label="بدء التنفيذ" icon="play-circle" color="#2196F3" loading={saving} onPress={onStart} flex={2} />
         )}
@@ -854,6 +928,131 @@ function ActionBtn({ label, icon, color, loading, onPress, flex = 1 }: {
           </>
       }
     </TouchableOpacity>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   مجموعة تذكرة التركيب (أب + نقاط بث وسيطة)
+════════════════════════════════════════════════ */
+function InstallGroupView({ group, saving, onStartParent, onStartRelay, onComplete, onCopy, onOpenMap, onCopyMap, onViewImage }: {
+  group: InstallGroup;
+  saving: string | null;
+  onStartParent: (t: Ticket) => void;
+  onStartRelay:  (t: Ticket) => void;
+  onComplete:    (t: Ticket) => void;
+  onCopy:     (p: string) => void;
+  onOpenMap:  (url: string) => void;
+  onCopyMap:  (url: string) => void;
+  onViewImage:(url: string) => void;
+}) {
+  return (
+    <View style={tg.group}>
+      {/* البطاقة الرئيسية (الأب) */}
+      <InstallCard
+        ticket={group.parent}
+        section="new"
+        saving={saving === group.parent.id}
+        onStart={() => onStartParent(group.parent)}
+        onComplete={() => onComplete(group.parent)}
+        onCopy={onCopy}
+        onOpenMap={onOpenMap}
+        onCopyMap={onCopyMap}
+        onViewImage={onViewImage}
+      />
+
+      {/* قائمة نقاط البث الوسيطة */}
+      {group.relays.length > 0 && (
+        <View style={tg.relayList}>
+          <View style={tg.relayHeader}>
+            <Ionicons name="git-network-outline" size={13} color="#9C27B0" />
+            <Text style={tg.relayHeaderText}>نقاط البث الوسيطة ({group.relays.length})</Text>
+          </View>
+          {group.relays.map(relay => (
+            <RelaySubCard
+              key={relay.id}
+              ticket={relay}
+              saving={saving === relay.id}
+              onStart={() => onStartRelay(relay)}
+              onCopy={onCopy}
+              onOpenMap={onOpenMap}
+              onCopyMap={onCopyMap}
+              onViewImage={onViewImage}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   بطاقة نقطة البث الوسيطة (مدمجة تحت الأب)
+════════════════════════════════════════════════ */
+function RelaySubCard({ ticket, saving, onStart, onCopy, onOpenMap, onCopyMap, onViewImage }: {
+  ticket: Ticket;
+  saving: boolean;
+  onStart:    () => void;
+  onCopy:     (p: string) => void;
+  onOpenMap:  (url: string) => void;
+  onCopyMap:  (url: string) => void;
+  onViewImage:(url: string) => void;
+}) {
+  const hasMap   = !!ticket.locationUrl;
+  const hasPhone = !!ticket.clientPhone;
+  const hasImage = !!ticket.contractImageUrl;
+
+  return (
+    <View style={rs.card}>
+      {/* رأس البطاقة: رقم التسلسل + العنوان */}
+      <View style={rs.head}>
+        <View style={rs.seqBadge}>
+          <Text style={rs.seqNum}>{ticket.sequenceOrder}</Text>
+        </View>
+        <Ionicons name="git-network-outline" size={14} color="#9C27B0" />
+        <Text style={rs.title}>نقطة البث الوسيطة</Text>
+        {ticket.assignedToName && (
+          <View style={rs.assignedBadge}>
+            <Ionicons name="person-circle" size={12} color={Colors.primary} />
+            <Text style={rs.assignedText} numberOfLines={1}>{ticket.assignedToName}</Text>
+          </View>
+        )}
+      </View>
+
+      {/* الموقع */}
+      {(ticket.location || hasMap) && (
+        <View style={rs.row}>
+          <Ionicons name="location-outline" size={13} color={Colors.textSecondary} />
+          <Text style={rs.rowText} numberOfLines={1}>{ticket.location ?? "رابط موقع"}</Text>
+          {hasMap && (
+            <TouchableOpacity
+              onPress={() => onCopyMap(ticket.locationUrl!)}
+              hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            >
+              <Ionicons name="copy-outline" size={13} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* الملاحظات */}
+      {ticket.notes && (
+        <Text style={rs.notes} numberOfLines={2}>{ticket.notes}</Text>
+      )}
+
+      {/* أزرار */}
+      <View style={rs.btnRow}>
+        <ActionBtn label="بدء التنفيذ" icon="play-circle" color="#9C27B0" loading={saving} onPress={onStart} flex={2} />
+        {hasPhone && (
+          <ActionBtn label="اتصال" icon="call" color={Colors.success} onPress={() => Linking.openURL(`tel:${ticket.clientPhone}`)} flex={1} />
+        )}
+        {hasMap && (
+          <ActionBtn label="خريطة" icon="map" color={Colors.info} onPress={() => onOpenMap(ticket.locationUrl!)} flex={1} />
+        )}
+        {hasImage && (
+          <ActionBtn label="صورة" icon="image" color={Colors.primary} onPress={() => onViewImage(ticket.contractImageUrl!)} flex={1} />
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -1120,6 +1319,63 @@ const ic2 = StyleSheet.create({
     marginBottom: 4,
   },
   boosterBoxTitle: { fontSize: 12, fontWeight: "bold", color: "#4CAF50" },
+});
+
+/* InstallGroupView */
+const tg = StyleSheet.create({
+  group: { marginBottom: 14 },
+  relayList: {
+    marginTop: -6,
+    marginLeft: 12,
+    borderLeftWidth: 2,
+    borderLeftColor: "#9C27B040",
+    paddingLeft: 10,
+  },
+  relayHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+  relayHeaderText: { fontSize: 12, fontWeight: "bold", color: "#9C27B0" },
+});
+
+/* RelaySubCard */
+const rs = StyleSheet.create({
+  card: {
+    backgroundColor: "#9C27B010",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#9C27B040",
+    borderLeftWidth: 3,
+    borderLeftColor: "#9C27B0",
+    marginBottom: 8,
+    padding: 12,
+    gap: 7,
+  },
+  head: { flexDirection: "row-reverse", alignItems: "center", gap: 7, flexWrap: "wrap" },
+  seqBadge: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: "#9C27B0",
+    alignItems: "center", justifyContent: "center",
+  },
+  seqNum: { fontSize: 11, fontWeight: "bold", color: "#fff" },
+  title: { fontSize: 13, fontWeight: "bold", color: "#9C27B0", flex: 1, textAlign: "right" },
+  assignedBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: Colors.primary + "18",
+    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  assignedText: { fontSize: 11, color: Colors.primary },
+  row: { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
+  rowText: { fontSize: 13, color: Colors.text, flex: 1, textAlign: "right" },
+  notes: { fontSize: 12, color: Colors.textSecondary, textAlign: "right", fontStyle: "italic" },
+  btnRow: { flexDirection: "row-reverse", gap: 6, marginTop: 2 },
 });
 
 /* مودال صورة الموقع */

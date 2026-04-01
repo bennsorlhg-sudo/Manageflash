@@ -309,74 +309,119 @@ router.post("/tickets/installation/:id/execute", requireAuth, async (req, res) =
 });
 
 /* ────────────────────────────────────────────────────
+   POST /tickets/installation/:id/complete
+   المهندس يُنهي مهمة التركيب الرئيسية → status=completed
+   (لا يحفظ في قاعدة الشبكة — ذلك للمشرف عند الأرشفة)
+────────────────────────────────────────────────────── */
+router.post("/tickets/installation/:id/complete", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { engineerNotes, completionPhotoUrl } = req.body;
+
+    const rows = await db.select().from(installationTicketsTable)
+      .where(eq(installationTicketsTable.id, id));
+    if (!rows[0]) return res.status(404).json({ error: "التذكرة غير موجودة" });
+    const t = rows[0];
+
+    /* تحقق من نقاط البث */
+    if (t.hasRelayPoints) {
+      const relayTickets = await db.select().from(installationTicketsTable)
+        .where(eq(installationTicketsTable.parentTicketId, id));
+      const pending = relayTickets.filter(r => r.status !== "archived" && r.status !== "completed");
+      if (pending.length > 0)
+        return res.status(400).json({ error: "يجب إتمام جميع نقاط البث الوسيطة أولاً", pendingCount: pending.length });
+    }
+
+    const [updated] = await db.update(installationTicketsTable).set({
+      status: "completed",
+      completedAt: new Date(),
+      engineerNotes: engineerNotes ?? null,
+      completionPhotoUrl: completionPhotoUrl ?? null,
+      updatedAt: new Date(),
+    }).where(eq(installationTicketsTable.id, id)).returning();
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "فشل في إنهاء التذكرة", details: String(error) });
+  }
+});
+
+/* ────────────────────────────────────────────────────
    POST /tickets/installation/:id/archive
-   أرشفة التذكرة + حفظ في قاعدة بيانات الشبكة
+   المشرف يُؤرشف التذكرة المكتملة + يحفظ في قاعدة الشبكة
+   نقاط البث الوسيطة: المهندس يستخدم هذا أيضاً لكن بدون حفظ شبكة
 ────────────────────────────────────────────────────── */
 router.post("/tickets/installation/:id/archive", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { archiveNotes, engineerNotes } = req.body;
+    const { archiveNotes, engineerNotes, address: addrOverride, locationUrl: urlOverride } = req.body;
 
     const rows = await db.select().from(installationTicketsTable)
       .where(eq(installationTicketsTable.id, id));
     if (!rows[0]) return res.status(404).json({ error: "التذكرة غير موجودة" });
 
     const t = rows[0];
+    const finalAddress    = addrOverride ?? t.address;
+    const finalLocationUrl = urlOverride  ?? t.locationUrl;
 
-    /* حفظ في قاعدة بيانات الشبكة */
-    if (t.serviceType === "hotspot_internal" || t.serviceType === "hotspot_external") {
-      /* جلب أعلى flashNumber موجود */
-      const existing = await db.select({ fn: hotspotPointsTable.flashNumber })
-        .from(hotspotPointsTable).orderBy(desc(hotspotPointsTable.flashNumber)).limit(1);
-      const nextFlash = (existing[0]?.fn ?? 0) + 1;
+    /* حفظ في قاعدة بيانات الشبكة — فقط للتذاكر الرئيسية (غير الوسيطة) */
+    if (!t.isRelayPoint) {
+      if (t.serviceType === "hotspot_internal" || t.serviceType === "hotspot_external") {
+        const existing = await db.select({ fn: hotspotPointsTable.flashNumber })
+          .from(hotspotPointsTable).orderBy(desc(hotspotPointsTable.flashNumber)).limit(1);
+        const nextFlash = (existing[0]?.fn ?? 0) + 1;
 
-      await db.insert(hotspotPointsTable).values({
-        name: t.deviceName ?? `فلاش ${nextFlash}`,
-        location: t.address ?? "غير محدد",
-        hotspotType: t.serviceType === "hotspot_internal" ? "internal" : "external",
-        flashNumber: nextFlash,
-        deviceName: t.deviceName ?? null,
-        clientName: t.clientName ?? null,
-        clientPhone: t.clientPhone ?? null,
-        subscriptionFee: t.subscriptionFee ?? null,
-        locationUrl: t.locationUrl ?? null,
-        status: "active",
-        supervisorId: t.createdById ?? null,
-        notes: archiveNotes ?? null,
-      });
-    } else if (t.serviceType === "broadband_internal") {
-      /* جلب أعلى flashNumber */
-      const existing = await db.select({ fn: broadbandPointsTable.flashNumber })
-        .from(broadbandPointsTable).orderBy(desc(broadbandPointsTable.flashNumber)).limit(1);
-      const nextFlash = (existing[0]?.fn ?? 0) + 1;
+        await db.insert(hotspotPointsTable).values({
+          name: t.deviceName ?? `فلاش ${nextFlash}`,
+          location: finalAddress ?? "غير محدد",
+          hotspotType: t.serviceType === "hotspot_internal" ? "internal" : "external",
+          flashNumber: nextFlash,
+          deviceName: t.deviceName ?? null,
+          clientName: t.clientName ?? null,
+          clientPhone: t.clientPhone ?? null,
+          subscriptionFee: t.subscriptionFee ?? null,
+          locationUrl: finalLocationUrl ?? null,
+          status: "active",
+          supervisorId: t.createdById ?? null,
+          notes: archiveNotes ?? null,
+        });
+      } else if (t.serviceType === "broadband_internal") {
+        const existing = await db.select({ fn: broadbandPointsTable.flashNumber })
+          .from(broadbandPointsTable).orderBy(desc(broadbandPointsTable.flashNumber)).limit(1);
+        const nextFlash = (existing[0]?.fn ?? 0) + 1;
 
-      await db.insert(broadbandPointsTable).values({
-        name: t.subscriptionName ?? `P${nextFlash}`,
-        location: t.address ?? "غير محدد",
-        flashNumber: nextFlash,
-        subscriptionName: t.subscriptionName ?? null,
-        clientName: t.clientName ?? null,
-        clientPhone: t.clientPhone ?? null,
-        subscriptionFee: t.internetFee ?? null,
-        locationUrl: t.locationUrl ?? null,
-        status: "active",
-        supervisorId: t.createdById ?? null,
-        notes: archiveNotes ?? null,
-      });
+        await db.insert(broadbandPointsTable).values({
+          name: t.subscriptionName ?? `P${nextFlash}`,
+          location: finalAddress ?? "غير محدد",
+          flashNumber: nextFlash,
+          subscriptionName: t.subscriptionName ?? null,
+          clientName: t.clientName ?? null,
+          clientPhone: t.clientPhone ?? null,
+          subscriptionFee: t.internetFee ?? null,
+          locationUrl: finalLocationUrl ?? null,
+          status: "active",
+          supervisorId: t.createdById ?? null,
+          notes: archiveNotes ?? null,
+        });
+      }
     }
 
     /* تحديث حالة التذكرة */
-    const [updated] = await db.update(installationTicketsTable).set({
+    const updateSet: any = {
       status: "archived",
       archivedAt: new Date(),
       archiveNotes: archiveNotes ?? null,
-      engineerNotes: engineerNotes ?? null,
       updatedAt: new Date(),
-    }).where(eq(installationTicketsTable.id, id)).returning();
+    };
+    if (addrOverride !== undefined) updateSet.address = addrOverride;
+    if (urlOverride  !== undefined) updateSet.locationUrl = urlOverride;
+    if (engineerNotes !== undefined) updateSet.engineerNotes = engineerNotes;
 
-    /* ── إذا كانت هذه نقطة بث وسيطة → تحقق هل اكتملت كل النقاط ──
-       إذا نعم → ارفع القيد عن التذكرة الأصلية (hasRelayPoints = false)
-       حتى يظهر زر "بدء التنفيذ" للمهندس على التذكرة الرئيسية        */
+    const [updated] = await db.update(installationTicketsTable)
+      .set(updateSet)
+      .where(eq(installationTicketsTable.id, id)).returning();
+
+    /* إذا كانت نقطة بث وسيطة → تحقق هل اكتملت كل النقاط */
     if (t.isRelayPoint && t.parentTicketId) {
       const siblings = await db.select().from(installationTicketsTable)
         .where(eq(installationTicketsTable.parentTicketId, t.parentTicketId));
