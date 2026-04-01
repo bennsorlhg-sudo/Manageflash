@@ -151,7 +151,7 @@ export default function NewInstallationScreen() {
         ))}
       </View>
 
-      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
         {/* ══ الخطوة 1: نوع التركيب ══ */}
         {step === 1 && (
@@ -260,7 +260,7 @@ export default function NewInstallationScreen() {
 
             {/* إسناد فني */}
             <Text style={s.fieldLabel}>الفني المسؤول — اختياري</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipsRow}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipsRow} keyboardShouldPersistTaps="handled">
               <TouchableOpacity
                 style={[s.chip, assignedId === null && s.chipActive]}
                 onPress={() => { setAssignedId(null); setAssignedName(""); }}

@@ -1133,7 +1133,7 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
             </View>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={pm.body}>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={pm.body} keyboardShouldPersistTaps="handled">
 
             {/* ── تأكيد الموقع ── */}
             <Text style={pm.sectionTitle}>تأكيد الموقع</Text>
@@ -1181,7 +1181,7 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
 
             {/* ── إسناد فني ── */}
             <Text style={pm.sectionTitle}>الفني المنفذ — اختياري</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={pm.chips}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={pm.chips} keyboardShouldPersistTaps="handled">
               <TouchableOpacity
                 style={[pm.chip, assignedId===null && pm.chipActive]}
                 onPress={() => { setAssignedId(null); setAssignedName(""); }}
