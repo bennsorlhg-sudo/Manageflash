@@ -1,40 +1,58 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Platform,
+  ActivityIndicator, RefreshControl, Platform, Modal, Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, formatDate } from "@/utils/api";
+import { apiGet, apiDelete, formatDate } from "@/utils/api";
+
+/* ─── حالات العرض ─── */
+const STATUS_INFO: Record<string, { bg: string; color: string; label: string }> = {
+  pending:     { bg: "#FF980022", color: "#FF9800", label: "جديدة" },
+  new:         { bg: "#FF980022", color: "#FF9800", label: "جديدة" },
+  draft:       { bg: Colors.surfaceElevated, color: Colors.textSecondary, label: "مسودة" },
+  in_progress: { bg: "#2196F322", color: "#2196F3", label: "جاري التنفيذ" },
+  completed:   { bg: "#4CAF5022", color: "#4CAF50", label: "مكتملة" },
+  archived:    { bg: Colors.surfaceElevated, color: Colors.textSecondary, label: "مؤرشفة" },
+};
+
+const SERVICE_TYPE_AR: Record<string, string> = {
+  hotspot_internal: "هوتسبوت داخلي",
+  hotspot_external: "هوتسبوت خارجي",
+  broadband:        "برودباند",
+  hotspot:          "هوتسبوت",
+};
 
 const FILTERS = [
-  { key: "all", label: "الكل" },
-  { key: "pending", label: "جديدة" },
+  { key: "all",         label: "الكل" },
+  { key: "pending",     label: "جديدة" },
   { key: "in_progress", label: "جاري" },
-  { key: "completed", label: "مكتملة" },
+  { key: "completed",   label: "مكتملة" },
+  { key: "draft",       label: "مسودة" },
 ];
-
-const STATUS_INFO: Record<string, { bg: string; color: string; label: string }> = {
-  pending:     { bg: Colors.statusLight.ready,            color: Colors.status.ready,            label: "جديدة" },
-  in_progress: { bg: Colors.statusLight.active_incomplete, color: Colors.status.active_incomplete, label: "جاري التنفيذ" },
-  completed:   { bg: Colors.statusLight.active,           color: Colors.status.active,           label: "مكتملة" },
-};
 
 export default function TaskTrackingScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
-  const [filter, setFilter] = useState("all");
-  const [tasks, setTasks] = useState<any[]>([]);
+  const [filter,        setFilter]        = useState("all");
+  const [tasks,         setTasks]         = useState<any[]>([]);
   const [repairTickets, setRepairTickets] = useState<any[]>([]);
-  const [installTickets, setInstallTickets] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [activeSource, setActiveSource] = useState<"tasks" | "repair" | "install">("tasks");
+  const [installTickets,setInstallTickets]= useState<any[]>([]);
+  const [loading,       setLoading]       = useState(true);
+  const [refreshing,    setRefreshing]    = useState(false);
+  const [activeSource,  setActiveSource]  = useState<"tasks" | "repair" | "install">("repair");
+
+  /* مودال الحذف */
+  const [deleteModal, setDeleteModal] = useState<{ visible: boolean; id: number | null }>({
+    visible: false, id: null,
+  });
+  const [deleting, setDeleting] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
@@ -43,9 +61,9 @@ export default function TaskTrackingScreen() {
         apiGet("/tickets/repair", token),
         apiGet("/tickets/installation", token),
       ]);
-      setTasks(t);
-      setRepairTickets(r);
-      setInstallTickets(i);
+      setTasks(Array.isArray(t) ? t : []);
+      setRepairTickets(Array.isArray(r) ? r : []);
+      setInstallTickets(Array.isArray(i) ? i : []);
     } catch {} finally {
       setLoading(false); setRefreshing(false);
     }
@@ -54,37 +72,38 @@ export default function TaskTrackingScreen() {
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const getItems = () => {
-    if (activeSource === "repair") return repairTickets;
+    if (activeSource === "repair")  return repairTickets;
     if (activeSource === "install") return installTickets;
     return tasks;
   };
 
   const filtered = getItems().filter(item => {
-    if (filter === "all") return true;
-    const status = item.status ?? "";
-    if (filter === "pending") return ["pending", "new"].includes(status);
-    if (filter === "in_progress") return status === "in_progress";
-    if (filter === "completed") return ["completed", "archived"].includes(status);
+    if (filter === "all")         return true;
+    if (filter === "draft")       return item.status === "draft";
+    if (filter === "pending")     return ["pending", "new"].includes(item.status ?? "");
+    if (filter === "in_progress") return item.status === "in_progress";
+    if (filter === "completed")   return ["completed", "archived"].includes(item.status ?? "");
     return true;
   });
 
-  const getStatusInfo = (status: string) => {
-    const normalized = status === "new" ? "pending" : status === "archived" ? "completed" : status;
-    return STATUS_INFO[normalized] ?? { bg: Colors.surfaceElevated, color: Colors.textSecondary, label: status };
+  const getStatusInfo = (status: string) => STATUS_INFO[status]
+    ?? { bg: Colors.surfaceElevated, color: Colors.textSecondary, label: status };
+
+  /* حذف التذكرة */
+  const confirmDelete = (id: number) => setDeleteModal({ visible: true, id });
+  const handleDelete = async () => {
+    if (!deleteModal.id) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/tickets/repair/${deleteModal.id}`, token);
+      setRepairTickets(prev => prev.filter(t => t.id !== deleteModal.id));
+    } catch {} finally {
+      setDeleting(false);
+      setDeleteModal({ visible: false, id: null });
+    }
   };
 
-  const getItemTitle = (item: any) => {
-    if (activeSource === "repair") return `صيانة: ${item.serviceNumber ?? item.clientName ?? "—"}`;
-    if (activeSource === "install") return `تركيب: ${item.clientName ?? "—"}`;
-    return item.title ?? "مهمة";
-  };
-
-  const getItemSub = (item: any) => {
-    if (activeSource === "repair") return item.problemDescription ?? item.serviceType;
-    if (activeSource === "install") return item.address ?? item.serviceType;
-    return item.targetPersonName ?? item.targetRole;
-  };
-
+  /* ─────────────── التحميل ─────────────── */
   if (loading) {
     return (
       <View style={[styles.container, { justifyContent: "center", alignItems: "center" }]}>
@@ -93,8 +112,10 @@ export default function TaskTrackingScreen() {
     );
   }
 
+  /* ─────────────── الواجهة ─────────────── */
   return (
     <View style={[styles.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
+      {/* رأس */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-forward" size={24} color={Colors.text} />
@@ -103,19 +124,24 @@ export default function TaskTrackingScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* مصدر البيانات */}
+      {/* تبديل المصدر */}
       <View style={styles.sourceRow}>
         {[
-          { key: "tasks", label: `المهام (${tasks.length})` },
-          { key: "repair", label: `صيانة (${repairTickets.length})` },
-          { key: "install", label: `تركيب (${installTickets.length})` },
+          { key: "repair",  label: "الإصلاح",  count: repairTickets.length,  color: Colors.error },
+          { key: "install", label: "التركيبات", count: installTickets.length, color: Colors.info  },
+          { key: "tasks",   label: "المهام",     count: tasks.length,          color: Colors.warning},
         ].map(s => (
           <TouchableOpacity
             key={s.key}
-            style={[styles.sourceBtn, activeSource === s.key && styles.sourceBtnActive]}
+            style={[styles.sourceBtn, activeSource === s.key && { backgroundColor: s.color + "22", borderColor: s.color }]}
             onPress={() => setActiveSource(s.key as any)}
           >
-            <Text style={[styles.sourceBtnText, activeSource === s.key && styles.sourceBtnTextActive]}>
+            {s.count > 0 && (
+              <View style={[styles.badge, { backgroundColor: s.color }]}>
+                <Text style={styles.badgeText}>{s.count}</Text>
+              </View>
+            )}
+            <Text style={[styles.sourceBtnText, activeSource === s.key && { color: s.color, fontWeight: "bold" }]}>
               {s.label}
             </Text>
           </TouchableOpacity>
@@ -123,7 +149,8 @@ export default function TaskTrackingScreen() {
       </View>
 
       {/* فلتر الحالة */}
-      <View style={styles.filterRow}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll} contentContainerStyle={styles.filterContent}>
         {FILTERS.map(f => (
           <TouchableOpacity
             key={f.key}
@@ -135,67 +162,259 @@ export default function TaskTrackingScreen() {
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={Colors.roles.supervisor} />}
       >
         <Text style={styles.countText}>{filtered.length} عنصر</Text>
+
         {filtered.length === 0 ? (
-          <View style={styles.emptyContainer}>
+          <View style={styles.emptyBox}>
             <Ionicons name="checkmark-circle-outline" size={48} color={Colors.textMuted} />
             <Text style={styles.emptyText}>لا توجد عناصر في هذا الفلتر</Text>
           </View>
-        ) : filtered.map(item => {
-          const si = getStatusInfo(item.status);
-          return (
-            <View key={item.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{getItemTitle(item)}</Text>
-                <View style={[styles.statusBadge, { backgroundColor: si.bg }]}>
-                  <Text style={[styles.statusText, { color: si.color }]}>{si.label}</Text>
-                </View>
-              </View>
-              {getItemSub(item) && (
-                <Text style={styles.cardSub}>{getItemSub(item)}</Text>
-              )}
-              {item.assignedToName && (
-                <Text style={styles.cardSub}>المهندس: {item.assignedToName}</Text>
-              )}
-              <Text style={styles.cardDate}>{formatDate(item.createdAt)}</Text>
-            </View>
-          );
-        })}
-        <View style={{ height: 40 }} />
+        ) : activeSource === "repair" ? (
+          filtered.map(item => <RepairCard key={item.id} item={item} onDelete={() => confirmDelete(item.id)} />)
+        ) : (
+          filtered.map(item => <GenericCard key={item.id} item={item} source={activeSource} />)
+        )}
+
+        <View style={{ height: 50 }} />
       </ScrollView>
+
+      {/* مودال تأكيد الحذف */}
+      <Modal visible={deleteModal.visible} transparent animationType="fade">
+        <View style={styles.overlay}>
+          <View style={styles.modalCard}>
+            <Ionicons name="trash" size={48} color={Colors.error} />
+            <Text style={styles.modalTitle}>حذف التذكرة</Text>
+            <Text style={styles.modalMsg}>هل أنت متأكد من حذف التذكرة؟{"\n"}لن تظهر للمهندس الفني بعد الحذف.</Text>
+            <View style={styles.modalBtns}>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: Colors.error }]}
+                onPress={handleDelete}
+                disabled={deleting}
+              >
+                {deleting
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={styles.modalBtnText}>حذف</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+                onPress={() => setDeleteModal({ visible: false, id: null })}
+                disabled={deleting}
+              >
+                <Text style={[styles.modalBtnText, { color: Colors.textSecondary }]}>إلغاء</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
+/* ──────────────────────────────────────────
+   بطاقة تذكرة الإصلاح
+────────────────────────────────────────── */
+function RepairCard({ item, onDelete }: { item: any; onDelete: () => void }) {
+  const si = item.status === "new"     ? STATUS_INFO["pending"]
+           : item.status === "archived" ? STATUS_INFO["archived"]
+           : STATUS_INFO[item.status] ?? { bg: Colors.surfaceElevated, color: Colors.textSecondary, label: item.status };
+
+  const serviceLabel = SERVICE_TYPE_AR[item.serviceType] ?? item.serviceType ?? "—";
+  const serviceColor = item.serviceType === "broadband"        ? Colors.info
+                     : item.serviceType === "hotspot_external" ? Colors.warning
+                     : Colors.primary;
+  const showContact = item.serviceType !== "hotspot_external";
+
+  return (
+    <View style={styles.card}>
+      {/* ── رأس البطاقة ── */}
+      <View style={styles.cardHeader}>
+        <View style={[styles.typePill, { backgroundColor: serviceColor + "22" }]}>
+          <Text style={[styles.typePillText, { color: serviceColor }]}>{serviceLabel}</Text>
+        </View>
+        <View style={[styles.statusPill, { backgroundColor: si.bg }]}>
+          <Text style={[styles.statusPillText, { color: si.color }]}>{si.label}</Text>
+        </View>
+      </View>
+
+      <Text style={styles.serviceNum}>رقم الخدمة: {item.serviceNumber ?? "—"}</Text>
+
+      {showContact && item.clientName && (
+        <Text style={styles.cardText}>{item.clientName}</Text>
+      )}
+      {showContact && item.clientPhone && (
+        <TouchableOpacity style={styles.infoRow} onPress={() => Linking.openURL(`tel:${item.clientPhone}`)}>
+          <Ionicons name="call-outline" size={14} color={Colors.success} />
+          <Text style={[styles.cardText, { color: Colors.success }]}>{item.clientPhone}</Text>
+        </TouchableOpacity>
+      )}
+      {item.location && (
+        <Text style={styles.locationText}>{item.location}</Text>
+      )}
+      {item.locationUrl && (
+        <TouchableOpacity style={styles.infoRow} onPress={() => Linking.openURL(item.locationUrl)}>
+          <Ionicons name="location-outline" size={14} color={Colors.info} />
+          <Text style={[styles.cardText, { color: Colors.info }]}>فتح الخريطة</Text>
+        </TouchableOpacity>
+      )}
+      {item.problemDescription && (
+        <Text style={styles.problemText}>{item.problemDescription}</Text>
+      )}
+      {item.assignedToName && (
+        <Text style={styles.assignedText}>الفني: {item.assignedToName}</Text>
+      )}
+      <View style={styles.cardFooter}>
+        <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
+        <TouchableOpacity style={styles.deleteBtn} onPress={onDelete}>
+          <Ionicons name="trash-outline" size={15} color={Colors.error} />
+          <Text style={styles.deleteBtnText}>حذف</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+/* ──────────────────────────────────────────
+   بطاقة عامة (تركيبات / مهام)
+────────────────────────────────────────── */
+function GenericCard({ item, source }: { item: any; source: string }) {
+  const si = STATUS_INFO[item.status === "new" ? "pending" : item.status]
+    ?? { bg: Colors.surfaceElevated, color: Colors.textSecondary, label: item.status ?? "" };
+
+  const title = source === "install"
+    ? `تركيب: ${item.clientName ?? "—"}`
+    : item.title ?? item.description ?? "مهمة";
+
+  const sub = source === "install"
+    ? (item.address ?? item.serviceType ?? "")
+    : (item.targetPersonName ?? item.targetRole ?? "");
+
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Text style={styles.genericTitle}>{title}</Text>
+        <View style={[styles.statusPill, { backgroundColor: si.bg }]}>
+          <Text style={[styles.statusPillText, { color: si.color }]}>{si.label}</Text>
+        </View>
+      </View>
+      {!!sub && <Text style={styles.cardText}>{sub}</Text>}
+      {item.assignedToName && <Text style={styles.assignedText}>المهندس: {item.assignedToName}</Text>}
+      <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
+    </View>
+  );
+}
+
+/* ──────────────────────────────────────────
+   الأنماط
+────────────────────────────────────────── */
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", padding: 20, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  container:  { flex: 1, backgroundColor: Colors.background },
+  header: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
   title: { fontSize: 20, fontWeight: "bold", color: Colors.text },
+
   sourceRow: { flexDirection: "row-reverse", padding: 12, gap: 8 },
-  sourceBtn: { flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 10, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
-  sourceBtnActive: { backgroundColor: Colors.roles.supervisor + "22", borderColor: Colors.roles.supervisor },
-  sourceBtnText: { fontSize: 11, color: Colors.textSecondary },
-  sourceBtnTextActive: { color: Colors.roles.supervisor, fontWeight: "bold" },
-  filterRow: { flexDirection: "row-reverse", paddingHorizontal: 12, gap: 8 },
-  filterBtn: { flex: 1, paddingVertical: 7, alignItems: "center", borderRadius: 8, borderWidth: 1, borderColor: Colors.border },
+  sourceBtn: {
+    flex: 1,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  sourceBtnText: { fontSize: 12, color: Colors.textSecondary },
+  badge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    alignItems: "center", justifyContent: "center", paddingHorizontal: 4,
+  },
+  badgeText: { fontSize: 10, color: "#fff", fontWeight: "bold" },
+
+  filterScroll: { maxHeight: 44 },
+  filterContent: { flexDirection: "row-reverse", paddingHorizontal: 12, paddingVertical: 6, gap: 8 },
+  filterBtn: {
+    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
+  },
   filterBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  filterBtnText: { fontSize: 11, color: Colors.textSecondary },
-  filterBtnTextActive: { color: "#FFF", fontWeight: "bold" },
-  content: { padding: 14 },
+  filterBtnText: { fontSize: 12, color: Colors.textSecondary },
+  filterBtnTextActive: { color: "#fff", fontWeight: "bold" },
+
+  content:   { padding: 14 },
   countText: { color: Colors.textMuted, fontSize: 12, textAlign: "right", marginBottom: 8 },
-  emptyContainer: { alignItems: "center", marginTop: 60, gap: 12 },
+  emptyBox:  { alignItems: "center", marginTop: 60, gap: 12 },
   emptyText: { color: Colors.textMuted, fontSize: 14 },
-  card: { backgroundColor: Colors.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Colors.border },
-  cardHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 },
-  cardTitle: { flex: 1, fontSize: 14, fontWeight: "bold", color: Colors.text, textAlign: "right" },
-  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  statusText: { fontSize: 11, fontWeight: "bold" },
-  cardSub: { fontSize: 12, color: Colors.textSecondary, textAlign: "right", marginBottom: 2 },
-  cardDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right", marginTop: 6 },
+
+  /* البطاقة */
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    gap: 6,
+  },
+  cardHeader: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 8,
+  },
+  typePill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  typePillText: { fontSize: 12, fontWeight: "bold" },
+  statusPill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10 },
+  statusPillText: { fontSize: 11, fontWeight: "bold" },
+
+  serviceNum:    { fontSize: 14, fontWeight: "bold", color: Colors.text, textAlign: "right" },
+  genericTitle:  { fontSize: 14, fontWeight: "bold", color: Colors.text, textAlign: "right", flex: 1 },
+  cardText:      { fontSize: 13, color: Colors.textSecondary, textAlign: "right" },
+  locationText:  { fontSize: 13, color: Colors.textSecondary, textAlign: "right" },
+  problemText:   { fontSize: 13, color: Colors.text, textAlign: "right", fontStyle: "italic" },
+  assignedText:  { fontSize: 12, color: Colors.textMuted, textAlign: "right" },
+  dateText:      { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+
+  infoRow: { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
+  cardFooter: {
+    flexDirection: "row-reverse",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 4,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+  },
+  deleteBtn: { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
+  deleteBtnText: { fontSize: 13, color: Colors.error, fontWeight: "600" },
+
+  /* مودال الحذف */
+  overlay: { flex: 1, backgroundColor: "#000000BB", alignItems: "center", justifyContent: "center" },
+  modalCard: {
+    backgroundColor: Colors.surface,
+    borderRadius: 20,
+    padding: 28,
+    width: "84%",
+    alignItems: "center",
+    gap: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: Colors.text },
+  modalMsg:   { fontSize: 14, color: Colors.textSecondary, textAlign: "center" },
+  modalBtns:  { flexDirection: "row-reverse", gap: 10, marginTop: 6 },
+  modalBtn:   { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center" },
+  modalBtnText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
 });

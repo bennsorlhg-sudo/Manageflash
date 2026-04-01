@@ -27,15 +27,26 @@ router.get("/tickets/repair", requireAuth, async (req, res) => {
 
 router.post("/tickets/repair", requireAuth, async (req, res) => {
   try {
-    const { serviceNumber, clientName, clientPhone, serviceType, problemDescription,
-      priority, assignedToId, assignedToName, locationUrl, notes } = req.body;
+    const {
+      serviceNumber, clientName, clientPhone, serviceType, problemDescription,
+      priority, assignedToId, assignedToName, locationUrl, location, notes, status,
+    } = req.body;
 
     const [row] = await db.insert(repairTicketsTable).values({
-      serviceNumber, clientName, clientPhone, serviceType: serviceType ?? "hotspot",
-      problemDescription, status: "pending",
-      priority: priority ?? "medium",
-      assignedToId, assignedToName, locationUrl, notes,
+      serviceNumber: serviceNumber ?? "manual",
+      clientName: clientName ?? null,
+      clientPhone: clientPhone ?? null,
+      serviceType: serviceType ?? "hotspot_internal",
+      problemDescription: problemDescription ?? null,
+      location: location ?? null,
+      status: status ?? "pending",
+      priority: priority ?? "normal",
+      assignedToId: assignedToId ?? null,
+      assignedToName: assignedToName ?? null,
+      locationUrl: locationUrl ?? null,
+      notes: notes ?? null,
       createdById: req.currentUser!.id,
+      createdByName: req.currentUser!.name ?? null,
     }).returning();
 
     res.json(row);
@@ -48,7 +59,11 @@ router.patch("/tickets/repair/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const updates: any = { updatedAt: new Date() };
-    const fields = ["status", "priority", "assignedToId", "assignedToName", "notes", "locationUrl"];
+    const fields = [
+      "status", "priority", "assignedToId", "assignedToName",
+      "notes", "locationUrl", "location", "clientName", "clientPhone",
+      "problemDescription", "serviceType",
+    ];
     for (const f of fields) if (req.body[f] !== undefined) updates[f] = req.body[f];
     if (req.body.status === "completed") updates.resolvedAt = new Date();
 
@@ -57,6 +72,16 @@ router.patch("/tickets/repair/:id", requireAuth, async (req, res) => {
     res.json(row);
   } catch (error) {
     res.status(500).json({ error: "فشل في تحديث التذكرة", details: String(error) });
+  }
+});
+
+router.delete("/tickets/repair/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(repairTicketsTable).where(eq(repairTicketsTable.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حذف التذكرة", details: String(error) });
   }
 });
 
