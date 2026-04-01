@@ -203,6 +203,46 @@ export default function TechEngineerScreen() {
     showToast("تم نسخ الرقم");
   };
 
+  /* ─── نسخ رابط الموقع ─── */
+  const copyMapUrl = async (url: string) => {
+    await Clipboard.setStringAsync(url);
+    showToast("تم نسخ رابط الموقع");
+  };
+
+  /* ─── فتح الموقع في خرائط جوجل مع دبوس ─── */
+  const openMap = async (rawUrl: string) => {
+    /* 1) استخرج الإحداثيات إذا وجدت في الرابط (مثل @24.123,46.456) */
+    const coordMatch = rawUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    /* 2) أو إحداثيات في قائمة نص مثل "24.123,46.456" */
+    const plainCoord = rawUrl.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+
+    let mapsUrl: string;
+
+    if (coordMatch) {
+      const lat = coordMatch[1];
+      const lng = coordMatch[2];
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    } else if (plainCoord) {
+      const lat = plainCoord[1];
+      const lng = plainCoord[2];
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    } else if (rawUrl.startsWith("http")) {
+      /* رابط جاهز — نفتحه مباشرة (goo.gl أو maps.app.goo.gl) */
+      mapsUrl = rawUrl;
+    } else {
+      /* نصّ موقع — ابحث عنه */
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawUrl)}`;
+    }
+
+    const canOpen = await Linking.canOpenURL(mapsUrl);
+    if (canOpen) {
+      Linking.openURL(mapsUrl);
+    } else {
+      /* fallback: افتح في المتصفح */
+      Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(rawUrl)}`);
+    }
+  };
+
   /* ─── toast ─── */
   const showToast = (msg: string) => {
     setToast(msg);
@@ -284,6 +324,8 @@ export default function TechEngineerScreen() {
                 onStart={() => startTicket(ticket)}
                 onComplete={() => openComplete(ticket)}
                 onCopy={copyPhone}
+                onOpenMap={openMap}
+                onCopyMap={copyMapUrl}
               />
             ) : (
               <InstallCard
@@ -294,6 +336,8 @@ export default function TechEngineerScreen() {
                 onStart={() => startTicket(ticket)}
                 onComplete={() => openComplete(ticket)}
                 onCopy={copyPhone}
+                onOpenMap={openMap}
+                onCopyMap={copyMapUrl}
               />
             )
           )
@@ -396,17 +440,19 @@ export default function TechEngineerScreen() {
 /* ════════════════════════════════════════════════
    بطاقة الإصلاح
 ════════════════════════════════════════════════ */
-function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
+function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap }: {
   ticket: Ticket;
   section: "new" | "inprogress";
   saving: boolean;
   onStart: () => void;
   onComplete: () => void;
   onCopy: (p: string) => void;
+  onOpenMap: (url: string) => void;
+  onCopyMap: (url: string) => void;
 }) {
   const isExternal = ticket.serviceType === "hotspot_external";
   const typeInfo   = REPAIR_TYPE[ticket.serviceType] ?? { label: `إصلاح ${ticket.serviceType}`, color: Colors.error };
-  const hasPhone   = !!ticket.clientPhone;
+  const hasPhone   = !!ticket.clientPhone && !isExternal;
   const hasMap     = !!ticket.locationUrl;
 
   return (
@@ -422,7 +468,7 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
 
       <View style={c.divider} />
 
-      {/* البيانات */}
+      {/* اسم العميل */}
       {!isExternal && ticket.clientName && (
         <View style={c.row}>
           <Ionicons name="person-outline" size={15} color={Colors.textSecondary} />
@@ -430,23 +476,61 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
         </View>
       )}
 
+      {/* رقم الجوال + نسخ */}
       {!isExternal && ticket.clientPhone && (
         <View style={c.row}>
           <Ionicons name="call-outline" size={15} color={Colors.success} />
-          <Text style={[c.rowText, { color: Colors.success }]}>{ticket.clientPhone}</Text>
+          <Text style={[c.rowText, { color: Colors.success, flex: 1 }]}>{ticket.clientPhone}</Text>
           <TouchableOpacity onPress={() => onCopy(ticket.clientPhone!)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="copy-outline" size={14} color={Colors.textMuted} />
+            <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
       )}
 
+      {/* الموقع + أيقونتا فتح ونسخ */}
       {ticket.location && (
         <View style={c.row}>
           <Ionicons name="location-outline" size={15} color={Colors.textSecondary} />
           <Text style={[c.rowText, { flex: 1 }]}>{ticket.location}</Text>
+          {hasMap && (
+            <>
+              <TouchableOpacity
+                onPress={() => onOpenMap(ticket.locationUrl!)}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                style={c.mapIconBtn}
+              >
+                <Ionicons name="navigate" size={16} color={Colors.info} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onCopyMap(ticket.locationUrl!)}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                style={c.mapIconBtn}
+              >
+                <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 
+      {/* إذا لا يوجد وصف موقع نصي ولكن يوجد رابط خريطة فقط */}
+      {!ticket.location && hasMap && (
+        <View style={c.row}>
+          <Ionicons name="location-outline" size={15} color={Colors.info} />
+          <TouchableOpacity onPress={() => onOpenMap(ticket.locationUrl!)} style={{ flex: 1 }}>
+            <Text style={[c.rowText, { color: Colors.info, flex: 1 }]}>فتح الموقع في خرائط جوجل</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onCopyMap(ticket.locationUrl!)}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            style={c.mapIconBtn}
+          >
+            <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* وصف المشكلة */}
       {ticket.problemDescription && (
         <View style={c.problemBox}>
           <Text style={c.problemLabel}>المشكلة:</Text>
@@ -464,43 +548,15 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
       {/* الأزرار */}
       <View style={c.btnRow}>
         {section === "new" ? (
-          <ActionBtn
-            label="بدء التنفيذ"
-            icon="play-circle"
-            color="#2196F3"
-            loading={saving}
-            onPress={onStart}
-            flex={2}
-          />
+          <ActionBtn label="بدء التنفيذ" icon="play-circle" color="#2196F3" loading={saving} onPress={onStart} flex={2} />
         ) : (
-          <ActionBtn
-            label="تم التنفيذ"
-            icon="checkmark-done-circle"
-            color={Colors.success}
-            loading={saving}
-            onPress={onComplete}
-            flex={2}
-          />
+          <ActionBtn label="تم التنفيذ" icon="checkmark-done-circle" color={Colors.success} loading={saving} onPress={onComplete} flex={2} />
         )}
-
         {hasPhone && (
-          <ActionBtn
-            label="اتصال"
-            icon="call"
-            color={Colors.success}
-            onPress={() => Linking.openURL(`tel:${ticket.clientPhone}`)}
-            flex={1}
-          />
+          <ActionBtn label="اتصال" icon="call" color={Colors.success} onPress={() => Linking.openURL(`tel:${ticket.clientPhone}`)} flex={1} />
         )}
-
         {hasMap && (
-          <ActionBtn
-            label="الموقع"
-            icon="map"
-            color={Colors.info}
-            onPress={() => Linking.openURL(ticket.locationUrl!)}
-            flex={1}
-          />
+          <ActionBtn label="خريطة" icon="map" color={Colors.info} onPress={() => onOpenMap(ticket.locationUrl!)} flex={1} />
         )}
       </View>
     </View>
@@ -510,13 +566,15 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
 /* ════════════════════════════════════════════════
    بطاقة التركيب
 ════════════════════════════════════════════════ */
-function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
+function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap }: {
   ticket: Ticket;
   section: "new" | "inprogress";
   saving: boolean;
   onStart: () => void;
   onComplete: () => void;
   onCopy: (p: string) => void;
+  onOpenMap: (url: string) => void;
+  onCopyMap: (url: string) => void;
 }) {
   const typeLabel = INSTALL_TYPE[ticket.serviceType] ?? `تركيب ${ticket.serviceType}`;
   const hasPhone  = !!ticket.clientPhone;
@@ -545,17 +603,53 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
       {ticket.clientPhone && (
         <View style={c.row}>
           <Ionicons name="call-outline" size={15} color={Colors.success} />
-          <Text style={[c.rowText, { color: Colors.success }]}>{ticket.clientPhone}</Text>
+          <Text style={[c.rowText, { color: Colors.success, flex: 1 }]}>{ticket.clientPhone}</Text>
           <TouchableOpacity onPress={() => onCopy(ticket.clientPhone!)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <Ionicons name="copy-outline" size={14} color={Colors.textMuted} />
+            <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
           </TouchableOpacity>
         </View>
       )}
 
+      {/* الموقع + أيقونتا فتح ونسخ */}
       {ticket.location && (
         <View style={c.row}>
           <Ionicons name="location-outline" size={15} color={Colors.textSecondary} />
           <Text style={[c.rowText, { flex: 1 }]}>{ticket.location}</Text>
+          {hasMap && (
+            <>
+              <TouchableOpacity
+                onPress={() => onOpenMap(ticket.locationUrl!)}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                style={c.mapIconBtn}
+              >
+                <Ionicons name="navigate" size={16} color={Colors.info} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => onCopyMap(ticket.locationUrl!)}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                style={c.mapIconBtn}
+              >
+                <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      )}
+
+      {/* إذا لا يوجد وصف موقع نصي ولكن يوجد رابط خريطة فقط */}
+      {!ticket.location && hasMap && (
+        <View style={c.row}>
+          <Ionicons name="location-outline" size={15} color={Colors.info} />
+          <TouchableOpacity onPress={() => onOpenMap(ticket.locationUrl!)} style={{ flex: 1 }}>
+            <Text style={[c.rowText, { color: Colors.info }]}>فتح الموقع في خرائط جوجل</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => onCopyMap(ticket.locationUrl!)}
+            hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+            style={c.mapIconBtn}
+          >
+            <Ionicons name="copy-outline" size={15} color={Colors.textMuted} />
+          </TouchableOpacity>
         </View>
       )}
 
@@ -606,13 +700,7 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy }: {
         )}
 
         {hasMap && (
-          <ActionBtn
-            label="الموقع"
-            icon="map"
-            color={Colors.info}
-            onPress={() => Linking.openURL(ticket.locationUrl!)}
-            flex={1}
-          />
+          <ActionBtn label="خريطة" icon="map" color={Colors.info} onPress={() => onOpenMap(ticket.locationUrl!)} flex={1} />
         )}
       </View>
     </View>
@@ -812,6 +900,13 @@ const c = StyleSheet.create({
 
   notesBox: { flexDirection: "row-reverse", alignItems: "flex-start", gap: 6 },
   notesText: { fontSize: 12, color: Colors.textSecondary, flex: 1, textAlign: "right", fontStyle: "italic" },
+
+  mapIconBtn: {
+    width: 30, height: 30, borderRadius: 8,
+    backgroundColor: Colors.surfaceElevated,
+    alignItems: "center", justifyContent: "center",
+    marginRight: 2,
+  },
 
   btnRow: { flexDirection: "row-reverse", gap: 8, marginTop: 4 },
 });
