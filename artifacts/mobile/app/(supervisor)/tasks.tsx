@@ -217,35 +217,11 @@ export default function TaskTrackingScreen() {
       </View>
 
       {/* ── فلتر الحالة ── */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterScroll}
-        contentContainerStyle={styles.filterContent}
-      >
-        {STATUS_FILTERS.map(f => (
-          <TouchableOpacity
-            key={f.key}
-            style={[styles.filterBtn, statusFilter === f.key && styles.filterBtnActive]}
-            onPress={() => setStatusFilter(f.key)}
-          >
-            <Text style={[styles.filterBtnText, statusFilter === f.key && styles.filterBtnTextActive]}>
-              {f.label}
-              {f.key !== "all" && (() => {
-                const src = section === "repair" ? repairTickets : installTickets;
-                const n = src.filter(it => {
-                  const s = it.status ?? "";
-                  if (f.key === "pending")     return ["pending", "new", "draft"].includes(s);
-                  if (f.key === "in_progress") return s === "in_progress";
-                  if (f.key === "completed")   return ["completed", "archived"].includes(s);
-                  return false;
-                }).length;
-                return n > 0 ? ` (${n})` : "";
-              })()}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <FilterBar
+        active={statusFilter}
+        onSelect={setStatusFilter}
+        source={section === "repair" ? repairTickets : installTickets}
+      />
 
       {/* ── القائمة ── */}
       <ScrollView
@@ -376,6 +352,107 @@ export default function TaskTrackingScreen() {
     </View>
   );
 }
+
+/* ════════════════════════════════════════════════
+   مكوّن فلتر الحالة
+════════════════════════════════════════════════ */
+function countByKey(items: any[], key: string) {
+  return items.filter(it => {
+    const s = it.status ?? "";
+    if (key === "pending")     return ["pending", "new", "draft"].includes(s);
+    if (key === "in_progress") return s === "in_progress";
+    if (key === "completed")   return ["completed", "archived"].includes(s);
+    return false;
+  }).length;
+}
+
+const FILTER_META: Record<string, { color: string }> = {
+  all:         { color: Colors.primary },
+  pending:     { color: "#2196F3" },
+  in_progress: { color: "#FF9800" },
+  completed:   { color: "#4CAF50" },
+};
+
+function FilterBar({ active, onSelect, source }: {
+  active: string;
+  onSelect: (k: string) => void;
+  source: any[];
+}) {
+  const filters = [
+    { key: "all",         label: "الكل",          count: source.length },
+    { key: "pending",     label: "جديدة",         count: countByKey(source, "pending") },
+    { key: "in_progress", label: "جاري",          count: countByKey(source, "in_progress") },
+    { key: "completed",   label: "مكتملة",        count: countByKey(source, "completed") },
+  ];
+
+  return (
+    <View style={fbStyles.row}>
+      {filters.map(f => {
+        const isActive = active === f.key;
+        const meta = FILTER_META[f.key];
+        return (
+          <TouchableOpacity
+            key={f.key}
+            style={[
+              fbStyles.btn,
+              isActive && { backgroundColor: meta.color + "22", borderColor: meta.color },
+            ]}
+            onPress={() => onSelect(f.key)}
+            activeOpacity={0.7}
+          >
+            <Text style={[fbStyles.label, isActive && { color: meta.color, fontWeight: "bold" }]}>
+              {f.label}
+            </Text>
+            <View style={[fbStyles.badge, { backgroundColor: isActive ? meta.color : Colors.border }]}>
+              <Text style={fbStyles.badgeText}>{f.count}</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+const fbStyles = StyleSheet.create({
+  row: {
+    flexDirection: "row-reverse",
+    paddingHorizontal: 14,
+    paddingBottom: 10,
+    gap: 8,
+  },
+  btn: {
+    flex: 1,
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    gap: 5,
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.textSecondary,
+    textAlign: "center",
+  },
+  badge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+  },
+  badgeText: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: "#fff",
+  },
+});
 
 /* ════════════════════════════════════════════════
    بطاقة تذكرة الإصلاح
@@ -690,17 +767,6 @@ const styles = StyleSheet.create({
     alignItems: "center", justifyContent: "center", paddingHorizontal: 5,
   },
   countBubbleText: { fontSize: 11, color: "#fff", fontWeight: "bold" },
-
-  /* فلتر الحالة */
-  filterScroll:  { maxHeight: 44 },
-  filterContent: { flexDirection: "row-reverse", paddingHorizontal: 14, paddingVertical: 6, gap: 8 },
-  filterBtn: {
-    paddingHorizontal: 14, paddingVertical: 7, borderRadius: 10,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
-  },
-  filterBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  filterBtnText:   { fontSize: 12, color: Colors.textSecondary },
-  filterBtnTextActive: { color: "#fff", fontWeight: "bold" },
 
   /* محتوى القائمة */
   content:   { padding: 14 },
