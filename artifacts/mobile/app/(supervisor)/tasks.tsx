@@ -729,20 +729,24 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
 
   const isRelayPoint  = !!item.isRelayPoint;
   const sequenceOrder = item.sequenceOrder ?? 0;
-  const isBoosterCard = !!item.isBooster;
-  const relayColor    = isBoosterCard ? "#4CAF50" : isRelayPoint ? "#9C27B0" : typeColor;
+  const hasBooster    = !!item.hasBooster;
+  const cardColor     = isRelayPoint ? "#9C27B0" : typeColor;
 
   return (
-    <View style={[rc.card, { borderLeftColor: relayColor }]}>
+    <View style={[rc.card, { borderLeftColor: cardColor }]}>
 
       {/* ══ رأس البطاقة ══ */}
       <View style={rc.head}>
         <Text style={rc.num}>#{item.id}</Text>
-        <View style={[rc.typeBadge, { backgroundColor: relayColor + "22" }]}>
-          <Text style={[rc.typeBadgeText, { color: relayColor }]}>
-            {isBoosterCard ? "هوتسبوت داخلي (مقوي)" : typeLabel}
-          </Text>
+        <View style={[rc.typeBadge, { backgroundColor: cardColor + "22" }]}>
+          <Text style={[rc.typeBadgeText, { color: cardColor }]}>{typeLabel}</Text>
         </View>
+        {hasBooster && (
+          <View style={icSup.boosterPill}>
+            <Ionicons name="hardware-chip" size={11} color="#4CAF50" />
+            <Text style={icSup.boosterPillText}>+ هوتسبوت</Text>
+          </View>
+        )}
         <View style={[rc.statusDot, { backgroundColor: si.color }]} />
       </View>
 
@@ -751,14 +755,6 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
         <View style={icSup.relayBadge}>
           <Ionicons name="git-network-outline" size={12} color="#9C27B0" />
           <Text style={icSup.relayText}>نقطة البث رقم {sequenceOrder}</Text>
-        </View>
-      )}
-
-      {/* شارة مقوي داخلي هوتسبوت */}
-      {!!item.isBooster && (
-        <View style={icSup.boosterBadge}>
-          <Ionicons name="hardware-chip" size={12} color="#4CAF50" />
-          <Text style={icSup.boosterText}>مقوي داخلي هوتسبوت — مرتبط بتذكرة برودباند #{item.parentTicketId}</Text>
         </View>
       )}
 
@@ -805,11 +801,43 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
         </View>
       )}
 
-      {/* ══ معلومات الجهاز (بعد التجهيز) ══ */}
+      {/* ══ معلومات الجهاز البرودباند (بعد التجهيز) ══ */}
       {item.deviceName && (
         <View style={rc.row}>
-          <Ionicons name="hardware-chip-outline" size={14} color={Colors.textSecondary} />
-          <Text style={rc.rowText}>{item.deviceName} — {item.deviceSerial ?? "—"}</Text>
+          <Ionicons name="globe-outline" size={14} color="#2196F3" />
+          <Text style={[rc.rowText, { color: "#2196F3", fontWeight: "600" }]}>
+            {hasBooster ? "برودباند: " : ""}{item.deviceName}{item.deviceSerial ? ` — ${item.deviceSerial}` : ""}
+          </Text>
+        </View>
+      )}
+
+      {/* ══ بيانات المقوي الداخلي هوتسبوت ══ */}
+      {hasBooster && (
+        <View style={icSup.boosterBox}>
+          <View style={icSup.boosterBoxHeader}>
+            <Ionicons name="hardware-chip" size={13} color="#4CAF50" />
+            <Text style={icSup.boosterBoxTitle}>مقوي داخلي هوتسبوت</Text>
+          </View>
+          {item.boosterDeviceName && (
+            <View style={rc.row}>
+              <Ionicons name="wifi-outline" size={13} color="#4CAF50" />
+              <Text style={[rc.rowText, { color: "#4CAF50", fontWeight: "600", fontSize: 13 }]}>
+                {item.boosterDeviceName}{item.boosterDeviceSerial ? ` — ${item.boosterDeviceSerial}` : ""}
+              </Text>
+            </View>
+          )}
+          {item.boosterSubscriptionFee && (
+            <View style={rc.row}>
+              <Ionicons name="cash-outline" size={13} color={Colors.success} />
+              <Text style={[rc.rowText, { fontSize: 13 }]}>اشتراك المقوي: {item.boosterSubscriptionFee} ريال</Text>
+            </View>
+          )}
+          {!item.boosterSubscriptionFee && (
+            <View style={rc.row}>
+              <Ionicons name="information-circle-outline" size={13} color={Colors.textMuted} />
+              <Text style={[rc.rowText, { color: Colors.textMuted, fontSize: 12 }]}>اشتراك المقوي: لم يُدفع</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -1245,7 +1273,7 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
                     <MF label="قيمة اشتراك المقوي (فارغ = لم يُدفع)" value={boosterForm.subscriptionFee} onChange={v=>setBF("subscriptionFee",v)} kb="decimal-pad" />
                     <View style={pm.boosterNote}>
                       <Ionicons name="information-circle-outline" size={13} color={Colors.warning} />
-                      <Text style={pm.boosterNoteText}>سيصل المهندس تذكرة منفصلة لتركيب المقوي مع توضيح ربطه بالبرودباند</Text>
+                      <Text style={pm.boosterNoteText}>بيانات المقوي ستُحفظ ضمن نفس تذكرة البرودباند وتظهر للمهندس التقني</Text>
                     </View>
                   </View>
                 )}
@@ -1768,4 +1796,32 @@ const icSup = StyleSheet.create({
     paddingVertical: 5,
   },
   boosterText: { fontSize: 11, fontWeight: "bold", color: "#4CAF50", flex: 1, textAlign: "right" },
+
+  boosterPill: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#4CAF5022",
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  boosterPillText: { fontSize: 10, fontWeight: "bold", color: "#4CAF50" },
+
+  boosterBox: {
+    backgroundColor: "#4CAF5010",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4CAF5040",
+    padding: 8,
+    gap: 4,
+    marginTop: 4,
+  },
+  boosterBoxHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 4,
+  },
+  boosterBoxTitle: { fontSize: 12, fontWeight: "bold", color: "#4CAF50" },
 });

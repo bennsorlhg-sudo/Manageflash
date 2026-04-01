@@ -111,7 +111,7 @@ export default function NewInstallationScreen() {
         locationUrl: form.locationUrl.trim() || null,
         notes:       form.notes.trim()       || null,
       };
-      if (svcType === "hotspot_internal" && form.subscriptionFee) {
+      if ((svcType === "hotspot_internal" || svcType === "broadband_internal") && form.subscriptionFee) {
         payload.subscriptionFee = parseFloat(form.subscriptionFee) || null;
       }
       if (svcType === "external" && locationImage) {
@@ -244,9 +244,10 @@ export default function NewInstallationScreen() {
             {/* حقول برودباند داخلي */}
             {svcType === "broadband_internal" && (
               <>
-                <FormField label="اسم العميل *" value={form.clientName}  onChange={v => setForm(f=>({...f,clientName:v}))} />
-                <FormField label="رقم الجوال *" value={form.clientPhone} onChange={v => setForm(f=>({...f,clientPhone:v}))} kb="phone-pad" />
-                <FormField label="وصف الموقع"   value={form.address}     onChange={v => setForm(f=>({...f,address:v}))} multiline />
+                <FormField label="اسم العميل *"                    value={form.clientName}      onChange={v => setForm(f=>({...f,clientName:v}))} />
+                <FormField label="رقم الجوال *"                    value={form.clientPhone}     onChange={v => setForm(f=>({...f,clientPhone:v}))} kb="phone-pad" />
+                <FormField label="وصف الموقع"                      value={form.address}         onChange={v => setForm(f=>({...f,address:v}))} multiline />
+                <FormField label="قيمة اشتراك الموديم — اختياري"  value={form.subscriptionFee} onChange={v => setForm(f=>({...f,subscriptionFee:v}))} kb="decimal-pad" placeholder="0.00" />
               </>
             )}
 

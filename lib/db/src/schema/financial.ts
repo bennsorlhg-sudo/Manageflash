@@ -202,8 +202,11 @@ export const installationTicketsTable = pgTable("installation_tickets", {
   parentTicketId: integer("parent_ticket_id"),
   isRelayPoint: boolean("is_relay_point").default(false),
   sequenceOrder: integer("sequence_order").default(0),
-  /* مقوي داخلي هوتسبوت مرتبط بتذكرة برودباند */
-  isBooster: boolean("is_booster").default(false),
+  /* مقوي داخلي هوتسبوت ضمن نفس التذكرة (برودباند داخلي) */
+  hasBooster:            boolean("has_booster").default(false),
+  boosterDeviceName:     text("booster_device_name"),
+  boosterDeviceSerial:   text("booster_device_serial"),
+  boosterSubscriptionFee: text("booster_subscription_fee"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

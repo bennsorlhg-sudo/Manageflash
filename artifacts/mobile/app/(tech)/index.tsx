@@ -53,10 +53,12 @@ interface Ticket {
   sequenceOrder:    number;
   contractImageUrl: string | null;
   /* مقوي هوتسبوت داخلي */
-  isBooster:        boolean;
-  parentTicketId:   number | null;
-  deviceName:       string | null;
-  deviceSerial:     string | null;
+  hasBooster:             boolean;
+  boosterDeviceName:      string | null;
+  boosterDeviceSerial:    string | null;
+  boosterSubscriptionFee: string | null;
+  deviceName:             string | null;
+  deviceSerial:           string | null;
 }
 
 /* ─────────────── المكوّن الرئيسي ─────────────── */
@@ -133,10 +135,12 @@ export default function TechEngineerScreen() {
     isRelayPoint:     raw.isRelayPoint ?? false,
     sequenceOrder:    raw.sequenceOrder ?? 0,
     contractImageUrl: raw.contractImageUrl ?? null,
-    isBooster:        raw.isBooster ?? false,
-    parentTicketId:   raw.parentTicketId ?? null,
-    deviceName:       raw.deviceName ?? null,
-    deviceSerial:     raw.deviceSerial ?? null,
+    hasBooster:             raw.hasBooster ?? false,
+    boosterDeviceName:      raw.boosterDeviceName ?? null,
+    boosterDeviceSerial:    raw.boosterDeviceSerial ?? null,
+    boosterSubscriptionFee: raw.boosterSubscriptionFee ?? null,
+    deviceName:             raw.deviceName ?? null,
+    deviceSerial:           raw.deviceSerial ?? null,
   });
 
   /* ─── التذاكر حسب القسم ─── */
@@ -635,7 +639,7 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
   const isBlocked   = ticket.hasRelayPoints && ticket.status === "preparing";
   const boosterColor = "#4CAF50";
 
-  const cardBorderColor = ticket.isBooster ? boosterColor : ticket.isRelayPoint ? "#9C27B0" : Colors.success;
+  const cardBorderColor = ticket.isRelayPoint ? "#9C27B0" : Colors.success;
 
   return (
     <View style={[c.card, { borderLeftColor: cardBorderColor }]}>
@@ -648,18 +652,14 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
         <View style={[c.typeBadge, { backgroundColor: cardBorderColor + "22" }]}>
           <Text style={[c.typeBadgeText, { color: cardBorderColor }]}>{typeLabel}</Text>
         </View>
+        {ticket.hasBooster && (
+          <View style={ic2.boosterPill}>
+            <Ionicons name="hardware-chip" size={11} color={boosterColor} />
+            <Text style={ic2.boosterPillText}>+ هوتسبوت</Text>
+          </View>
+        )}
         <View style={[c.statusDot, { backgroundColor: section === "new" ? "#2196F3" : Colors.warning }]} />
       </View>
-
-      {/* شارة المقوي الداخلي */}
-      {ticket.isBooster && (
-        <View style={ic2.boosterBadge}>
-          <Ionicons name="hardware-chip" size={13} color={boosterColor} />
-          <Text style={[ic2.boosterText]}>
-            مقوي داخلي هوتسبوت — مرتبط بتذكرة برودباند #{ticket.parentTicketId}
-          </Text>
-        </View>
-      )}
 
       {/* شارة نقطة البث مع رقم الترتيب */}
       {ticket.isRelayPoint && (
@@ -737,13 +737,42 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
         </View>
       )}
 
-      {/* اسم الجهاز ورقمه */}
+      {/* اسم جهاز البرودباند */}
       {ticket.deviceName && (
-        <View style={[c.row, { backgroundColor: (ticket.isBooster ? "#4CAF50" : Colors.primary) + "10", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 }]}>
-          <Ionicons name="hardware-chip-outline" size={15} color={ticket.isBooster ? "#4CAF50" : Colors.primary} />
-          <Text style={[c.rowText, { color: ticket.isBooster ? "#4CAF50" : Colors.primary, fontWeight: "bold" }]}>
-            {ticket.deviceName}{ticket.deviceSerial ? ` — ${ticket.deviceSerial}` : ""}
+        <View style={[c.row, { backgroundColor: Colors.primary + "10", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 }]}>
+          <Ionicons name="globe-outline" size={15} color={Colors.primary} />
+          <Text style={[c.rowText, { color: Colors.primary, fontWeight: "bold" }]}>
+            {ticket.hasBooster ? "برودباند: " : ""}{ticket.deviceName}{ticket.deviceSerial ? ` — ${ticket.deviceSerial}` : ""}
           </Text>
+        </View>
+      )}
+
+      {/* بيانات المقوي الداخلي هوتسبوت */}
+      {ticket.hasBooster && (
+        <View style={ic2.boosterBox}>
+          <View style={ic2.boosterBoxHeader}>
+            <Ionicons name="hardware-chip" size={13} color={boosterColor} />
+            <Text style={ic2.boosterBoxTitle}>مقوي داخلي هوتسبوت</Text>
+          </View>
+          {ticket.boosterDeviceName && (
+            <View style={c.row}>
+              <Ionicons name="wifi-outline" size={13} color={boosterColor} />
+              <Text style={[c.rowText, { color: boosterColor, fontWeight: "600", fontSize: 13 }]}>
+                {ticket.boosterDeviceName}{ticket.boosterDeviceSerial ? ` — ${ticket.boosterDeviceSerial}` : ""}
+              </Text>
+            </View>
+          )}
+          {ticket.boosterSubscriptionFee ? (
+            <View style={c.row}>
+              <Ionicons name="cash-outline" size={13} color={Colors.success} />
+              <Text style={[c.rowText, { fontSize: 13 }]}>اشتراك المقوي: {ticket.boosterSubscriptionFee} ريال</Text>
+            </View>
+          ) : (
+            <View style={c.row}>
+              <Ionicons name="information-circle-outline" size={13} color={Colors.textMuted} />
+              <Text style={[c.rowText, { color: Colors.textMuted, fontSize: 12 }]}>اشتراك المقوي: لم يُدفع بعد</Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -1055,6 +1084,34 @@ const ic2 = StyleSheet.create({
     alignSelf: "flex-end",
   },
   boosterText: { fontSize: 12, fontWeight: "bold", color: "#4CAF50", flex: 1, textAlign: "right" },
+
+  boosterPill: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#4CAF5022",
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+  },
+  boosterPillText: { fontSize: 10, fontWeight: "bold", color: "#4CAF50" },
+
+  boosterBox: {
+    backgroundColor: "#4CAF5010",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#4CAF5040",
+    padding: 8,
+    gap: 4,
+    marginTop: 4,
+  },
+  boosterBoxHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    marginBottom: 4,
+  },
+  boosterBoxTitle: { fontSize: 12, fontWeight: "bold", color: "#4CAF50" },
 });
 
 /* مودال صورة الموقع */

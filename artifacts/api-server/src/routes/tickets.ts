@@ -226,6 +226,19 @@ router.post("/tickets/installation/:id/prepare", requireAuth, async (req, res) =
     if (relayPointsJson !== null)     updates.relayPointsJson = relayPointsJson;
     updates.hasRelayPoints = hasRelays;
 
+    /* مقوي داخلي هوتسبوت — يُخزّن ضمن نفس التذكرة */
+    if (boosterDevice && boosterDevice.deviceName) {
+      updates.hasBooster             = true;
+      updates.boosterDeviceName      = boosterDevice.deviceName;
+      updates.boosterDeviceSerial    = boosterDevice.deviceSerial ?? null;
+      updates.boosterSubscriptionFee = boosterDevice.subscriptionFee ? String(boosterDevice.subscriptionFee) : null;
+    } else if (boosterDevice === null) {
+      updates.hasBooster             = false;
+      updates.boosterDeviceName      = null;
+      updates.boosterDeviceSerial    = null;
+      updates.boosterSubscriptionFee = null;
+    }
+
     const [row] = await db.update(installationTicketsTable)
       .set(updates)
       .where(eq(installationTicketsTable.id, id))
@@ -250,39 +263,6 @@ router.post("/tickets/installation/:id/prepare", requireAuth, async (req, res) =
           createdById: req.currentUser!.id,
         });
       }
-    }
-
-    /* مقوي داخلي هوتسبوت — أنشئ تذكرة مستقلة مرتبطة بهذه التذكرة */
-    if (boosterDevice && boosterDevice.deviceName) {
-      /* احذف مقوي قديم إن وجد (إعادة تجهيز) */
-      await db.delete(installationTicketsTable)
-        .where(
-          and(
-            eq(installationTicketsTable.parentTicketId, id),
-            eq(installationTicketsTable.isBooster, true)
-          )
-        );
-      /* نقل بيانات العميل من التذكرة الأصلية */
-      const parentRows = await db.select().from(installationTicketsTable)
-        .where(eq(installationTicketsTable.id, id));
-      const parent = parentRows[0];
-      await db.insert(installationTicketsTable).values({
-        serviceType: "hotspot_internal",
-        clientName: parent?.clientName ?? null,
-        clientPhone: parent?.clientPhone ?? null,
-        address: parent?.address ?? address ?? null,
-        locationUrl: parent?.locationUrl ?? locationUrl ?? null,
-        assignedToId: assignedToId ?? parent?.assignedToId ?? null,
-        assignedToName: assignedToName ?? parent?.assignedToName ?? null,
-        deviceName: boosterDevice.deviceName,
-        deviceSerial: boosterDevice.deviceSerial ?? null,
-        subscriptionFee: boosterDevice.subscriptionFee ? String(boosterDevice.subscriptionFee) : null,
-        notes: "مقوي داخلي هوتسبوت — مرتبط بتذكرة برودباند داخلي #" + id,
-        status: "preparing",
-        isBooster: true,
-        parentTicketId: id,
-        createdById: req.currentUser!.id,
-      });
     }
 
     res.json(row);
