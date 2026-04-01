@@ -266,9 +266,24 @@ function RepairCard({ item, onDelete }: { item: any; onDelete: () => void }) {
       {item.problemDescription && (
         <Text style={styles.problemText}>{item.problemDescription}</Text>
       )}
-      {item.assignedToName && (
-        <Text style={styles.assignedText}>الفني: {item.assignedToName}</Text>
-      )}
+      {/* التخصيص */}
+      <View style={styles.assignBadge}>
+        {item.assignedToName ? (
+          <>
+            <Ionicons name="person-circle" size={14} color={Colors.primary} />
+            <Text style={[styles.assignBadgeText, { color: Colors.primary }]}>
+              مخصصة للمهندس: {item.assignedToName}
+            </Text>
+          </>
+        ) : (
+          <>
+            <Ionicons name="people-circle-outline" size={14} color={Colors.roles.supervisor} />
+            <Text style={[styles.assignBadgeText, { color: Colors.roles.supervisor }]}>
+              مرسلة للكل
+            </Text>
+          </>
+        )}
+      </View>
       <View style={styles.cardFooter}>
         <Text style={styles.dateText}>{formatDate(item.createdAt)}</Text>
         <TouchableOpacity style={styles.deleteBtn} onPress={onDelete}>
@@ -401,6 +416,17 @@ const styles = StyleSheet.create({
   },
   deleteBtn: { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
   deleteBtnText: { fontSize: 13, color: Colors.error, fontWeight: "600" },
+  assignBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignSelf: "flex-end",
+  },
+  assignBadgeText: { fontSize: 12, fontWeight: "600" },
 
   /* مودال الحذف */
   overlay: { flex: 1, backgroundColor: "#000000BB", alignItems: "center", justifyContent: "center" },

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity,
   Linking, ActivityIndicator, Platform, Modal, Image,
@@ -53,6 +53,13 @@ export default function CreateRepairTicketScreen() {
   const [notes,         setNotes]           = useState("");
   const [photoUri,      setPhotoUri]        = useState<string | null>(null);
 
+  /* التخصيص */
+  type AssignMode = "all" | "specific";
+  const [assignMode,          setAssignMode]          = useState<AssignMode>("all");
+  const [engineers,           setEngineers]           = useState<{ id: number; name: string; phone?: string }[]>([]);
+  const [selectedEngineerId,  setSelectedEngineerId]  = useState<number | null>(null);
+  const [selectedEngineerName,setSelectedEngineerName]= useState("");
+
   /* مودال النتيجة */
   const [modal, setModal] = useState<{ visible: boolean; title: string; msg: string; ok: boolean; back: boolean }>({
     visible: false, title: "", msg: "", ok: true, back: false,
@@ -61,6 +68,13 @@ export default function CreateRepairTicketScreen() {
 
   const showModal = (title: string, msg: string, ok = true, back = false) =>
     setModal({ visible: true, title, msg, ok, back });
+
+  /* ─── جلب قائمة المهندسين ─── */
+  useEffect(() => {
+    apiGet("/users/engineers", token)
+      .then((data: any) => setEngineers(Array.isArray(data) ? data : []))
+      .catch(() => {});
+  }, [token]);
 
   /* ─── جلب بيانات الخدمة ─── */
   const handleFetch = async () => {
@@ -133,6 +147,9 @@ export default function CreateRepairTicketScreen() {
       if (!clientName.trim())  return "اسم العميل مطلوب";
       if (!clientPhone.trim()) return "رقم الجوال مطلوب";
     }
+    if (!asDraft && assignMode === "specific" && !selectedEngineerId) {
+      return "يجب اختيار اسم المهندس عند التخصيص لمهندس معين";
+    }
     return null;
   };
 
@@ -155,6 +172,8 @@ export default function CreateRepairTicketScreen() {
         priority,
         status:        asDraft ? "draft" : "pending",
         createdByName: user?.name ?? null,
+        assignedToId:   assignMode === "specific" ? selectedEngineerId  : null,
+        assignedToName: assignMode === "specific" ? selectedEngineerName : null,
       });
 
       showModal(
@@ -355,6 +374,101 @@ export default function CreateRepairTicketScreen() {
           </View>
         )}
 
+        {/* ══════════════ التخصيص ══════════════ */}
+        <SectionTitle title="التخصيص" />
+        <View style={styles.chipRow}>
+          <TouchableOpacity
+            style={[
+              styles.assignChip,
+              assignMode === "all" && { backgroundColor: Colors.roles.supervisor, borderColor: Colors.roles.supervisor },
+            ]}
+            onPress={() => {
+              setAssignMode("all");
+              setSelectedEngineerId(null);
+              setSelectedEngineerName("");
+            }}
+          >
+            <Ionicons
+              name="people"
+              size={15}
+              color={assignMode === "all" ? "#fff" : Colors.textSecondary}
+            />
+            <Text style={[styles.chipText, assignMode === "all" && { color: "#fff" }]}>
+              إرسال للكل
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.assignChip,
+              assignMode === "specific" && { backgroundColor: Colors.primary, borderColor: Colors.primary },
+            ]}
+            onPress={() => setAssignMode("specific")}
+          >
+            <Ionicons
+              name="person"
+              size={15}
+              color={assignMode === "specific" ? "#fff" : Colors.textSecondary}
+            />
+            <Text style={[styles.chipText, assignMode === "specific" && { color: "#fff" }]}>
+              تخصيص لمهندس
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {assignMode === "specific" && (
+          <View style={styles.engineerListBox}>
+            {engineers.length === 0 ? (
+              <Text style={styles.emptyEngText}>لا يوجد مهندسون مسجلون</Text>
+            ) : (
+              engineers.map(eng => (
+                <TouchableOpacity
+                  key={eng.id}
+                  style={[
+                    styles.engineerRow,
+                    selectedEngineerId === eng.id && styles.engineerRowActive,
+                  ]}
+                  onPress={() => {
+                    setSelectedEngineerId(eng.id);
+                    setSelectedEngineerName(eng.name);
+                  }}
+                >
+                  <View style={[
+                    styles.radioCircle,
+                    selectedEngineerId === eng.id && { backgroundColor: Colors.primary, borderColor: Colors.primary },
+                  ]}>
+                    {selectedEngineerId === eng.id && (
+                      <View style={styles.radioDot} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.engineerName, selectedEngineerId === eng.id && { color: Colors.primary }]}>
+                      {eng.name}
+                    </Text>
+                    {eng.phone && (
+                      <Text style={styles.engineerPhone}>{eng.phone}</Text>
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))
+            )}
+          </View>
+        )}
+
+        {assignMode === "specific" && selectedEngineerName ? (
+          <View style={styles.selectedEngineerBadge}>
+            <Ionicons name="checkmark-circle" size={15} color={Colors.success} />
+            <Text style={styles.selectedEngineerText}>سيُخصص للمهندس: {selectedEngineerName}</Text>
+          </View>
+        ) : assignMode === "all" ? (
+          <View style={styles.selectedEngineerBadge}>
+            <Ionicons name="people-circle-outline" size={15} color={Colors.roles.supervisor} />
+            <Text style={[styles.selectedEngineerText, { color: Colors.roles.supervisor }]}>
+              ستُرسل لجميع المهندسين الفنيين
+            </Text>
+          </View>
+        ) : null}
+
         {/* ══════════════ أزرار الحفظ ══════════════ */}
         <View style={styles.actionRow}>
           <TouchableOpacity
@@ -502,6 +616,19 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
   },
   chipText: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary },
+  assignChip: {
+    flex: 1,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
 
   /* صورة */
   photoBtn: {
@@ -554,6 +681,50 @@ const styles = StyleSheet.create({
   btnSendText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
   cancelBtn: { alignItems: "center", marginTop: 14, paddingVertical: 10 },
   cancelBtnText: { color: Colors.textMuted, fontSize: 14 },
+
+  /* التخصيص */
+  engineerListBox: {
+    backgroundColor: Colors.surface,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginTop: 10,
+    overflow: "hidden",
+  },
+  engineerRow: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  engineerRowActive: {
+    backgroundColor: Colors.primary + "11",
+  },
+  radioCircle: {
+    width: 20, height: 20, borderRadius: 10,
+    borderWidth: 2, borderColor: Colors.border,
+    alignItems: "center", justifyContent: "center",
+  },
+  radioDot: {
+    width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff",
+  },
+  engineerName: { fontSize: 14, fontWeight: "600", color: Colors.text, textAlign: "right" },
+  engineerPhone: { fontSize: 12, color: Colors.textMuted, textAlign: "right", marginTop: 2 },
+  emptyEngText: { fontSize: 13, color: Colors.textMuted, textAlign: "center", padding: 16 },
+  selectedEngineerBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+    backgroundColor: Colors.surface,
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: Colors.success + "40",
+  },
+  selectedEngineerText: { fontSize: 13, color: Colors.success, fontWeight: "600" },
 
   /* مودال */
   overlay: { flex: 1, backgroundColor: "#000000AA", alignItems: "center", justifyContent: "center" },
