@@ -181,7 +181,8 @@ export default function TechEngineerScreen() {
         ? `/tickets/repair/${completeTicket.sourceId}`
         : `/tickets/installation/${completeTicket.sourceId}`;
       await apiPatch(endpoint, token, {
-        status: "completed",
+        status:        "completed",
+        assignedToName: myName || undefined,
         ...(cNotes ? { notes: cNotes } : {}),
         ...(completeTicket.source === "install" && cNotes ? { engineerNotes: cNotes } : {}),
       });

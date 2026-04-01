@@ -464,116 +464,111 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
   onTimeline: () => void;
   onDelete: () => void;
 }) {
-  const si = STATUS[item.status] ?? STATUS["pending"];
+  const si        = STATUS[item.status] ?? STATUS["pending"];
   const typeLabel = SERVICE_TYPE_AR[item.serviceType] ?? `إصلاح ${item.serviceType ?? ""}`;
   const typeColor = SERVICE_TYPE_COLOR[item.serviceType] ?? Colors.primary;
   const prioInfo  = PRIORITY_AR[item.priority] ?? { label: item.priority ?? "—", color: Colors.textMuted };
-  const canDelete = ["new", "pending", "draft"].includes(item.status ?? "");
   const showContact = item.serviceType !== "hotspot_external";
+  const isCompleted = item.status === "completed";
 
   return (
-    <View style={styles.card}>
-      {/* ─ رأس البطاقة ─ */}
-      <View style={styles.cardHeader}>
-        <Text style={styles.ticketNum}>#{item.id}</Text>
-        <View style={{ flexDirection: "row-reverse", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-start" }}>
-          <View style={[styles.typePill, { backgroundColor: typeColor + "22" }]}>
-            <Text style={[styles.typePillText, { color: typeColor }]}>{typeLabel}</Text>
-          </View>
-          <View style={[styles.statusPill, { backgroundColor: si.bg }]}>
-            <Text style={[styles.statusPillText, { color: si.color }]}>{si.label}</Text>
-          </View>
+    <View style={[rc.card, { borderLeftColor: typeColor }]}>
+
+      {/* ══ رأس البطاقة ══ */}
+      <View style={rc.head}>
+        <Text style={rc.num}>#{item.id}</Text>
+        <View style={[rc.typeBadge, { backgroundColor: typeColor + "22" }]}>
+          <Text style={[rc.typeBadgeText, { color: typeColor }]}>{typeLabel}</Text>
         </View>
+        <View style={[rc.statusDot, { backgroundColor: si.color }]} />
       </View>
 
-      {/* ─ الأولوية والتخصيص ─ */}
-      <View style={styles.metaRow}>
-        <View style={[styles.prioPill, { borderColor: prioInfo.color + "60" }]}>
-          <Text style={[styles.prioPillText, { color: prioInfo.color }]}>{prioInfo.label}</Text>
+      <View style={rc.divider} />
+
+      {/* ══ شارة الأولوية + المهندس ══ */}
+      <View style={rc.metaRow}>
+        <View style={[rc.prioBadge, { borderColor: prioInfo.color + "70" }]}>
+          <Text style={[rc.prioBadgeText, { color: prioInfo.color }]}>{prioInfo.label}</Text>
         </View>
-        <View style={styles.assignPill}>
+        <View style={rc.engineerBadge}>
           <Ionicons
             name={item.assignedToName ? "person-circle" : "people-circle-outline"}
-            size={13}
+            size={14}
             color={item.assignedToName ? Colors.primary : Colors.textMuted}
           />
-          <Text style={[styles.assignPillText, { color: item.assignedToName ? Colors.primary : Colors.textMuted }]}>
+          <Text style={[rc.engineerText, { color: item.assignedToName ? Colors.primary : Colors.textMuted }]}>
             {item.assignedToName ?? "للجميع"}
           </Text>
         </View>
       </View>
 
-      {/* ─ بيانات العميل ─ */}
+      {/* ══ اسم العميل ══ */}
       {showContact && item.clientName && (
-        <Text style={styles.clientName}>{item.clientName}</Text>
+        <View style={rc.row}>
+          <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
+          <Text style={rc.rowText}>{item.clientName}</Text>
+        </View>
       )}
+
+      {/* ══ الجوال ══ */}
       {showContact && item.clientPhone && (
-        <TouchableOpacity style={styles.phoneRow} onPress={() => Linking.openURL(`tel:${item.clientPhone}`)}>
+        <TouchableOpacity style={rc.row} onPress={() => Linking.openURL(`tel:${item.clientPhone}`)}>
           <Ionicons name="call-outline" size={14} color={Colors.success} />
-          <Text style={styles.phoneText}>{item.clientPhone}</Text>
+          <Text style={[rc.rowText, { color: Colors.success }]}>{item.clientPhone}</Text>
         </TouchableOpacity>
       )}
 
-      {/* ─ الموقع ─ */}
+      {/* ══ الموقع ══ */}
       {item.location && (
-        <View style={styles.infoRow}>
+        <View style={rc.row}>
           <Ionicons name="location-outline" size={14} color={Colors.textSecondary} />
-          <Text style={styles.infoText}>{item.location}</Text>
+          <Text style={[rc.rowText, { flex: 1 }]}>{item.location}</Text>
+          {item.locationUrl && (
+            <TouchableOpacity onPress={() => Linking.openURL(item.locationUrl)} hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}>
+              <Ionicons name="navigate" size={15} color={Colors.info} />
+            </TouchableOpacity>
+          )}
         </View>
       )}
-      {item.locationUrl && (
-        <TouchableOpacity style={styles.infoRow} onPress={() => Linking.openURL(item.locationUrl)}>
+      {!item.location && item.locationUrl && (
+        <TouchableOpacity style={rc.row} onPress={() => Linking.openURL(item.locationUrl)}>
           <Ionicons name="map-outline" size={14} color={Colors.info} />
-          <Text style={[styles.infoText, { color: Colors.info }]}>فتح الخريطة</Text>
+          <Text style={[rc.rowText, { color: Colors.info }]}>فتح الموقع في الخريطة</Text>
         </TouchableOpacity>
       )}
 
-      {/* ─ وصف المشكلة ─ */}
+      {/* ══ المشكلة ══ */}
       {item.problemDescription && (
-        <Text style={styles.problemText}>{item.problemDescription}</Text>
-      )}
-
-      {/* ─ التفاصيل الموسّعة ─ */}
-      {expanded && (
-        <View style={styles.expandedBox}>
-          {item.notes && (
-            <InfoLine icon="document-text-outline" label="ملاحظات" value={item.notes} />
-          )}
-          {item.createdByName && (
-            <InfoLine icon="person-outline" label="أنشأه" value={item.createdByName} />
-          )}
-          <InfoLine icon="calendar-outline" label="تاريخ الإنشاء" value={formatDate(item.createdAt)} />
-          {item.startedAt && (
-            <InfoLine icon="play-outline" label="بدء التنفيذ" value={formatDate(item.startedAt)} />
-          )}
-          {item.resolvedAt && (
-            <InfoLine icon="checkmark-circle-outline" label="وقت الإنجاز" value={formatDate(item.resolvedAt)} />
-          )}
+        <View style={rc.problemBox}>
+          <Text style={rc.problemLabel}>المشكلة:</Text>
+          <Text style={rc.problemText}>{item.problemDescription}</Text>
         </View>
       )}
 
-      {/* ─ أزرار الإجراءات ─ */}
-      <View style={styles.actionBtns}>
-        <TouchableOpacity style={styles.actionBtn} onPress={onExpand}>
-          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color={Colors.textSecondary} />
-          <Text style={styles.actionBtnText}>{expanded ? "إخفاء" : "تفاصيل"}</Text>
-        </TouchableOpacity>
+      {/* ══ المهندس المنجز (للمكتملة) ══ */}
+      {isCompleted && item.assignedToName && (
+        <View style={rc.completedEngineerBox}>
+          <Ionicons name="checkmark-done-circle" size={15} color={Colors.success} />
+          <Text style={rc.completedEngineerText}>أنجزه: {item.assignedToName}</Text>
+        </View>
+      )}
 
-        <TouchableOpacity style={styles.actionBtn} onPress={onTimeline}>
-          <Ionicons name="time-outline" size={14} color={SUPERVISOR_COLOR} />
-          <Text style={[styles.actionBtnText, { color: SUPERVISOR_COLOR }]}>متابعة</Text>
-        </TouchableOpacity>
+      {/* ══ التفاصيل الموسّعة ══ */}
+      {expanded && (
+        <View style={rc.expandedBox}>
+          {item.notes && <InfoLine icon="document-text-outline" label="ملاحظات"      value={item.notes} />}
+          {item.createdByName && <InfoLine icon="create-outline"        label="أنشأه"          value={item.createdByName} />}
+          <InfoLine icon="calendar-outline" label="تاريخ الإنشاء"  value={formatDate(item.createdAt)} />
+          {item.startedAt  && <InfoLine icon="play-outline"            label="بدء التنفيذ"     value={formatDate(item.startedAt)} />}
+          {item.resolvedAt && <InfoLine icon="checkmark-circle-outline" label="وقت الإنجاز"    value={formatDate(item.resolvedAt)} />}
+        </View>
+      )}
 
-        <TouchableOpacity
-          style={[styles.actionBtn, !canDelete && styles.actionBtnDisabled]}
-          onPress={canDelete ? onDelete : undefined}
-          disabled={!canDelete}
-        >
-          <Ionicons name="trash-outline" size={14} color={canDelete ? Colors.error : Colors.textMuted} />
-          <Text style={[styles.actionBtnText, { color: canDelete ? Colors.error : Colors.textMuted }]}>
-            حذف
-          </Text>
-        </TouchableOpacity>
+      {/* ══ أزرار الإجراءات ══ */}
+      <View style={rc.btnRow}>
+        <SuperActionBtn icon={expanded ? "chevron-up" : "chevron-down"} label={expanded ? "إخفاء" : "تفاصيل"} color={Colors.textSecondary} onPress={onExpand} />
+        <SuperActionBtn icon="time-outline"  label="متابعة" color={SUPERVISOR_COLOR}  onPress={onTimeline} />
+        <SuperActionBtn icon="trash-outline" label="حذف"    color={Colors.error}      onPress={onDelete} />
       </View>
     </View>
   );
@@ -591,7 +586,6 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete }: {
 }) {
   const si = STATUS[item.status] ?? STATUS["pending"];
   const typeLabel = INSTALL_TYPE_AR[item.serviceType] ?? `تركيب ${item.serviceType ?? ""}`;
-  const canDelete = ["new", "pending"].includes(item.status ?? "");
 
   return (
     <View style={styles.card}>
@@ -682,15 +676,9 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete }: {
           <Text style={[styles.actionBtnText, { color: SUPERVISOR_COLOR }]}>متابعة</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.actionBtn, !canDelete && styles.actionBtnDisabled]}
-          onPress={canDelete ? onDelete : undefined}
-          disabled={!canDelete}
-        >
-          <Ionicons name="trash-outline" size={14} color={canDelete ? Colors.error : Colors.textMuted} />
-          <Text style={[styles.actionBtnText, { color: canDelete ? Colors.error : Colors.textMuted }]}>
-            حذف
-          </Text>
+        <TouchableOpacity style={styles.actionBtn} onPress={onDelete}>
+          <Ionicons name="trash-outline" size={14} color={Colors.error} />
+          <Text style={[styles.actionBtnText, { color: Colors.error }]}>حذف</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -727,6 +715,106 @@ function InfoLine({ icon, label, value }: { icon: string; label: string; value: 
     </View>
   );
 }
+
+function SuperActionBtn({ icon, label, color, onPress }: {
+  icon: string; label: string; color: string; onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={rc.btn} onPress={onPress}>
+      <Ionicons name={icon as any} size={14} color={color} />
+      <Text style={[rc.btnText, { color }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
+/* ════════════════════════════════════════════════
+   أنماط بطاقة الإصلاح (rc)
+════════════════════════════════════════════════ */
+const rc = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderLeftWidth: 4,
+    overflow: "hidden",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  head: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 8,
+  },
+  num: { fontSize: 13, fontWeight: "bold", color: Colors.textMuted },
+  typeBadge: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  typeBadgeText: { fontSize: 12, fontWeight: "bold" },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  divider: { height: 1, backgroundColor: Colors.border },
+  metaRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  prioBadge: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 8, borderWidth: 1,
+  },
+  prioBadgeText: { fontSize: 11, fontWeight: "600" },
+  engineerBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.surfaceElevated,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
+  },
+  engineerText: { fontSize: 11, fontWeight: "600" },
+  row: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 6,
+  },
+  rowText: { fontSize: 13, color: Colors.textSecondary, textAlign: "right" },
+  problemBox: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 8, padding: 8, gap: 4,
+  },
+  problemLabel: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+  problemText:  { fontSize: 13, color: Colors.text, textAlign: "right" },
+  completedEngineerBox: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: Colors.success + "15",
+    borderRadius: 8, padding: 8,
+  },
+  completedEngineerText: { fontSize: 13, fontWeight: "bold", color: Colors.success, textAlign: "right" },
+  expandedBox: {
+    backgroundColor: Colors.surfaceElevated,
+    borderRadius: 10, padding: 10, gap: 6,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  btnRow: {
+    flexDirection: "row-reverse",
+    borderTopWidth: 1, borderTopColor: Colors.border,
+    marginTop: 4, paddingTop: 10, gap: 6,
+  },
+  btn: {
+    flex: 1,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: Colors.surfaceElevated,
+  },
+  btnText: { fontSize: 12, fontWeight: "600", color: Colors.textSecondary },
+});
 
 /* ════════════════════════════════════════════════
    الأنماط
