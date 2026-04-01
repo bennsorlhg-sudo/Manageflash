@@ -1,8 +1,9 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Platform, Modal, Linking, TextInput,
+  ActivityIndicator, RefreshControl, Platform, Modal, Linking, TextInput, Image,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -140,7 +141,7 @@ export default function TaskTrackingScreen() {
     const s = item.status ?? "";
     if (statusFilter === "all")         return true;
     if (statusFilter === "pending")     return ["pending", "new", "draft"].includes(s);
-    if (statusFilter === "in_progress") return s === "in_progress";
+    if (statusFilter === "in_progress") return ["in_progress", "preparing"].includes(s);
     if (statusFilter === "completed")   return ["completed", "archived"].includes(s);
     return true;
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -177,6 +178,9 @@ export default function TaskTrackingScreen() {
       const updated = await apiPost(`/tickets/installation/${id}/prepare`, token, payload);
       setInstallTickets(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
       setPrepareItem(null);
+      /* انتقال تلقائي لتبويب "جاري" في قسم التركيب */
+      setSection("install");
+      setStatusFilter("in_progress");
     } catch (e: any) {
       /* الخطأ سيظهر داخل المودال */
       throw e;
@@ -433,7 +437,7 @@ function countByKey(items: any[], key: string) {
   return items.filter(it => {
     const s = it.status ?? "";
     if (key === "pending")     return ["pending", "new", "draft"].includes(s);
-    if (key === "in_progress") return s === "in_progress";
+    if (key === "in_progress") return ["in_progress", "preparing"].includes(s);
     if (key === "completed")   return ["completed", "archived"].includes(s);
     return false;
   }).length;
@@ -1067,22 +1071,52 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
   const [assignedName, setAssignedName] = useState<string>(item.assignedToName ?? "");
 
   /* نقاط البث (للهوتسبوت فقط) */
-  const [hasRelays, setHasRelays] = useState(false);
-  const [relayCount, setRelayCount] = useState("1");
-  const [relays, setRelays] = useState<{description:string;locationUrl:string}[]>([{description:"",locationUrl:""}]);
+  const [hasRelays,   setHasRelays]   = useState(false);
+  const [relayCount,  setRelayCount]  = useState("1");
+  const [relays, setRelays] = useState<{description:string;locationUrl:string;imageUrl:string|null}[]>(
+    [{description:"",locationUrl:"",imageUrl:null}]
+  );
 
   const [errMsg, setErrMsg] = useState("");
 
   const setF = (k: keyof typeof form, v: string) => setForm(f => ({...f,[k]:v}));
 
-  const handleRelayCount = (v: string) => {
-    const n = Math.max(1, Math.min(10, parseInt(v)||1));
+  /* إصلاح عداد النقاط: نقبل النص الخام ونعدّل العدد عند الانتهاء */
+  const handleRelayCountChange = (v: string) => {
+    // نسمح بالحذف (string فارغ مؤقتاً)
+    setRelayCount(v);
+  };
+  const handleRelayCountBlur = () => {
+    const n = Math.max(1, Math.min(10, parseInt(relayCount) || 1));
     setRelayCount(String(n));
     setRelays(prev => {
       const next = [...prev];
-      while (next.length < n) next.push({description:"",locationUrl:""});
+      while (next.length < n) next.push({description:"",locationUrl:"",imageUrl:null});
       return next.slice(0, n);
     });
+  };
+
+  /* اختيار صورة لنقطة بث */
+  const pickRelayImage = async (idx: number, fromCamera: boolean) => {
+    try {
+      if (fromCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") return;
+        const res = await ImagePicker.launchCameraAsync({ quality: 0.6, base64: true, allowsEditing: true });
+        if (!res.canceled && res.assets[0]) {
+          const uri = `data:image/jpeg;base64,${res.assets[0].base64}`;
+          setRelays(prev => prev.map((r,j) => j===idx ? {...r,imageUrl:uri} : r));
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") return;
+        const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.6, base64: true, allowsEditing: true, mediaTypes: ["images"] as any });
+        if (!res.canceled && res.assets[0]) {
+          const uri = `data:image/jpeg;base64,${res.assets[0].base64}`;
+          setRelays(prev => prev.map((r,j) => j===idx ? {...r,imageUrl:uri} : r));
+        }
+      }
+    } catch {}
   };
 
   const handleSubmit = async () => {
@@ -1106,6 +1140,7 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
       payload.relayPoints = relays.filter(r => r.description.trim()).map(r => ({
         description: r.description.trim(),
         locationUrl: r.locationUrl.trim() || null,
+        imageUrl:    r.imageUrl ?? null,
       }));
     }
     try {
@@ -1154,32 +1189,7 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
               </>
             )}
 
-            {/* ── نقاط البث (هوتسبوت داخلي فقط) ── */}
-            {svc === "hotspot_internal" && (
-              <>
-                <TouchableOpacity
-                  style={[pm.toggleBtn, hasRelays && { borderColor: "#9C27B0" }]}
-                  onPress={() => setHasRelays(h => !h)}
-                >
-                  <Ionicons name={hasRelays ? "checkbox" : "square-outline"} size={18} color={hasRelays ? "#9C27B0" : Colors.textMuted} />
-                  <Text style={[pm.toggleText, hasRelays && { color: "#9C27B0" }]}>إضافة نقاط بث خارجية</Text>
-                </TouchableOpacity>
-                {hasRelays && (
-                  <View style={pm.relaySection}>
-                    <MF label="عدد النقاط" value={relayCount} onChange={handleRelayCount} kb="number-pad" />
-                    {relays.map((r, i) => (
-                      <View key={i} style={pm.relayItem}>
-                        <Text style={pm.relayNum}>النقطة ({i+1})</Text>
-                        <MF label="وصف الموقع *" value={r.description} onChange={v => setRelays(prev => prev.map((x,j)=>j===i?{...x,description:v}:x))} />
-                        <MF label="رابط الموقع — اختياري" value={r.locationUrl} onChange={v => setRelays(prev => prev.map((x,j)=>j===i?{...x,locationUrl:v}:x))} />
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </>
-            )}
-
-            {/* ── إسناد فني ── */}
+            {/* ── إسناد فني (قبل نقاط البث) ── */}
             <Text style={pm.sectionTitle}>الفني المنفذ — اختياري</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={pm.chips} keyboardShouldPersistTaps="handled">
               <TouchableOpacity
@@ -1198,6 +1208,64 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
                 </TouchableOpacity>
               ))}
             </ScrollView>
+
+            {/* ── نقاط البث الخارجية (هوتسبوت داخلي فقط) ── */}
+            {svc === "hotspot_internal" && (
+              <>
+                <TouchableOpacity
+                  style={[pm.toggleBtn, hasRelays && { borderColor: "#9C27B0" }]}
+                  onPress={() => setHasRelays(h => !h)}
+                >
+                  <Ionicons name={hasRelays ? "checkbox" : "square-outline"} size={18} color={hasRelays ? "#9C27B0" : Colors.textMuted} />
+                  <Text style={[pm.toggleText, hasRelays && { color: "#9C27B0" }]}>إضافة نقاط بث خارجية</Text>
+                </TouchableOpacity>
+                {hasRelays && (
+                  <View style={pm.relaySection}>
+                    {/* عداد النقاط — مع دعم حذف الرقم والكتابة */}
+                    <Text style={pm.fieldLabel}>عدد النقاط</Text>
+                    <TextInput
+                      style={pm.input}
+                      value={relayCount}
+                      onChangeText={handleRelayCountChange}
+                      onBlur={handleRelayCountBlur}
+                      keyboardType="number-pad"
+                      textAlign="right"
+                      selectTextOnFocus
+                    />
+                    {relays.map((r, i) => (
+                      <View key={i} style={pm.relayItem}>
+                        <Text style={pm.relayNum}>نقطة البث ({i+1})</Text>
+                        <MF label="وصف الموقع *" value={r.description} onChange={v => setRelays(prev => prev.map((x,j)=>j===i?{...x,description:v}:x))} />
+                        <MF label="رابط الموقع — اختياري" value={r.locationUrl} onChange={v => setRelays(prev => prev.map((x,j)=>j===i?{...x,locationUrl:v}:x))} />
+                        {/* صورة الموقع */}
+                        <Text style={pm.fieldLabel}>صورة الموقع — اختياري</Text>
+                        <View style={pm.relayImgRow}>
+                          <TouchableOpacity style={pm.relayImgBtn} onPress={() => pickRelayImage(i, true)}>
+                            <Ionicons name="camera" size={18} color={Colors.primary} />
+                            <Text style={pm.relayImgBtnTxt}>كاميرا</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={pm.relayImgBtn} onPress={() => pickRelayImage(i, false)}>
+                            <Ionicons name="image" size={18} color={Colors.primary} />
+                            <Text style={pm.relayImgBtnTxt}>معرض</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {r.imageUrl ? (
+                          <View style={pm.relayImgPreviewWrap}>
+                            <Image source={{ uri: r.imageUrl }} style={pm.relayImgPreview} resizeMode="cover" />
+                            <TouchableOpacity
+                              style={pm.relayImgRemove}
+                              onPress={() => setRelays(prev => prev.map((x,j)=>j===i?{...x,imageUrl:null}:x))}
+                            >
+                              <Ionicons name="close-circle" size={24} color={Colors.error} />
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
 
             <MF label="ملاحظات — اختياري" value={form.notes} onChange={v=>setF("notes",v)} multiline />
 
@@ -1284,6 +1352,14 @@ const pm = StyleSheet.create({
   relaySection: { backgroundColor:Colors.surfaceElevated, borderRadius:12, padding:12, gap:8, marginBottom:8 },
   relayItem:    { borderTopWidth:1, borderTopColor:Colors.border, paddingTop:8, marginTop:4 },
   relayNum:     { fontSize:13, fontWeight:"bold", color:"#9C27B0", textAlign:"right", marginBottom:6 },
+  relayImgRow:  { flexDirection:"row-reverse", gap:8, marginBottom:8 },
+  relayImgBtn:  { flex:1, flexDirection:"row-reverse", alignItems:"center", justifyContent:"center", gap:6,
+                  backgroundColor:Colors.surface, borderWidth:1, borderColor:Colors.border,
+                  borderRadius:10, paddingVertical:10 },
+  relayImgBtnTxt: { fontSize:13, fontWeight:"600", color:Colors.primary },
+  relayImgPreviewWrap: { borderRadius:12, overflow:"hidden", marginBottom:8, position:"relative" },
+  relayImgPreview:     { width:"100%", height:150, borderRadius:12 },
+  relayImgRemove:      { position:"absolute", top:6, left:6, backgroundColor:"#000000AA", borderRadius:12 },
   chips:    { flexDirection:"row-reverse", gap:8, paddingVertical:4, marginBottom:10 },
   chip:     { paddingHorizontal:14, paddingVertical:7, borderRadius:10, borderWidth:1, borderColor:Colors.border, backgroundColor:Colors.surface },
   chipActive:    { backgroundColor:Colors.primary, borderColor:Colors.primary },

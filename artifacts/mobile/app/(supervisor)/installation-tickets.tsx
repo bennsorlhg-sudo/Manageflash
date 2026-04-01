@@ -2,7 +2,7 @@
  * تركيب جديد — نموذج إنشاء فقط
  * كل متابعة التذاكر تكون في صفحة "متابعة المهام"
  */
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, ActivityIndicator, Platform, Modal, Image,
@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost } from "@/utils/api";
+import { apiPost } from "@/utils/api";
 
 type SvcType = "hotspot_internal" | "broadband_internal" | "external";
 type SubType  = "hotspot" | "broadband" | null;
@@ -36,7 +36,6 @@ export default function NewInstallationScreen() {
   const router = useRouter();
   const { token } = useAuth();
 
-  const [engineers, setEngineers] = useState<{ id: number; name: string }[]>([]);
 
   /* خطوات */
   const [step,       setStep]       = useState<Step>(1);
@@ -48,8 +47,6 @@ export default function NewInstallationScreen() {
     clientName: "", clientPhone: "", address: "",
     locationUrl: "", subscriptionFee: "", notes: "",
   });
-  const [assignedId,     setAssignedId]     = useState<number | null>(null);
-  const [assignedName,   setAssignedName]   = useState("");
   const [locationImage,  setLocationImage]  = useState<string | null>(null); /* صورة الموقع */
   const [submitting,     setSubmitting]     = useState(false);
 
@@ -81,9 +78,6 @@ export default function NewInstallationScreen() {
     }
   };
 
-  useEffect(() => {
-    apiGet("/users/engineers", token).then(setEngineers).catch(() => {});
-  }, [token]);
 
   const getSvcType = (): SvcType => {
     if (!isInternal) return "external";
@@ -94,7 +88,6 @@ export default function NewInstallationScreen() {
   const resetForm = () => {
     setStep(1); setIsInternal(null); setSubType(null);
     setForm({ clientName: "", clientPhone: "", address: "", locationUrl: "", subscriptionFee: "", notes: "" });
-    setAssignedId(null); setAssignedName("");
     setLocationImage(null);
     setErrorMsg("");
   };
@@ -111,14 +104,12 @@ export default function NewInstallationScreen() {
     setErrorMsg("");
     try {
       const payload: any = {
-        serviceType:    svcType,
-        clientName:     form.clientName.trim()  || null,
-        clientPhone:    form.clientPhone.replace(/\D/g, "").trim() || null,
-        address:        form.address.trim()     || null,
-        locationUrl:    form.locationUrl.trim() || null,
-        notes:          form.notes.trim()       || null,
-        assignedToId:   assignedId   ?? null,
-        assignedToName: assignedName || null,
+        serviceType: svcType,
+        clientName:  form.clientName.trim()  || null,
+        clientPhone: form.clientPhone.replace(/\D/g, "").trim() || null,
+        address:     form.address.trim()     || null,
+        locationUrl: form.locationUrl.trim() || null,
+        notes:       form.notes.trim()       || null,
       };
       if (svcType === "hotspot_internal" && form.subscriptionFee) {
         payload.subscriptionFee = parseFloat(form.subscriptionFee) || null;
@@ -289,29 +280,6 @@ export default function NewInstallationScreen() {
             )}
 
             <FormField label="ملاحظات — اختياري" value={form.notes} onChange={v => setForm(f=>({...f,notes:v}))} multiline />
-
-            {/* إسناد فني */}
-            <Text style={s.fieldLabel}>الفني المسؤول — اختياري</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipsRow} keyboardShouldPersistTaps="handled">
-              <TouchableOpacity
-                style={[s.chip, assignedId === null && s.chipActive]}
-                onPress={() => { setAssignedId(null); setAssignedName(""); }}
-              >
-                <Text style={[s.chipText, assignedId === null && s.chipActiveText]}>الكل</Text>
-              </TouchableOpacity>
-              {engineers.map(e => (
-                <TouchableOpacity
-                  key={e.id}
-                  style={[s.chip, assignedId === e.id && s.chipActive]}
-                  onPress={() => { setAssignedId(e.id); setAssignedName(e.name); }}
-                >
-                  <Text style={[s.chipText, assignedId === e.id && s.chipActiveText]}>{e.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            {assignedId !== null && (
-              <Text style={s.assignedHint}>سيُسند للمهندس: {assignedName}</Text>
-            )}
 
             {/* رسالة خطأ */}
             {!!errorMsg && (

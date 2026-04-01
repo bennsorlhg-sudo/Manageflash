@@ -89,7 +89,7 @@ export default function TechEngineerScreen() {
     try {
       const [r, i] = await Promise.all([
         apiGet("/tickets/repair", token).catch(() => []),
-        apiGet("/tickets/installation", token).catch(() => []),
+        apiGet("/tickets/installation?techMode=true", token).catch(() => []),
       ]);
       setRepairs(Array.isArray(r) ? r.filter(isVisible) : []);
       setInstalls(Array.isArray(i) ? i.filter(isVisible) : []);

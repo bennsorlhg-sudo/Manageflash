@@ -96,13 +96,41 @@ router.delete("/tickets/repair/:id", requireAuth, async (req, res) => {
 ═══════════════════════════════════════════════════════ */
 router.get("/tickets/installation", requireAuth, async (req, res) => {
   try {
-    const { status, parentOnly } = req.query as any;
+    const { status, parentOnly, techMode } = req.query as any;
     let rows = await db.select().from(installationTicketsTable)
       .orderBy(desc(installationTicketsTable.createdAt));
 
     if (status) rows = rows.filter(r => r.status === status);
     // parentOnly=true يحذف نقاط البث الوسيطة من القائمة الرئيسية
     if (parentOnly === "true") rows = rows.filter(r => !r.isRelayPoint);
+
+    // techMode=true → يطبّق شرط الترتيب: المهندس يرى نقطة البث N فقط إذا اكتملت N-1
+    if (techMode === "true") {
+      // اجمع كل نقاط البث بالأب
+      const relaysByParent: Record<number, typeof rows> = {};
+      for (const r of rows) {
+        if (r.isRelayPoint && r.parentTicketId) {
+          if (!relaysByParent[r.parentTicketId]) relaysByParent[r.parentTicketId] = [];
+          relaysByParent[r.parentTicketId].push(r);
+        }
+      }
+      // أزل نقاط البث المحجوبة (التي لم تكتمل نقطة قبلها)
+      const blockedIds = new Set<number>();
+      for (const [_pid, relays] of Object.entries(relaysByParent)) {
+        const sorted = [...relays].sort((a, b) => (a.sequenceOrder??0) - (b.sequenceOrder??0));
+        let blocked = false;
+        for (const relay of sorted) {
+          if (blocked) {
+            blockedIds.add(relay.id);
+          } else {
+            const done = relay.status === "completed" || relay.status === "archived";
+            if (!done) blocked = true; // كل ما بعدها محجوب
+          }
+        }
+      }
+      rows = rows.filter(r => !blockedIds.has(r.id));
+    }
+
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: "فشل في جلب تذاكر التركيب", details: String(error) });
@@ -201,16 +229,22 @@ router.post("/tickets/installation/:id/prepare", requireAuth, async (req, res) =
       .where(eq(installationTicketsTable.id, id))
       .returning();
 
-    /* إذا يوجد نقاط وسيطة — أنشئ تذاكر لها */
+    /* إذا يوجد نقاط وسيطة — أنشئ تذاكر لها بالترتيب */
     if (hasRelays) {
-      for (const rp of relayPoints) {
+      /* احذف نقاط البث القديمة لهذه التذكرة أولاً (إعادة تجهيز) */
+      await db.delete(installationTicketsTable)
+        .where(eq(installationTicketsTable.parentTicketId, id));
+      for (let idx = 0; idx < relayPoints.length; idx++) {
+        const rp = relayPoints[idx];
         await db.insert(installationTicketsTable).values({
           serviceType: "hotspot_external",
           address: rp.description ?? null,
           locationUrl: rp.locationUrl ?? null,
+          contractImageUrl: rp.imageUrl ?? null,
           status: "new",
           isRelayPoint: true,
           parentTicketId: id,
+          sequenceOrder: idx + 1,
           createdById: req.currentUser!.id,
         });
       }

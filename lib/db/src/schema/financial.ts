@@ -201,6 +201,7 @@ export const installationTicketsTable = pgTable("installation_tickets", {
   /* ─── ربط بالجدول الفرعي ─── */
   parentTicketId: integer("parent_ticket_id"),
   isRelayPoint: boolean("is_relay_point").default(false),
+  sequenceOrder: integer("sequence_order").default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
