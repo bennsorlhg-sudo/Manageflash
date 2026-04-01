@@ -114,7 +114,7 @@ router.post("/tickets/installation", requireAuth, async (req, res) => {
     const {
       clientName, clientPhone, serviceType, locationUrl, address,
       notes, assignedToId, assignedToName, subscriptionFee,
-      parentTicketId, isRelayPoint,
+      parentTicketId, isRelayPoint, contractImageUrl,
     } = req.body;
 
     const [row] = await db.insert(installationTicketsTable).values({
@@ -130,6 +130,7 @@ router.post("/tickets/installation", requireAuth, async (req, res) => {
       subscriptionFee: subscriptionFee ? String(subscriptionFee) : null,
       parentTicketId: parentTicketId ?? null,
       isRelayPoint: isRelayPoint ?? false,
+      contractImageUrl: contractImageUrl ?? null,
       createdById: req.currentUser!.id,
     }).returning();
 

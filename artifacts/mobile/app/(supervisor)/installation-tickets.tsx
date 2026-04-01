@@ -5,8 +5,9 @@
 import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
-  TouchableOpacity, ActivityIndicator, Platform, Modal,
+  TouchableOpacity, ActivityIndicator, Platform, Modal, Image,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -47,13 +48,38 @@ export default function NewInstallationScreen() {
     clientName: "", clientPhone: "", address: "",
     locationUrl: "", subscriptionFee: "", notes: "",
   });
-  const [assignedId,   setAssignedId]   = useState<number | null>(null);
-  const [assignedName, setAssignedName] = useState("");
-  const [submitting,   setSubmitting]   = useState(false);
+  const [assignedId,     setAssignedId]     = useState<number | null>(null);
+  const [assignedName,   setAssignedName]   = useState("");
+  const [locationImage,  setLocationImage]  = useState<string | null>(null); /* صورة الموقع */
+  const [submitting,     setSubmitting]     = useState(false);
 
   /* نتيجة */
-  const [success, setSuccess] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const [success,   setSuccess]   = useState(false);
+  const [errorMsg,  setErrorMsg]  = useState("");
+
+  /* ── اختيار صورة الموقع ── */
+  const pickImage = async (fromCamera: boolean) => {
+    if (fromCamera) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") return;
+      const res = await ImagePicker.launchCameraAsync({
+        quality: 0.6, base64: true, allowsEditing: true,
+      });
+      if (!res.canceled && res.assets[0]) {
+        setLocationImage(`data:image/jpeg;base64,${res.assets[0].base64}`);
+      }
+    } else {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") return;
+      const res = await ImagePicker.launchImageLibraryAsync({
+        quality: 0.6, base64: true, allowsEditing: true,
+        mediaTypes: ["images"] as any,
+      });
+      if (!res.canceled && res.assets[0]) {
+        setLocationImage(`data:image/jpeg;base64,${res.assets[0].base64}`);
+      }
+    }
+  };
 
   useEffect(() => {
     apiGet("/users/engineers", token).then(setEngineers).catch(() => {});
@@ -69,6 +95,7 @@ export default function NewInstallationScreen() {
     setStep(1); setIsInternal(null); setSubType(null);
     setForm({ clientName: "", clientPhone: "", address: "", locationUrl: "", subscriptionFee: "", notes: "" });
     setAssignedId(null); setAssignedName("");
+    setLocationImage(null);
     setErrorMsg("");
   };
 
@@ -95,6 +122,9 @@ export default function NewInstallationScreen() {
       };
       if (svcType === "hotspot_internal" && form.subscriptionFee) {
         payload.subscriptionFee = parseFloat(form.subscriptionFee) || null;
+      }
+      if (svcType === "external" && locationImage) {
+        payload.contractImageUrl = locationImage;
       }
       await apiPost("/tickets/installation", token, payload);
       resetForm();
@@ -235,6 +265,27 @@ export default function NewInstallationScreen() {
               <>
                 <FormField label="وصف الموقع *"          value={form.address}     onChange={v => setForm(f=>({...f,address:v}))} multiline />
                 <FormField label="رابط الموقع — اختياري" value={form.locationUrl} onChange={v => setForm(f=>({...f,locationUrl:v}))} />
+
+                {/* ── صورة الموقع — اختياري ── */}
+                <Text style={s.fieldLabel}>صورة الموقع — اختياري</Text>
+                <View style={s.imgBtnRow}>
+                  <TouchableOpacity style={s.imgBtn} onPress={() => pickImage(true)}>
+                    <Ionicons name="camera" size={20} color={Colors.primary} />
+                    <Text style={s.imgBtnText}>كاميرا</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.imgBtn} onPress={() => pickImage(false)}>
+                    <Ionicons name="image" size={20} color={Colors.primary} />
+                    <Text style={s.imgBtnText}>المعرض</Text>
+                  </TouchableOpacity>
+                </View>
+                {locationImage ? (
+                  <View style={s.imgPreviewWrap}>
+                    <Image source={{ uri: locationImage }} style={s.imgPreview} resizeMode="cover" />
+                    <TouchableOpacity style={s.imgRemoveBtn} onPress={() => setLocationImage(null)}>
+                      <Ionicons name="close-circle" size={26} color={Colors.error} />
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </>
             )}
 
@@ -470,6 +521,32 @@ const s = StyleSheet.create({
     borderRadius: 12, alignItems: "center", marginTop: 4,
   },
   successBtnText: { fontSize: 15, fontWeight: "bold", color: "#fff" },
+
+  /* أزرار اختيار الصورة */
+  imgBtnRow: {
+    flexDirection: "row-reverse", gap: 10, marginBottom: 10,
+  },
+  imgBtn: {
+    flex: 1, flexDirection: "row-reverse", alignItems: "center",
+    justifyContent: "center", gap: 8,
+    backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 12, paddingVertical: 12,
+  },
+  imgBtnText: { fontSize: 14, fontWeight: "600", color: Colors.primary },
+
+  /* معاينة الصورة */
+  imgPreviewWrap: {
+    borderRadius: 14, overflow: "hidden",
+    marginBottom: 12, position: "relative",
+  },
+  imgPreview: {
+    width: "100%", height: 180, borderRadius: 14,
+  },
+  imgRemoveBtn: {
+    position: "absolute", top: 8, left: 8,
+    backgroundColor: "#000000AA", borderRadius: 14,
+  },
 });
 
 /* ─── مكوّن حقل الإدخال — خارج المكوّن الرئيسي لمنع إعادة البناء ─── */
