@@ -60,7 +60,7 @@ export default function NewInstallationScreen() {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") return;
       const res = await ImagePicker.launchCameraAsync({
-        quality: 0.6, base64: true, allowsEditing: true,
+        quality: 0.6, base64: true,
       });
       if (!res.canceled && res.assets[0]) {
         setLocationImage(`data:image/jpeg;base64,${res.assets[0].base64}`);
@@ -69,7 +69,7 @@ export default function NewInstallationScreen() {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") return;
       const res = await ImagePicker.launchImageLibraryAsync({
-        quality: 0.6, base64: true, allowsEditing: true,
+        quality: 0.6, base64: true,
         mediaTypes: ["images"] as any,
       });
       if (!res.canceled && res.assets[0]) {
