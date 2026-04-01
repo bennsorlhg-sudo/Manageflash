@@ -27,6 +27,7 @@ const INSTALL_TYPE: Record<string, string> = {
   hotspot_external: "تركيب هوتسبوت خارجي",
   broadband:        "تركيب برودباند",
   broadband_internal: "تركيب برودباند داخلي",
+  external:         "تركيب نقطة بث خارجية",
 };
 
 /* ─────────────── النوع الموحّد ─────────────── */

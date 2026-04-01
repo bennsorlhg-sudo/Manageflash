@@ -51,7 +51,7 @@ const INSTALL_TYPE_AR: Record<string, string> = {
   hotspot_external:   "تركيب هوتسبوت خارجي",
   broadband_internal: "تركيب برودباند داخلي",
   broadband:          "تركيب برودباند",
-  external:           "تركيب نقطة خارجية",
+  external:           "تركيب نقطة بث خارجية",
 };
 
 const INSTALL_TYPE_COLOR: Record<string, string> = {
