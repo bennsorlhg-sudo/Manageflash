@@ -46,6 +46,11 @@ interface Ticket {
   status: string;
   /* للتركيب فقط */
   subscriptionName: string | null;
+  /* نقاط البث */
+  hasRelayPoints:   boolean;
+  isRelayPoint:     boolean;
+  sequenceOrder:    number;
+  contractImageUrl: string | null;
 }
 
 /* ─────────────── المكوّن الرئيسي ─────────────── */
@@ -67,6 +72,9 @@ export default function TechEngineerScreen() {
   const [cNotes, setCNotes] = useState("");
   const [cPhoto, setCPhoto] = useState<string | null>(null);
   const [cSaving, setCsaving] = useState(false);
+
+  /* مودال صورة الموقع */
+  const [viewImageUrl, setViewImageUrl] = useState<string | null>(null);
 
   /* toast */
   const [toast, setToast] = useState("");
@@ -115,6 +123,10 @@ export default function TechEngineerScreen() {
     priority:         raw.priority ?? null,
     status:           raw.status ?? "",
     subscriptionName: raw.subscriptionName ?? null,
+    hasRelayPoints:   raw.hasRelayPoints ?? false,
+    isRelayPoint:     raw.isRelayPoint ?? false,
+    sequenceOrder:    raw.sequenceOrder ?? 0,
+    contractImageUrl: raw.contractImageUrl ?? null,
   });
 
   /* ─── التذاكر حسب القسم ─── */
@@ -348,6 +360,7 @@ export default function TechEngineerScreen() {
                 onCopy={copyPhone}
                 onOpenMap={openMap}
                 onCopyMap={copyMapUrl}
+                onViewImage={(url) => setViewImageUrl(url)}
               />
             )
           )
@@ -443,6 +456,29 @@ export default function TechEngineerScreen() {
           <Text style={s.toastText}>{toast}</Text>
         </View>
       )}
+
+      {/* ══ مودال عرض صورة الموقع ══ */}
+      <Modal visible={!!viewImageUrl} transparent animationType="fade" onRequestClose={() => setViewImageUrl(null)}>
+        <View style={imgModal.overlay}>
+          <TouchableOpacity style={imgModal.closeArea} onPress={() => setViewImageUrl(null)} activeOpacity={1}>
+            <View style={imgModal.card}>
+              <View style={imgModal.header}>
+                <Text style={imgModal.title}>صورة الموقع</Text>
+                <TouchableOpacity onPress={() => setViewImageUrl(null)}>
+                  <Ionicons name="close-circle" size={26} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              {viewImageUrl && (
+                <Image
+                  source={{ uri: viewImageUrl }}
+                  style={imgModal.image}
+                  resizeMode="contain"
+                />
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -570,7 +606,7 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOp
 /* ════════════════════════════════════════════════
    بطاقة التركيب
 ════════════════════════════════════════════════ */
-function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap }: {
+function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap, onViewImage }: {
   ticket: Ticket;
   section: "new" | "inprogress";
   saving: boolean;
@@ -579,24 +615,44 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
   onCopy: (p: string) => void;
   onOpenMap: (url: string) => void;
   onCopyMap: (url: string) => void;
+  onViewImage: (url: string) => void;
 }) {
-  const typeLabel = INSTALL_TYPE[ticket.serviceType] ?? `تركيب ${ticket.serviceType}`;
-  const hasPhone  = !!ticket.clientPhone;
-  const hasMap    = !!ticket.locationUrl;
+  const typeLabel   = INSTALL_TYPE[ticket.serviceType] ?? `تركيب ${ticket.serviceType}`;
+  const hasPhone    = !!ticket.clientPhone;
+  const hasMap      = !!ticket.locationUrl;
+  const hasImage    = !!ticket.contractImageUrl;
+  /* مقيّد: التذكرة الرئيسية مع نقاط بث لم تكتمل بعد */
+  const isBlocked   = ticket.hasRelayPoints && ticket.status === "preparing";
 
   return (
-    <View style={[c.card, { borderLeftColor: Colors.success }]}>
+    <View style={[c.card, { borderLeftColor: ticket.isRelayPoint ? "#9C27B0" : Colors.success }]}>
       {/* رأس البطاقة */}
       <View style={c.cardHead}>
         <Text style={c.cardNum}>#{ticket.sourceId}</Text>
         {ticket.serviceNumber && (
           <Text style={c.serviceNum}>{ticket.serviceNumber}</Text>
         )}
-        <View style={[c.typeBadge, { backgroundColor: Colors.success + "22" }]}>
-          <Text style={[c.typeBadgeText, { color: Colors.success }]}>{typeLabel}</Text>
+        <View style={[c.typeBadge, { backgroundColor: (ticket.isRelayPoint ? "#9C27B0" : Colors.success) + "22" }]}>
+          <Text style={[c.typeBadgeText, { color: ticket.isRelayPoint ? "#9C27B0" : Colors.success }]}>{typeLabel}</Text>
         </View>
         <View style={[c.statusDot, { backgroundColor: section === "new" ? "#2196F3" : Colors.warning }]} />
       </View>
+
+      {/* شارة نقطة البث مع رقم الترتيب */}
+      {ticket.isRelayPoint && (
+        <View style={ic2.relayBadge}>
+          <Ionicons name="git-network-outline" size={13} color="#9C27B0" />
+          <Text style={ic2.relayText}>نقطة البث رقم {ticket.sequenceOrder}</Text>
+        </View>
+      )}
+
+      {/* تنبيه القيد على التذكرة الرئيسية */}
+      {isBlocked && (
+        <View style={ic2.blockedBox}>
+          <Ionicons name="lock-closed" size={14} color="#FF9800" />
+          <Text style={ic2.blockedText}>يجب إتمام نقاط البث الخارجية أولاً قبل بدء التنفيذ</Text>
+        </View>
+      )}
 
       <View style={c.divider} />
 
@@ -667,38 +723,22 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
 
       {/* الأزرار */}
       <View style={c.btnRow}>
-        {section === "new" ? (
-          <ActionBtn
-            label="بدء التنفيذ"
-            icon="play-circle"
-            color="#2196F3"
-            loading={saving}
-            onPress={onStart}
-            flex={2}
-          />
-        ) : (
-          <ActionBtn
-            label="تم التنفيذ"
-            icon="checkmark-done-circle"
-            color={Colors.success}
-            loading={saving}
-            onPress={onComplete}
-            flex={2}
-          />
+        {/* زر بدء التنفيذ — مخفي إذا كانت التذكرة مقيّدة بنقاط بث */}
+        {section === "new" && !isBlocked && (
+          <ActionBtn label="بدء التنفيذ" icon="play-circle" color="#2196F3" loading={saving} onPress={onStart} flex={2} />
+        )}
+        {section === "inprogress" && (
+          <ActionBtn label="تم التنفيذ" icon="checkmark-done-circle" color={Colors.success} loading={saving} onPress={onComplete} flex={2} />
         )}
 
         {hasPhone && (
-          <ActionBtn
-            label="اتصال"
-            icon="call"
-            color={Colors.success}
-            onPress={() => Linking.openURL(`tel:${ticket.clientPhone}`)}
-            flex={1}
-          />
+          <ActionBtn label="اتصال" icon="call" color={Colors.success} onPress={() => Linking.openURL(`tel:${ticket.clientPhone}`)} flex={1} />
         )}
-
         {hasMap && (
           <ActionBtn label="خريطة" icon="map" color={Colors.info} onPress={() => onOpenMap(ticket.locationUrl!)} flex={1} />
+        )}
+        {hasImage && (
+          <ActionBtn label="صورة الموقع" icon="image" color="#9C27B0" onPress={() => onViewImage(ticket.contractImageUrl!)} flex={hasMap ? 1 : 2} />
         )}
       </View>
     </View>
@@ -942,4 +982,55 @@ const ab = StyleSheet.create({
     minHeight: 42,
   },
   label: { fontSize: 12, fontWeight: "bold" },
+});
+
+/* شارات نقطة البث وقيد التنفيذ */
+const ic2 = StyleSheet.create({
+  relayBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#9C27B022",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: "flex-end",
+  },
+  relayText: { fontSize: 12, fontWeight: "bold", color: "#9C27B0" },
+
+  blockedBox: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FF980018",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#FF980044",
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  blockedText: { fontSize: 12, color: "#FF9800", flex: 1, textAlign: "right" },
+});
+
+/* مودال صورة الموقع */
+const imgModal = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: "#000000CC", justifyContent: "center", alignItems: "center" },
+  closeArea: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
+  card: {
+    width: "90%",
+    backgroundColor: Colors.surface,
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  header: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  title: { fontSize: 15, fontWeight: "bold", color: Colors.text },
+  image: { width: "100%", height: 300 },
 });

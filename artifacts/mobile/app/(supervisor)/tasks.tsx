@@ -727,17 +727,29 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
     else { Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(rawUrl)}`); }
   };
 
+  const isRelayPoint  = !!item.isRelayPoint;
+  const sequenceOrder = item.sequenceOrder ?? 0;
+  const relayColor    = isRelayPoint ? "#9C27B0" : typeColor;
+
   return (
-    <View style={[rc.card, { borderLeftColor: typeColor }]}>
+    <View style={[rc.card, { borderLeftColor: relayColor }]}>
 
       {/* ══ رأس البطاقة ══ */}
       <View style={rc.head}>
         <Text style={rc.num}>#{item.id}</Text>
-        <View style={[rc.typeBadge, { backgroundColor: typeColor + "22" }]}>
-          <Text style={[rc.typeBadgeText, { color: typeColor }]}>{typeLabel}</Text>
+        <View style={[rc.typeBadge, { backgroundColor: relayColor + "22" }]}>
+          <Text style={[rc.typeBadgeText, { color: relayColor }]}>{typeLabel}</Text>
         </View>
         <View style={[rc.statusDot, { backgroundColor: si.color }]} />
       </View>
+
+      {/* شارة نقطة البث */}
+      {isRelayPoint && (
+        <View style={icSup.relayBadge}>
+          <Ionicons name="git-network-outline" size={12} color="#9C27B0" />
+          <Text style={icSup.relayText}>نقطة البث رقم {sequenceOrder}</Text>
+        </View>
+      )}
 
       <View style={rc.divider} />
 
@@ -1666,4 +1678,19 @@ const styles = StyleSheet.create({
   deleteCancelText:  { color: Colors.textSecondary, fontWeight: "bold", fontSize: 14 },
   deleteConfirmBtn:  { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: Colors.error, alignItems: "center" },
   deleteConfirmText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
+});
+
+/* شارة نقطة البث — InstallCard للمشرف */
+const icSup = StyleSheet.create({
+  relayBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#9C27B022",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: "flex-end",
+  },
+  relayText: { fontSize: 11, fontWeight: "bold", color: "#9C27B0" },
 });
