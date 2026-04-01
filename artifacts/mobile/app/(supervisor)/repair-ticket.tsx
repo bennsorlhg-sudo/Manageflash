@@ -121,7 +121,7 @@ export default function RepairTicketScreen() {
       if (!result.canceled) setPhotoUri(result.assets[0].uri);
       return;
     }
-    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    const result = await ImagePicker.launchImageLibraryAsync({ quality: 0.7, mediaTypes: ["images"] as any });
     if (!result.canceled) setPhotoUri(result.assets[0].uri);
   };
 

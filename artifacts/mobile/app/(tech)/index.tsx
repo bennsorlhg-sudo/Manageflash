@@ -303,7 +303,7 @@ export default function TechEngineerHomeScreen() {
         return;
       }
       const lib = await ImagePicker.launchImageLibraryAsync({
-        quality: 0.7, mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7, mediaTypes: ["images"] as any,
       });
       if (!lib.canceled) setPhotoUri(lib.assets[0].uri);
       setCompleteStep("notes_save");
