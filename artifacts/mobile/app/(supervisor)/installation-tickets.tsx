@@ -2,7 +2,7 @@
  * تركيب جديد — نموذج إنشاء فقط
  * كل متابعة التذاكر تكون في صفحة "متابعة المهام"
  */
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TextInput,
   TouchableOpacity, ActivityIndicator, Platform, Modal,
@@ -106,24 +106,6 @@ export default function NewInstallationScreen() {
     }
   };
 
-  const F = useCallback(({ label, field, kb, placeholder, multiline }: {
-    label: string; field: keyof typeof form; kb?: any; placeholder?: string; multiline?: boolean;
-  }) => (
-    <View style={s.fieldWrap}>
-      <Text style={s.fieldLabel}>{label}</Text>
-      <TextInput
-        style={[s.input, multiline && { height: 72 }]}
-        value={form[field]}
-        onChangeText={v => setForm(f => ({ ...f, [field]: v }))}
-        placeholder={placeholder ?? label}
-        placeholderTextColor={Colors.textSecondary}
-        keyboardType={kb}
-        textAlign="right"
-        textAlignVertical={multiline ? "top" : "center"}
-        multiline={multiline}
-      />
-    </View>
-  ), [form]);
 
   const svcType = getSvcType();
   const svcColor = SVC_COLOR[svcType];
@@ -231,32 +213,32 @@ export default function NewInstallationScreen() {
             {/* حقول هوتسبوت داخلي */}
             {svcType === "hotspot_internal" && (
               <>
-                <F label="اسم العميل *"                field="clientName" />
-                <F label="رقم الجوال *"                field="clientPhone" kb="phone-pad" />
-                <F label="الموقع / الحي"               field="address" />
-                <F label="قيمة الاشتراك — اختياري"    field="subscriptionFee" kb="decimal-pad" placeholder="0.00" />
+                <FormField label="اسم العميل *"             value={form.clientName}      onChange={v => setForm(f=>({...f,clientName:v}))} />
+                <FormField label="رقم الجوال *"             value={form.clientPhone}     onChange={v => setForm(f=>({...f,clientPhone:v}))} kb="phone-pad" />
+                <FormField label="الموقع / الحي"            value={form.address}         onChange={v => setForm(f=>({...f,address:v}))} />
+                <FormField label="قيمة الاشتراك — اختياري" value={form.subscriptionFee} onChange={v => setForm(f=>({...f,subscriptionFee:v}))} kb="decimal-pad" placeholder="0.00" />
               </>
             )}
 
             {/* حقول برودباند داخلي */}
             {svcType === "broadband_internal" && (
               <>
-                <F label="اسم العميل *" field="clientName" />
-                <F label="رقم الجوال *" field="clientPhone" kb="phone-pad" />
-                <F label="وصف الموقع"   field="address" multiline />
-                <F label="رابط الموقع (خرائط)" field="locationUrl" />
+                <FormField label="اسم العميل *"        value={form.clientName}  onChange={v => setForm(f=>({...f,clientName:v}))} />
+                <FormField label="رقم الجوال *"        value={form.clientPhone} onChange={v => setForm(f=>({...f,clientPhone:v}))} kb="phone-pad" />
+                <FormField label="وصف الموقع"          value={form.address}     onChange={v => setForm(f=>({...f,address:v}))} multiline />
+                <FormField label="رابط الموقع (خرائط)" value={form.locationUrl} onChange={v => setForm(f=>({...f,locationUrl:v}))} />
               </>
             )}
 
             {/* حقول خارجي */}
             {svcType === "external" && (
               <>
-                <F label="وصف الموقع *"               field="address" multiline />
-                <F label="رابط الموقع — اختياري"      field="locationUrl" />
+                <FormField label="وصف الموقع *"          value={form.address}     onChange={v => setForm(f=>({...f,address:v}))} multiline />
+                <FormField label="رابط الموقع — اختياري" value={form.locationUrl} onChange={v => setForm(f=>({...f,locationUrl:v}))} />
               </>
             )}
 
-            <F label="ملاحظات — اختياري" field="notes" multiline />
+            <FormField label="ملاحظات — اختياري" value={form.notes} onChange={v => setForm(f=>({...f,notes:v}))} multiline />
 
             {/* إسناد فني */}
             <Text style={s.fieldLabel}>الفني المسؤول — اختياري</Text>
@@ -489,3 +471,30 @@ const s = StyleSheet.create({
   },
   successBtnText: { fontSize: 15, fontWeight: "bold", color: "#fff" },
 });
+
+/* ─── مكوّن حقل الإدخال — خارج المكوّن الرئيسي لمنع إعادة البناء ─── */
+function FormField({ label, value, onChange, kb, placeholder, multiline }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  kb?: any;
+  placeholder?: string;
+  multiline?: boolean;
+}) {
+  return (
+    <View style={s.fieldWrap}>
+      <Text style={s.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[s.input, multiline && { height: 72 }]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={placeholder ?? label}
+        placeholderTextColor={Colors.textSecondary}
+        keyboardType={kb}
+        textAlign="right"
+        textAlignVertical={multiline ? "top" : "center"}
+        multiline={multiline}
+      />
+    </View>
+  );
+}
