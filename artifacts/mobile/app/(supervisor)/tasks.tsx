@@ -1102,7 +1102,7 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
       if (fromCamera) {
         const { status } = await ImagePicker.requestCameraPermissionsAsync();
         if (status !== "granted") return;
-        const res = await ImagePicker.launchCameraAsync({ quality: 0.6, base64: true });
+        const res = await ImagePicker.launchCameraAsync({ quality: 0.3, base64: true });
         if (!res.canceled && res.assets[0]) {
           const uri = `data:image/jpeg;base64,${res.assets[0].base64}`;
           setRelays(prev => prev.map((r,j) => j===idx ? {...r,imageUrl:uri} : r));
@@ -1110,7 +1110,7 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
       } else {
         const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (status !== "granted") return;
-        const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.6, base64: true, mediaTypes: ["images"] as any });
+        const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.3, base64: true, mediaTypes: ["images"] as any });
         if (!res.canceled && res.assets[0]) {
           const uri = `data:image/jpeg;base64,${res.assets[0].base64}`;
           setRelays(prev => prev.map((r,j) => j===idx ? {...r,imageUrl:uri} : r));
