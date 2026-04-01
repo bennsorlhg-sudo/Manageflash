@@ -253,10 +253,9 @@ export default function NewInstallationScreen() {
             {/* حقول برودباند داخلي */}
             {svcType === "broadband_internal" && (
               <>
-                <FormField label="اسم العميل *"        value={form.clientName}  onChange={v => setForm(f=>({...f,clientName:v}))} />
-                <FormField label="رقم الجوال *"        value={form.clientPhone} onChange={v => setForm(f=>({...f,clientPhone:v}))} kb="phone-pad" />
-                <FormField label="وصف الموقع"          value={form.address}     onChange={v => setForm(f=>({...f,address:v}))} multiline />
-                <FormField label="رابط الموقع (خرائط)" value={form.locationUrl} onChange={v => setForm(f=>({...f,locationUrl:v}))} />
+                <FormField label="اسم العميل *" value={form.clientName}  onChange={v => setForm(f=>({...f,clientName:v}))} />
+                <FormField label="رقم الجوال *" value={form.clientPhone} onChange={v => setForm(f=>({...f,clientPhone:v}))} kb="phone-pad" />
+                <FormField label="وصف الموقع"   value={form.address}     onChange={v => setForm(f=>({...f,address:v}))} multiline />
               </>
             )}
 
