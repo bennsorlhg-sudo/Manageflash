@@ -165,6 +165,7 @@ export const repairTicketsTable = pgTable("repair_tickets", {
   deletedById: integer("deleted_by_id"),
   deletedByName: text("deleted_by_name"),
   deletedAt: timestamp("deleted_at"),
+  startedAt: timestamp("started_at"),
   resolvedAt: timestamp("resolved_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

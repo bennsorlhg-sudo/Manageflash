@@ -65,7 +65,8 @@ router.patch("/tickets/repair/:id", requireAuth, async (req, res) => {
       "problemDescription", "serviceType",
     ];
     for (const f of fields) if (req.body[f] !== undefined) updates[f] = req.body[f];
-    if (req.body.status === "completed") updates.resolvedAt = new Date();
+    if (req.body.status === "in_progress") updates.startedAt  = new Date();
+    if (req.body.status === "completed")   updates.resolvedAt = new Date();
 
     const [row] = await db.update(repairTicketsTable).set(updates)
       .where(eq(repairTicketsTable.id, id)).returning();
@@ -78,6 +79,11 @@ router.patch("/tickets/repair/:id", requireAuth, async (req, res) => {
 router.delete("/tickets/repair/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
+    await db.update(repairTicketsTable).set({
+      deletedById:   req.currentUser!.id,
+      deletedByName: req.currentUser!.name ?? null,
+      deletedAt:     new Date(),
+    }).where(eq(repairTicketsTable.id, id));
     await db.delete(repairTicketsTable).where(eq(repairTicketsTable.id, id));
     res.json({ success: true });
   } catch (error) {
