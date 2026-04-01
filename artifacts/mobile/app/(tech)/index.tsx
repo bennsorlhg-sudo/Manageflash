@@ -52,6 +52,11 @@ interface Ticket {
   isRelayPoint:     boolean;
   sequenceOrder:    number;
   contractImageUrl: string | null;
+  /* مقوي هوتسبوت داخلي */
+  isBooster:        boolean;
+  parentTicketId:   number | null;
+  deviceName:       string | null;
+  deviceSerial:     string | null;
 }
 
 /* ─────────────── المكوّن الرئيسي ─────────────── */
@@ -128,6 +133,10 @@ export default function TechEngineerScreen() {
     isRelayPoint:     raw.isRelayPoint ?? false,
     sequenceOrder:    raw.sequenceOrder ?? 0,
     contractImageUrl: raw.contractImageUrl ?? null,
+    isBooster:        raw.isBooster ?? false,
+    parentTicketId:   raw.parentTicketId ?? null,
+    deviceName:       raw.deviceName ?? null,
+    deviceSerial:     raw.deviceSerial ?? null,
   });
 
   /* ─── التذاكر حسب القسم ─── */
@@ -624,20 +633,33 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
   const hasImage    = !!ticket.contractImageUrl;
   /* مقيّد: التذكرة الرئيسية مع نقاط بث لم تكتمل بعد */
   const isBlocked   = ticket.hasRelayPoints && ticket.status === "preparing";
+  const boosterColor = "#4CAF50";
+
+  const cardBorderColor = ticket.isBooster ? boosterColor : ticket.isRelayPoint ? "#9C27B0" : Colors.success;
 
   return (
-    <View style={[c.card, { borderLeftColor: ticket.isRelayPoint ? "#9C27B0" : Colors.success }]}>
+    <View style={[c.card, { borderLeftColor: cardBorderColor }]}>
       {/* رأس البطاقة */}
       <View style={c.cardHead}>
         <Text style={c.cardNum}>#{ticket.sourceId}</Text>
         {ticket.serviceNumber && (
           <Text style={c.serviceNum}>{ticket.serviceNumber}</Text>
         )}
-        <View style={[c.typeBadge, { backgroundColor: (ticket.isRelayPoint ? "#9C27B0" : Colors.success) + "22" }]}>
-          <Text style={[c.typeBadgeText, { color: ticket.isRelayPoint ? "#9C27B0" : Colors.success }]}>{typeLabel}</Text>
+        <View style={[c.typeBadge, { backgroundColor: cardBorderColor + "22" }]}>
+          <Text style={[c.typeBadgeText, { color: cardBorderColor }]}>{typeLabel}</Text>
         </View>
         <View style={[c.statusDot, { backgroundColor: section === "new" ? "#2196F3" : Colors.warning }]} />
       </View>
+
+      {/* شارة المقوي الداخلي */}
+      {ticket.isBooster && (
+        <View style={ic2.boosterBadge}>
+          <Ionicons name="hardware-chip" size={13} color={boosterColor} />
+          <Text style={[ic2.boosterText]}>
+            مقوي داخلي هوتسبوت — مرتبط بتذكرة برودباند #{ticket.parentTicketId}
+          </Text>
+        </View>
+      )}
 
       {/* شارة نقطة البث مع رقم الترتيب */}
       {ticket.isRelayPoint && (
@@ -712,6 +734,16 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
         <View style={c.row}>
           <Ionicons name="wifi-outline" size={15} color={Colors.info} />
           <Text style={c.rowText}>{ticket.subscriptionName}</Text>
+        </View>
+      )}
+
+      {/* اسم الجهاز ورقمه */}
+      {ticket.deviceName && (
+        <View style={[c.row, { backgroundColor: (ticket.isBooster ? "#4CAF50" : Colors.primary) + "10", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 6 }]}>
+          <Ionicons name="hardware-chip-outline" size={15} color={ticket.isBooster ? "#4CAF50" : Colors.primary} />
+          <Text style={[c.rowText, { color: ticket.isBooster ? "#4CAF50" : Colors.primary, fontWeight: "bold" }]}>
+            {ticket.deviceName}{ticket.deviceSerial ? ` — ${ticket.deviceSerial}` : ""}
+          </Text>
         </View>
       )}
 
@@ -1011,6 +1043,18 @@ const ic2 = StyleSheet.create({
     paddingVertical: 7,
   },
   blockedText: { fontSize: 12, color: "#FF9800", flex: 1, textAlign: "right" },
+
+  boosterBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#4CAF5022",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    alignSelf: "flex-end",
+  },
+  boosterText: { fontSize: 12, fontWeight: "bold", color: "#4CAF50", flex: 1, textAlign: "right" },
 });
 
 /* مودال صورة الموقع */

@@ -729,7 +729,8 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
 
   const isRelayPoint  = !!item.isRelayPoint;
   const sequenceOrder = item.sequenceOrder ?? 0;
-  const relayColor    = isRelayPoint ? "#9C27B0" : typeColor;
+  const isBoosterCard = !!item.isBooster;
+  const relayColor    = isBoosterCard ? "#4CAF50" : isRelayPoint ? "#9C27B0" : typeColor;
 
   return (
     <View style={[rc.card, { borderLeftColor: relayColor }]}>
@@ -738,7 +739,9 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
       <View style={rc.head}>
         <Text style={rc.num}>#{item.id}</Text>
         <View style={[rc.typeBadge, { backgroundColor: relayColor + "22" }]}>
-          <Text style={[rc.typeBadgeText, { color: relayColor }]}>{typeLabel}</Text>
+          <Text style={[rc.typeBadgeText, { color: relayColor }]}>
+            {isBoosterCard ? "هوتسبوت داخلي (مقوي)" : typeLabel}
+          </Text>
         </View>
         <View style={[rc.statusDot, { backgroundColor: si.color }]} />
       </View>
@@ -748,6 +751,14 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
         <View style={icSup.relayBadge}>
           <Ionicons name="git-network-outline" size={12} color="#9C27B0" />
           <Text style={icSup.relayText}>نقطة البث رقم {sequenceOrder}</Text>
+        </View>
+      )}
+
+      {/* شارة مقوي داخلي هوتسبوت */}
+      {!!item.isBooster && (
+        <View style={icSup.boosterBadge}>
+          <Ionicons name="hardware-chip" size={12} color="#4CAF50" />
+          <Text style={icSup.boosterText}>مقوي داخلي هوتسبوت — مرتبط بتذكرة برودباند #{item.parentTicketId}</Text>
         </View>
       )}
 
@@ -1089,6 +1100,11 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
     [{description:"",locationUrl:"",imageUrl:null}]
   );
 
+  /* مقوي داخلي هوتسبوت (للبرودباند الداخلي فقط) */
+  const [hasBooster, setHasBooster] = useState(false);
+  const [boosterForm, setBoosterForm] = useState({ deviceName: "", deviceSerial: "", subscriptionFee: "" });
+  const setBF = (k: keyof typeof boosterForm, v: string) => setBoosterForm(f => ({...f,[k]:v}));
+
   const [errMsg, setErrMsg] = useState("");
 
   const setF = (k: keyof typeof form, v: string) => setForm(f => ({...f,[k]:v}));
@@ -1147,6 +1163,13 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
     if (svc === "broadband_internal") {
       payload.subscriptionName = form.subscriptionName.trim() || null;
       payload.internetFee      = form.internetFee ? parseFloat(form.internetFee) : null;
+      if (hasBooster && boosterForm.deviceName.trim()) {
+        payload.boosterDevice = {
+          deviceName:      boosterForm.deviceName.trim(),
+          deviceSerial:    boosterForm.deviceSerial.trim() || null,
+          subscriptionFee: boosterForm.subscriptionFee ? parseFloat(boosterForm.subscriptionFee) : null,
+        };
+      }
     }
     if (svc === "hotspot_internal" && hasRelays) {
       payload.relayPoints = relays.filter(r => r.description.trim()).map(r => ({
@@ -1198,6 +1221,34 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
                 <Text style={pm.sectionTitle}>بيانات الاشتراك</Text>
                 <MF label="اسم الاشتراك (مثال: andls123)" value={form.subscriptionName} onChange={v=>setF("subscriptionName",v)} />
                 <MF label="قيمة اشتراك الإنترنت" value={form.internetFee} onChange={v=>setF("internetFee",v)} kb="decimal-pad" />
+
+                {/* ── مقوي داخلي هوتسبوت ── */}
+                <TouchableOpacity
+                  style={[pm.toggleBtn, hasBooster && { borderColor: "#4CAF50", backgroundColor: "#4CAF5010" }]}
+                  onPress={() => setHasBooster(h => !h)}
+                >
+                  <Ionicons name={hasBooster ? "checkbox" : "square-outline"} size={18} color={hasBooster ? "#4CAF50" : Colors.textMuted} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[pm.toggleText, hasBooster && { color: "#4CAF50" }]}>إضافة مقوي داخلي هوتسبوت</Text>
+                    <Text style={{ fontSize: 11, color: Colors.textMuted, textAlign: "right" }}>العميل سيحصل على هوتسبوت داخلي + برودباند</Text>
+                  </View>
+                </TouchableOpacity>
+
+                {hasBooster && (
+                  <View style={pm.boosterSection}>
+                    <View style={pm.boosterHeader}>
+                      <Ionicons name="hardware-chip" size={15} color="#4CAF50" />
+                      <Text style={pm.boosterTitle}>بيانات جهاز المقوي (هوتسبوت داخلي)</Text>
+                    </View>
+                    <MF label="اسم الجهاز (مثال: شاومي Redmi) *" value={boosterForm.deviceName} onChange={v=>setBF("deviceName",v)} />
+                    <MF label="رقم الجهاز (Serial)" value={boosterForm.deviceSerial} onChange={v=>setBF("deviceSerial",v)} />
+                    <MF label="قيمة اشتراك المقوي (فارغ = لم يُدفع)" value={boosterForm.subscriptionFee} onChange={v=>setBF("subscriptionFee",v)} kb="decimal-pad" />
+                    <View style={pm.boosterNote}>
+                      <Ionicons name="information-circle-outline" size={13} color={Colors.warning} />
+                      <Text style={pm.boosterNoteText}>سيصل المهندس تذكرة منفصلة لتركيب المقوي مع توضيح ربطه بالبرودباند</Text>
+                    </View>
+                  </View>
+                )}
               </>
             )}
 
@@ -1364,6 +1415,19 @@ const pm = StyleSheet.create({
   relaySection: { backgroundColor:Colors.surfaceElevated, borderRadius:12, padding:12, gap:8, marginBottom:8 },
   relayItem:    { borderTopWidth:1, borderTopColor:Colors.border, paddingTop:8, marginTop:4 },
   relayNum:     { fontSize:13, fontWeight:"bold", color:"#9C27B0", textAlign:"right", marginBottom:6 },
+
+  boosterSection: {
+    backgroundColor: "#4CAF5010",
+    borderRadius: 12, borderWidth: 1, borderColor: "#4CAF5040",
+    padding: 12, gap: 8, marginTop: 4, marginBottom: 8,
+  },
+  boosterHeader: { flexDirection:"row-reverse", alignItems:"center", gap:6, marginBottom:4 },
+  boosterTitle:  { fontSize:13, fontWeight:"bold", color:"#4CAF50", textAlign:"right" },
+  boosterNote: {
+    flexDirection:"row-reverse", alignItems:"flex-start", gap:5,
+    backgroundColor: Colors.warning + "18", borderRadius:8, padding:8,
+  },
+  boosterNoteText: { fontSize:11, color:Colors.warning, flex:1, textAlign:"right", lineHeight:16 },
   relayImgRow:  { flexDirection:"row-reverse", gap:8, marginBottom:8 },
   relayImgBtn:  { flex:1, flexDirection:"row-reverse", alignItems:"center", justifyContent:"center", gap:6,
                   backgroundColor:Colors.surface, borderWidth:1, borderColor:Colors.border,
@@ -1680,7 +1744,7 @@ const styles = StyleSheet.create({
   deleteConfirmText: { color: "#fff", fontWeight: "bold", fontSize: 14 },
 });
 
-/* شارة نقطة البث — InstallCard للمشرف */
+/* شارات InstallCard للمشرف */
 const icSup = StyleSheet.create({
   relayBadge: {
     flexDirection: "row-reverse",
@@ -1693,4 +1757,15 @@ const icSup = StyleSheet.create({
     alignSelf: "flex-end",
   },
   relayText: { fontSize: 11, fontWeight: "bold", color: "#9C27B0" },
+
+  boosterBadge: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#4CAF5022",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  boosterText: { fontSize: 11, fontWeight: "bold", color: "#4CAF50", flex: 1, textAlign: "right" },
 });
