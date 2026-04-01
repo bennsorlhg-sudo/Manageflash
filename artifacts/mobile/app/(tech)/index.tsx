@@ -10,7 +10,7 @@ import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
-import { apiGet, apiPatch } from "@/utils/api";
+import { apiGet, apiPatch, apiPost } from "@/utils/api";
 
 /* ─────────────── ثوابت ─────────────── */
 const TECH_COLOR = Colors.roles?.tech_engineer ?? "#FF9800";
@@ -120,8 +120,9 @@ export default function TechEngineerScreen() {
   /* ─── التذاكر حسب القسم ─── */
   const newRepairs   = repairs.filter(t => ["new","pending","draft"].includes(t.status)).map(t => toTicket(t, "repair"));
   const ipRepairs    = repairs.filter(t => t.status === "in_progress").map(t => toTicket(t, "repair"));
-  const newInstalls  = installs.filter(t => ["new","pending"].includes(t.status)).map(t => toTicket(t, "install"));
-  const ipInstalls   = installs.filter(t => ["in_progress","preparing"].includes(t.status)).map(t => toTicket(t, "install"));
+  /* التذاكر المجهّزة فقط تظهر للمهندس (preparing = جاهزة للتنفيذ) */
+  const newInstalls  = installs.filter(t => t.status === "preparing").map(t => toTicket(t, "install"));
+  const ipInstalls   = installs.filter(t => t.status === "in_progress").map(t => toTicket(t, "install"));
 
   const newItems  = [...newRepairs, ...newInstalls].sort((a, b) => 0);
   const ipItems   = [...ipRepairs, ...ipInstalls];
@@ -132,21 +133,27 @@ export default function TechEngineerScreen() {
   const startTicket = async (t: Ticket) => {
     setSaving(t.id);
     try {
-      const endpoint = t.source === "repair"
-        ? `/tickets/repair/${t.sourceId}`
-        : `/tickets/installation/${t.sourceId}`;
-      await apiPatch(endpoint, token, {
-        status:        "in_progress",
-        assignedToName: myName || undefined,
-      });
       if (t.source === "repair") {
-        setRepairs(prev => prev.map(r => r.id === t.sourceId ? { ...r, status: "in_progress" } : r));
+        await apiPatch(`/tickets/repair/${t.sourceId}`, token, {
+          status: "in_progress",
+          assignedToName: myName || undefined,
+        });
+        setRepairs(prev => prev.map(r => r.id === t.sourceId ? { ...r, status: "in_progress", assignedToName: myName } : r));
       } else {
-        setInstalls(prev => prev.map(r => r.id === t.sourceId ? { ...r, status: "in_progress" } : r));
+        /* تركيب: يستخدم execute — يتحقق من نقاط البث */
+        const result = await apiPost(`/tickets/installation/${t.sourceId}/execute`, token, { assignedToName: myName || undefined });
+        setInstalls(prev => prev.map(r => r.id === t.sourceId ? { ...r, status: "in_progress", assignedToName: myName } : r));
       }
       setSection("inprogress");
       showToast("بدأ التنفيذ");
-    } catch { showToast("فشل بدء التنفيذ"); }
+    } catch (e: any) {
+      const msg = e?.message ?? "";
+      if (msg.includes("نقاط البث")) {
+        showToast("يجب إتمام نقاط البث الوسيطة أولاً");
+      } else {
+        showToast("فشل بدء التنفيذ");
+      }
+    }
     finally { setSaving(null); }
   };
 

@@ -1,14 +1,14 @@
 import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, RefreshControl, Platform, Modal, Linking,
+  ActivityIndicator, RefreshControl, Platform, Modal, Linking, TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiDelete, formatDate } from "@/utils/api";
+import { apiGet, apiDelete, apiPost, formatDate } from "@/utils/api";
 
 /* ─────────────── ثوابت ─────────────── */
 const SUPERVISOR_COLOR = Colors.roles?.supervisor ?? "#00BCD4";
@@ -17,6 +17,7 @@ const STATUS: Record<string, { bg: string; color: string; label: string }> = {
   new:         { bg: "#2196F322", color: "#2196F3", label: "جديدة" },
   pending:     { bg: "#2196F322", color: "#2196F3", label: "جديدة" },
   draft:       { bg: "#90909022", color: "#909090", label: "مسودة" },
+  preparing:   { bg: "#9C27B022", color: "#9C27B0", label: "جاري التجهيز" },
   in_progress: { bg: "#FF980022", color: "#FF9800", label: "جاري التنفيذ" },
   completed:   { bg: "#4CAF5022", color: "#4CAF50", label: "مكتملة" },
   archived:    { bg: "#90909022", color: "#909090", label: "مؤرشفة" },
@@ -45,9 +46,19 @@ const SERVICE_TYPE_COLOR: Record<string, string> = {
 };
 
 const INSTALL_TYPE_AR: Record<string, string> = {
-  hotspot_internal: "تركيب هوتسبوت داخلي",
-  hotspot_external: "تركيب هوتسبوت خارجي",
-  broadband:        "تركيب برودباند",
+  hotspot_internal:   "تركيب هوتسبوت داخلي",
+  hotspot_external:   "تركيب هوتسبوت خارجي",
+  broadband_internal: "تركيب برودباند داخلي",
+  broadband:          "تركيب برودباند",
+  external:           "تركيب نقطة خارجية",
+};
+
+const INSTALL_TYPE_COLOR: Record<string, string> = {
+  hotspot_internal:   "#4CAF50",
+  hotspot_external:   "#FF9800",
+  broadband_internal: "#2196F3",
+  broadband:          "#2196F3",
+  external:           "#FF9800",
 };
 
 const STATUS_FILTERS = [
@@ -94,6 +105,14 @@ export default function TaskTrackingScreen() {
     visible: boolean; id: number | null; ticketNum: string; section: Section;
   }>({ visible: false, id: null, ticketNum: "", section: "repair" });
   const [deleting, setDeleting] = useState(false);
+  /* prepare modal */
+  const [prepareItem,   setPrepareItem]   = useState<any>(null);
+  const [prepSubmitting, setPrepSubmitting] = useState(false);
+  /* archive modal */
+  const [archiveItem,   setArchiveItem]   = useState<any>(null);
+  const [archSubmitting, setArchSubmitting] = useState(false);
+  /* engineers list */
+  const [engineers, setEngineers] = useState<{id:number;name:string}[]>([]);
 
   /* ─── جلب البيانات ─── */
   const fetchAll = useCallback(async (silent = false) => {
@@ -112,6 +131,9 @@ export default function TaskTrackingScreen() {
   }, [token]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    apiGet("/users/engineers", token).then(setEngineers).catch(() => {});
+  }, [token]);
 
   /* ─── فلترة ─── */
   const filterItems = (items: any[]) => items.filter(item => {
@@ -145,6 +167,35 @@ export default function TaskTrackingScreen() {
     } catch {} finally {
       setDeleting(false);
       setDeleteState({ visible: false, id: null, ticketNum: "", section: "repair" });
+    }
+  };
+
+  /* ─── تجهيز التذكرة ─── */
+  const handlePrepare = async (id: number, payload: any) => {
+    setPrepSubmitting(true);
+    try {
+      const updated = await apiPost(`/tickets/installation/${id}/prepare`, token, payload);
+      setInstallTickets(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
+      setPrepareItem(null);
+    } catch (e: any) {
+      /* الخطأ سيظهر داخل المودال */
+      throw e;
+    } finally {
+      setPrepSubmitting(false);
+    }
+  };
+
+  /* ─── أرشفة التذكرة ─── */
+  const handleArchive = async (id: number, payload: any) => {
+    setArchSubmitting(true);
+    try {
+      const updated = await apiPost(`/tickets/installation/${id}/archive`, token, payload);
+      setInstallTickets(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
+      setArchiveItem(null);
+    } catch (e: any) {
+      throw e;
+    } finally {
+      setArchSubmitting(false);
     }
   };
 
@@ -261,6 +312,8 @@ export default function TaskTrackingScreen() {
               onExpand={() => setExpandedId(expandedId === item.id ? null : item.id)}
               onTimeline={() => openTimeline(item, "install")}
               onDelete={() => openDelete(item.id, `#${item.id}`, "install")}
+              onPrepare={() => setPrepareItem(item)}
+              onArchive={() => setArchiveItem(item)}
             />
           ))
         )}
@@ -349,6 +402,26 @@ export default function TaskTrackingScreen() {
           </View>
         </View>
       </Modal>
+      {/* ════ مودال التجهيز ════ */}
+      {!!prepareItem && (
+        <PrepareModal
+          item={prepareItem}
+          engineers={engineers}
+          submitting={prepSubmitting}
+          onClose={() => setPrepareItem(null)}
+          onSubmit={(payload) => handlePrepare(prepareItem.id, payload)}
+        />
+      )}
+
+      {/* ════ مودال الأرشفة ════ */}
+      {!!archiveItem && (
+        <ArchiveModal
+          item={archiveItem}
+          submitting={archSubmitting}
+          onClose={() => setArchiveItem(null)}
+          onSubmit={(payload) => handleArchive(archiveItem.id, payload)}
+        />
+      )}
     </View>
   );
 }
@@ -617,108 +690,192 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
 /* ════════════════════════════════════════════════
    بطاقة تذكرة التركيب
 ════════════════════════════════════════════════ */
-function InstallCard({ item, expanded, onExpand, onTimeline, onDelete }: {
-  item: any;
-  expanded: boolean;
-  onExpand: () => void;
-  onTimeline: () => void;
-  onDelete: () => void;
+function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare, onArchive }: {
+  item: any; expanded: boolean;
+  onExpand: () => void; onTimeline: () => void; onDelete: () => void;
+  onPrepare: () => void; onArchive: () => void;
 }) {
-  const si = STATUS[item.status] ?? STATUS["pending"];
+  const si        = STATUS[item.status] ?? STATUS["pending"];
   const typeLabel = INSTALL_TYPE_AR[item.serviceType] ?? `تركيب ${item.serviceType ?? ""}`;
+  const typeColor = INSTALL_TYPE_COLOR[item.serviceType] ?? Colors.primary;
+  const status    = item.status ?? "new";
+  const isNew     = ["new", "pending", "draft"].includes(status);
+  const isCompleted = ["completed"].includes(status);
+  const hasPhone  = !!item.clientPhone;
+  const hasMap    = !!item.locationUrl;
+
+  const openMap = async (rawUrl: string) => {
+    if (!rawUrl) return;
+    const coordMatch = rawUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
+    const plainCoord = rawUrl.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+    let mapsUrl: string;
+    if (coordMatch) {
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${coordMatch[1]},${coordMatch[2]}`;
+    } else if (plainCoord) {
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${plainCoord[1]},${plainCoord[2]}`;
+    } else if (rawUrl.startsWith("http")) {
+      mapsUrl = rawUrl;
+    } else {
+      mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(rawUrl)}`;
+    }
+    const canOpen = await Linking.canOpenURL(mapsUrl);
+    if (canOpen) { Linking.openURL(mapsUrl); }
+    else { Linking.openURL(`https://maps.google.com/?q=${encodeURIComponent(rawUrl)}`); }
+  };
 
   return (
-    <View style={styles.card}>
-      {/* ─ رأس البطاقة ─ */}
-      <View style={styles.cardHeader}>
-        <Text style={styles.ticketNum}>#{item.id}</Text>
-        <View style={{ flexDirection: "row-reverse", gap: 6, flex: 1, flexWrap: "wrap", justifyContent: "flex-start" }}>
-          <View style={[styles.typePill, { backgroundColor: Colors.info + "22" }]}>
-            <Text style={[styles.typePillText, { color: Colors.info }]}>{typeLabel}</Text>
-          </View>
-          <View style={[styles.statusPill, { backgroundColor: si.bg }]}>
-            <Text style={[styles.statusPillText, { color: si.color }]}>{si.label}</Text>
-          </View>
+    <View style={[rc.card, { borderLeftColor: typeColor }]}>
+
+      {/* ══ رأس البطاقة ══ */}
+      <View style={rc.head}>
+        <Text style={rc.num}>#{item.id}</Text>
+        <View style={[rc.typeBadge, { backgroundColor: typeColor + "22" }]}>
+          <Text style={[rc.typeBadgeText, { color: typeColor }]}>{typeLabel}</Text>
         </View>
+        <View style={[rc.statusDot, { backgroundColor: si.color }]} />
       </View>
 
-      {/* ─ التخصيص ─ */}
-      <View style={styles.metaRow}>
-        <View style={styles.assignPill}>
+      <View style={rc.divider} />
+
+      {/* ══ شارة الحالة + المهندس ══ */}
+      <View style={rc.metaRow}>
+        <View style={[rc.prioBadge, { borderColor: si.color + "70" }]}>
+          <Text style={[rc.prioBadgeText, { color: si.color }]}>{si.label}</Text>
+        </View>
+        <View style={rc.engineerBadge}>
           <Ionicons
             name={item.assignedToName ? "person-circle" : "people-circle-outline"}
-            size={13}
+            size={14}
             color={item.assignedToName ? Colors.primary : Colors.textMuted}
           />
-          <Text style={[styles.assignPillText, { color: item.assignedToName ? Colors.primary : Colors.textMuted }]}>
+          <Text style={[rc.engineerText, { color: item.assignedToName ? Colors.primary : Colors.textMuted }]}>
             {item.assignedToName ?? "للجميع"}
           </Text>
         </View>
       </View>
 
-      {/* ─ بيانات العميل ─ */}
+      {/* ══ اسم العميل ══ */}
       {item.clientName && (
-        <Text style={styles.clientName}>{item.clientName}</Text>
+        <View style={rc.row}>
+          <Ionicons name="person-outline" size={14} color={Colors.textSecondary} />
+          <Text style={rc.rowText}>{item.clientName}</Text>
+        </View>
       )}
+
+      {/* ══ الجوال ══ */}
       {item.clientPhone && (
-        <TouchableOpacity style={styles.phoneRow} onPress={() => Linking.openURL(`tel:${item.clientPhone}`)}>
+        <View style={rc.row}>
           <Ionicons name="call-outline" size={14} color={Colors.success} />
-          <Text style={styles.phoneText}>{item.clientPhone}</Text>
-        </TouchableOpacity>
+          <Text style={[rc.rowText, { color: Colors.success, flex: 1 }]}>{item.clientPhone}</Text>
+        </View>
       )}
 
-      {/* ─ الموقع ─ */}
+      {/* ══ الموقع ══ */}
       {item.address && (
-        <View style={styles.infoRow}>
+        <View style={rc.row}>
           <Ionicons name="location-outline" size={14} color={Colors.textSecondary} />
-          <Text style={styles.infoText}>{item.address}</Text>
+          <Text style={[rc.rowText, { flex: 1 }]}>{item.address}</Text>
         </View>
       )}
-      {item.locationUrl && (
-        <TouchableOpacity style={styles.infoRow} onPress={() => Linking.openURL(item.locationUrl)}>
-          <Ionicons name="map-outline" size={14} color={Colors.info} />
-          <Text style={[styles.infoText, { color: Colors.info }]}>فتح الخريطة</Text>
-        </TouchableOpacity>
+
+      {/* ══ معلومات الجهاز (بعد التجهيز) ══ */}
+      {item.deviceName && (
+        <View style={rc.row}>
+          <Ionicons name="hardware-chip-outline" size={14} color={Colors.textSecondary} />
+          <Text style={rc.rowText}>{item.deviceName} — {item.deviceSerial ?? "—"}</Text>
+        </View>
       )}
 
+      {/* ══ الاشتراك ══ */}
+      {item.subscriptionFee && (
+        <View style={rc.row}>
+          <Ionicons name="cash-outline" size={14} color={Colors.success} />
+          <Text style={[rc.rowText, { color: Colors.success }]}>قيمة الاشتراك: {item.subscriptionFee} ريال</Text>
+        </View>
+      )}
+
+      {/* ══ ملاحظات ══ */}
       {item.notes && (
-        <Text style={styles.problemText}>{item.notes}</Text>
-      )}
-
-      {/* ─ التفاصيل الموسّعة ─ */}
-      {expanded && (
-        <View style={styles.expandedBox}>
-          <InfoLine icon="calendar-outline"    label="تاريخ الإنشاء" value={formatDate(item.createdAt)} />
-          {item.scheduledAt && (
-            <InfoLine icon="time-outline"      label="موعد التنفيذ"  value={formatDate(item.scheduledAt)} />
-          )}
-          {item.completedAt && (
-            <InfoLine icon="checkmark-circle-outline" label="تاريخ الانتهاء" value={formatDate(item.completedAt)} />
-          )}
-          {item.subscriptionFee && (
-            <InfoLine icon="cash-outline"      label="رسوم الاشتراك" value={`${item.subscriptionFee} ريال`} />
-          )}
-          {item.deviceName && (
-            <InfoLine icon="hardware-chip-outline" label="الجهاز"   value={item.deviceName} />
-          )}
+        <View style={rc.problemBox}>
+          <Text style={rc.problemLabel}>ملاحظات:</Text>
+          <Text style={rc.problemText}>{item.notes}</Text>
         </View>
       )}
 
-      {/* ─ أزرار الإجراءات ─ */}
-      <View style={styles.actionBtns}>
-        <TouchableOpacity style={styles.actionBtn} onPress={onExpand}>
-          <Ionicons name={expanded ? "chevron-up" : "chevron-down"} size={14} color={Colors.textSecondary} />
-          <Text style={styles.actionBtnText}>{expanded ? "إخفاء" : "تفاصيل"}</Text>
-        </TouchableOpacity>
+      {/* ══ نقاط البث الوسيطة ══ */}
+      {item.hasRelayPoints && (
+        <View style={ic.relayBadge}>
+          <Ionicons name="git-network-outline" size={13} color="#9C27B0" />
+          <Text style={ic.relayText}>يحتوي على نقاط بث وسيطة</Text>
+        </View>
+      )}
 
-        <TouchableOpacity style={styles.actionBtn} onPress={onTimeline}>
-          <Ionicons name="time-outline" size={14} color={SUPERVISOR_COLOR} />
-          <Text style={[styles.actionBtnText, { color: SUPERVISOR_COLOR }]}>متابعة</Text>
-        </TouchableOpacity>
+      {/* ══ التفاصيل الموسّعة ══ */}
+      {expanded && (
+        <View style={rc.expandedBox}>
+          {item.subscriptionName && <InfoLine icon="wifi-outline"             label="اسم الاشتراك"  value={item.subscriptionName} />}
+          {item.internetFee      && <InfoLine icon="cash-outline"             label="رسوم الإنترنت" value={`${item.internetFee} ريال`} />}
+          {item.createdByName    && <InfoLine icon="create-outline"           label="أنشأه"          value={item.createdByName} />}
+          <InfoLine icon="calendar-outline" label="تاريخ الإنشاء"             value={formatDate(item.createdAt)} />
+          {item.completedAt && <InfoLine icon="checkmark-circle-outline"     label="تاريخ الانتهاء" value={formatDate(item.completedAt)} />}
+        </View>
+      )}
 
-        <TouchableOpacity style={styles.actionBtn} onPress={onDelete}>
-          <Ionicons name="trash-outline" size={14} color={Colors.error} />
-          <Text style={[styles.actionBtnText, { color: Colors.error }]}>حذف</Text>
+      {/* ══ صف ثانوي: تفاصيل + متابعة ══ */}
+      <View style={rc.secRow}>
+        <SuperActionBtn icon={expanded ? "chevron-up" : "chevron-down"} label={expanded ? "إخفاء" : "تفاصيل"} color={Colors.textSecondary} onPress={onExpand} />
+        <SuperActionBtn icon="time-outline" label="متابعة" color={SUPERVISOR_COLOR} onPress={onTimeline} />
+      </View>
+
+      {/* ══ صف أساسي: أزرار الإجراءات ══ */}
+      <View style={rc.mainBtnRow}>
+        {hasPhone && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: Colors.success + "22", borderColor: Colors.success + "55" }]}
+            onPress={() => Linking.openURL(`tel:${item.clientPhone}`)}
+          >
+            <Ionicons name="call" size={16} color={Colors.success} />
+            <Text style={[rc.mainBtnText, { color: Colors.success }]}>اتصال</Text>
+          </TouchableOpacity>
+        )}
+        {hasMap && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: Colors.info + "22", borderColor: Colors.info + "55" }]}
+            onPress={() => openMap(item.locationUrl)}
+          >
+            <Ionicons name="map" size={16} color={Colors.info} />
+            <Text style={[rc.mainBtnText, { color: Colors.info }]}>خريطة</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* تجهيز — للتذاكر الجديدة فقط */}
+        {isNew && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: "#9C27B022", borderColor: "#9C27B055" }]}
+            onPress={onPrepare}
+          >
+            <Ionicons name="construct" size={16} color="#9C27B0" />
+            <Text style={[rc.mainBtnText, { color: "#9C27B0" }]}>تجهيز</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* أرشفة — بعد اكتمال المهندس */}
+        {isCompleted && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: Colors.success + "22", borderColor: Colors.success + "55" }]}
+            onPress={onArchive}
+          >
+            <Ionicons name="archive" size={16} color={Colors.success} />
+            <Text style={[rc.mainBtnText, { color: Colors.success }]}>أرشفة</Text>
+          </TouchableOpacity>
+        )}
+
+        <TouchableOpacity
+          style={[rc.mainBtn, { backgroundColor: Colors.error + "18", borderColor: Colors.error + "55" }]}
+          onPress={onDelete}
+        >
+          <Ionicons name="trash" size={16} color={Colors.error} />
+          <Text style={[rc.mainBtnText, { color: Colors.error }]}>حذف</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -875,6 +1032,384 @@ const rc = StyleSheet.create({
     borderWidth: 1,
   },
   mainBtnText: { fontSize: 13, fontWeight: "bold" },
+});
+
+/* أنماط InstallCard الإضافية */
+const ic = StyleSheet.create({
+  relayBadge: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 6,
+    backgroundColor: "#9C27B018", borderRadius: 8, padding: 8,
+  },
+  relayText: { fontSize: 12, color: "#9C27B0", textAlign: "right" },
+});
+
+/* ════════════════════════════════════════════════
+   مودال التجهيز
+════════════════════════════════════════════════ */
+function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
+  item: any;
+  engineers: {id:number;name:string}[];
+  submitting: boolean;
+  onClose: () => void;
+  onSubmit: (payload: any) => Promise<void>;
+}) {
+  const svc = item.serviceType ?? "";
+  const [form, setForm] = useState({
+    address: item.address ?? "",
+    locationUrl: item.locationUrl ?? "",
+    deviceName: "",
+    deviceSerial: "",
+    subscriptionName: "",
+    internetFee: "",
+    notes: "",
+  });
+  const [assignedId,   setAssignedId]   = useState<number|null>(item.assignedToId ?? null);
+  const [assignedName, setAssignedName] = useState<string>(item.assignedToName ?? "");
+
+  /* نقاط البث (للهوتسبوت فقط) */
+  const [hasRelays, setHasRelays] = useState(false);
+  const [relayCount, setRelayCount] = useState("1");
+  const [relays, setRelays] = useState<{description:string;locationUrl:string}[]>([{description:"",locationUrl:""}]);
+
+  const [errMsg, setErrMsg] = useState("");
+
+  const setF = (k: keyof typeof form, v: string) => setForm(f => ({...f,[k]:v}));
+
+  const handleRelayCount = (v: string) => {
+    const n = Math.max(1, Math.min(10, parseInt(v)||1));
+    setRelayCount(String(n));
+    setRelays(prev => {
+      const next = [...prev];
+      while (next.length < n) next.push({description:"",locationUrl:""});
+      return next.slice(0, n);
+    });
+  };
+
+  const handleSubmit = async () => {
+    if (!form.address.trim()) { setErrMsg("وصف الموقع مطلوب"); return; }
+    if (!form.deviceName.trim()) { setErrMsg("اسم الجهاز مطلوب"); return; }
+    setErrMsg("");
+    const payload: any = {
+      address:     form.address.trim(),
+      locationUrl: form.locationUrl.trim() || null,
+      deviceName:  form.deviceName.trim(),
+      deviceSerial: form.deviceSerial.trim() || null,
+      notes:       form.notes.trim() || null,
+      assignedToId:   assignedId   ?? null,
+      assignedToName: assignedName || null,
+    };
+    if (svc === "broadband_internal") {
+      payload.subscriptionName = form.subscriptionName.trim() || null;
+      payload.internetFee      = form.internetFee ? parseFloat(form.internetFee) : null;
+    }
+    if (svc === "hotspot_internal" && hasRelays) {
+      payload.relayPoints = relays.filter(r => r.description.trim()).map(r => ({
+        description: r.description.trim(),
+        locationUrl: r.locationUrl.trim() || null,
+      }));
+    }
+    try {
+      await onSubmit(payload);
+    } catch (e: any) {
+      setErrMsg(e?.message ?? "فشل التجهيز");
+    }
+  };
+
+  const svcLabel = INSTALL_TYPE_AR[svc] ?? svc;
+  const svcColor = INSTALL_TYPE_COLOR[svc] ?? Colors.primary;
+
+  return (
+    <Modal visible transparent animationType="slide">
+      <View style={pm.overlay}>
+        <View style={pm.sheet}>
+          {/* رأس */}
+          <View style={pm.header}>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
+            <Text style={pm.title}>تجهيز التذكرة #{item.id}</Text>
+            <View style={[pm.badge, { backgroundColor: svcColor + "22" }]}>
+              <Text style={[pm.badgeText, { color: svcColor }]}>{svcLabel}</Text>
+            </View>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={pm.body}>
+
+            {/* ── تأكيد الموقع ── */}
+            <Text style={pm.sectionTitle}>تأكيد الموقع</Text>
+            <MF label="وصف الموقع *" value={form.address} onChange={v=>setF("address",v)} multiline />
+            <MF label="رابط الموقع (خرائط) — اختياري" value={form.locationUrl} onChange={v=>setF("locationUrl",v)} />
+
+            {/* ── تسليم الجهاز ── */}
+            <Text style={pm.sectionTitle}>بيانات الجهاز</Text>
+            <MF label="اسم الجهاز *" value={form.deviceName} onChange={v=>setF("deviceName",v)} />
+            <MF label="رقم الجهاز (Serial)" value={form.deviceSerial} onChange={v=>setF("deviceSerial",v)} />
+
+            {/* ── برودباند فقط ── */}
+            {svc === "broadband_internal" && (
+              <>
+                <Text style={pm.sectionTitle}>بيانات الاشتراك</Text>
+                <MF label="اسم الاشتراك (مثال: andls123)" value={form.subscriptionName} onChange={v=>setF("subscriptionName",v)} />
+                <MF label="قيمة اشتراك الإنترنت" value={form.internetFee} onChange={v=>setF("internetFee",v)} kb="decimal-pad" />
+              </>
+            )}
+
+            {/* ── نقاط البث (هوتسبوت داخلي فقط) ── */}
+            {svc === "hotspot_internal" && (
+              <>
+                <TouchableOpacity
+                  style={[pm.toggleBtn, hasRelays && { borderColor: "#9C27B0" }]}
+                  onPress={() => setHasRelays(h => !h)}
+                >
+                  <Ionicons name={hasRelays ? "checkbox" : "square-outline"} size={18} color={hasRelays ? "#9C27B0" : Colors.textMuted} />
+                  <Text style={[pm.toggleText, hasRelays && { color: "#9C27B0" }]}>إضافة نقاط بث خارجية</Text>
+                </TouchableOpacity>
+                {hasRelays && (
+                  <View style={pm.relaySection}>
+                    <MF label="عدد النقاط" value={relayCount} onChange={handleRelayCount} kb="number-pad" />
+                    {relays.map((r, i) => (
+                      <View key={i} style={pm.relayItem}>
+                        <Text style={pm.relayNum}>النقطة ({i+1})</Text>
+                        <MF label="وصف الموقع *" value={r.description} onChange={v => setRelays(prev => prev.map((x,j)=>j===i?{...x,description:v}:x))} />
+                        <MF label="رابط الموقع — اختياري" value={r.locationUrl} onChange={v => setRelays(prev => prev.map((x,j)=>j===i?{...x,locationUrl:v}:x))} />
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ── إسناد فني ── */}
+            <Text style={pm.sectionTitle}>الفني المنفذ — اختياري</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={pm.chips}>
+              <TouchableOpacity
+                style={[pm.chip, assignedId===null && pm.chipActive]}
+                onPress={() => { setAssignedId(null); setAssignedName(""); }}
+              >
+                <Text style={[pm.chipTxt, assignedId===null && pm.chipActiveTxt]}>الكل</Text>
+              </TouchableOpacity>
+              {engineers.map(e => (
+                <TouchableOpacity
+                  key={e.id}
+                  style={[pm.chip, assignedId===e.id && pm.chipActive]}
+                  onPress={() => { setAssignedId(e.id); setAssignedName(e.name); }}
+                >
+                  <Text style={[pm.chipTxt, assignedId===e.id && pm.chipActiveTxt]}>{e.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            <MF label="ملاحظات — اختياري" value={form.notes} onChange={v=>setF("notes",v)} multiline />
+
+            {!!errMsg && (
+              <View style={pm.errBox}>
+                <Ionicons name="alert-circle-outline" size={15} color={Colors.error} />
+                <Text style={pm.errText}>{errMsg}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[pm.submitBtn, submitting && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              disabled={submitting}
+            >
+              {submitting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <>
+                    <Ionicons name="construct" size={18} color="#fff" />
+                    <Text style={pm.submitTxt}>تأكيد التجهيز وإرسال للمهندس</Text>
+                  </>
+              }
+            </TouchableOpacity>
+            <View style={{height:30}} />
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/* حقل إدخال موحّد داخل PrepareModal */
+function MF({ label, value, onChange, kb, multiline }: {
+  label:string; value:string; onChange:(v:string)=>void; kb?:any; multiline?:boolean;
+}) {
+  return (
+    <View style={{marginBottom:10}}>
+      <Text style={pm.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[pm.input, multiline && {height:64}]}
+        value={value}
+        onChangeText={onChange}
+        placeholder={label}
+        placeholderTextColor={Colors.textSecondary}
+        keyboardType={kb}
+        textAlign="right"
+        textAlignVertical={multiline?"top":"center"}
+        multiline={multiline}
+      />
+    </View>
+  );
+}
+
+/* أنماط PrepareModal */
+const pm = StyleSheet.create({
+  overlay:  { flex:1, backgroundColor:"#000000AA", justifyContent:"flex-end" },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    maxHeight: "92%",
+  },
+  header: {
+    flexDirection: "row-reverse", alignItems: "center",
+    paddingHorizontal: 18, paddingVertical: 14, gap: 10,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+  },
+  title:     { flex:1, fontSize:16, fontWeight:"bold", color:Colors.text, textAlign:"right" },
+  badge:     { paddingHorizontal:10, paddingVertical:4, borderRadius:8 },
+  badgeText: { fontSize:12, fontWeight:"bold" },
+  body:      { paddingHorizontal:18, paddingTop:12 },
+  sectionTitle: { fontSize:13, fontWeight:"700", color:Colors.textSecondary, textAlign:"right", marginTop:8, marginBottom:6, borderBottomWidth:1, borderBottomColor:Colors.border, paddingBottom:4 },
+  fieldLabel:   { fontSize:13, fontWeight:"600", color:Colors.textSecondary, textAlign:"right", marginBottom:4 },
+  input: {
+    backgroundColor: Colors.surfaceElevated, borderRadius:10,
+    borderWidth:1, borderColor:Colors.border, padding:11,
+    fontSize:14, color:Colors.text, textAlign:"right", height:44,
+  },
+  toggleBtn: {
+    flexDirection:"row-reverse", alignItems:"center", gap:8,
+    backgroundColor: "#9C27B011", borderRadius:10, padding:12,
+    borderWidth:1, borderColor:Colors.border, marginBottom:8,
+  },
+  toggleText: { fontSize:14, color:Colors.textSecondary, fontWeight:"600" },
+  relaySection: { backgroundColor:Colors.surfaceElevated, borderRadius:12, padding:12, gap:8, marginBottom:8 },
+  relayItem:    { borderTopWidth:1, borderTopColor:Colors.border, paddingTop:8, marginTop:4 },
+  relayNum:     { fontSize:13, fontWeight:"bold", color:"#9C27B0", textAlign:"right", marginBottom:6 },
+  chips:    { flexDirection:"row-reverse", gap:8, paddingVertical:4, marginBottom:10 },
+  chip:     { paddingHorizontal:14, paddingVertical:7, borderRadius:10, borderWidth:1, borderColor:Colors.border, backgroundColor:Colors.surface },
+  chipActive:    { backgroundColor:Colors.primary, borderColor:Colors.primary },
+  chipTxt:       { fontSize:13, color:Colors.textSecondary },
+  chipActiveTxt: { color:"#fff", fontWeight:"bold" },
+  errBox:   { flexDirection:"row-reverse", alignItems:"center", gap:6, backgroundColor:Colors.error+"18", borderRadius:8, padding:10, marginBottom:8 },
+  errText:  { fontSize:13, color:Colors.error, flex:1, textAlign:"right" },
+  submitBtn: {
+    flexDirection:"row-reverse", alignItems:"center", justifyContent:"center",
+    gap:8, backgroundColor:Colors.primary, borderRadius:12, padding:14, marginTop:8,
+  },
+  submitTxt: { fontSize:15, fontWeight:"bold", color:"#fff" },
+});
+
+/* ════════════════════════════════════════════════
+   مودال الأرشفة
+════════════════════════════════════════════════ */
+function ArchiveModal({ item, submitting, onClose, onSubmit }: {
+  item: any; submitting: boolean;
+  onClose: () => void; onSubmit: (payload: any) => Promise<void>;
+}) {
+  const [notes, setNotes] = useState("");
+  const [errMsg, setErrMsg] = useState("");
+  const svcLabel = INSTALL_TYPE_AR[item.serviceType] ?? item.serviceType;
+  const svcColor = INSTALL_TYPE_COLOR[item.serviceType] ?? Colors.primary;
+
+  const handleSubmit = async () => {
+    setErrMsg("");
+    try {
+      await onSubmit({ archiveNotes: notes.trim() || null });
+    } catch (e: any) {
+      setErrMsg(e?.message ?? "فشل الأرشفة");
+    }
+  };
+
+  return (
+    <Modal visible transparent animationType="fade">
+      <View style={am.overlay}>
+        <View style={am.card}>
+          {/* أيقونة + عنوان */}
+          <View style={am.iconCircle}>
+            <Ionicons name="archive" size={36} color={Colors.success} />
+          </View>
+          <Text style={am.title}>تأكيد الأرشفة #{item.id}</Text>
+
+          {/* ملخص التذكرة */}
+          <View style={am.summaryBox}>
+            <View style={[am.badge, { backgroundColor: svcColor + "22" }]}>
+              <Text style={[am.badgeText, { color: svcColor }]}>{svcLabel}</Text>
+            </View>
+            {item.clientName   && <Text style={am.summaryText}>العميل: {item.clientName}</Text>}
+            {item.deviceName   && <Text style={am.summaryText}>الجهاز: {item.deviceName} — {item.deviceSerial ?? "—"}</Text>}
+            {item.address      && <Text style={am.summaryText}>الموقع: {item.address}</Text>}
+            {item.subscriptionFee && <Text style={am.summaryText}>الاشتراك: {item.subscriptionFee} ريال</Text>}
+            {item.internetFee  && <Text style={am.summaryText}>رسوم الإنترنت: {item.internetFee} ريال</Text>}
+            {item.assignedToName && <Text style={am.summaryText}>المهندس: {item.assignedToName}</Text>}
+          </View>
+
+          <Text style={am.fieldLabel}>ملاحظات الأرشفة — اختياري</Text>
+          <TextInput
+            style={[am.input, {height:60}]}
+            value={notes}
+            onChangeText={setNotes}
+            placeholder="أضف ملاحظة..."
+            placeholderTextColor={Colors.textSecondary}
+            textAlign="right"
+            textAlignVertical="top"
+            multiline
+          />
+
+          {!!errMsg && (
+            <View style={am.errBox}>
+              <Ionicons name="alert-circle-outline" size={14} color={Colors.error} />
+              <Text style={am.errText}>{errMsg}</Text>
+            </View>
+          )}
+
+          <View style={am.actions}>
+            <TouchableOpacity style={am.cancelBtn} onPress={onClose} disabled={submitting}>
+              <Text style={am.cancelTxt}>إلغاء</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[am.confirmBtn, submitting && {opacity:0.6}]} onPress={handleSubmit} disabled={submitting}>
+              {submitting
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Text style={am.confirmTxt}>تأكيد الأرشفة</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const am = StyleSheet.create({
+  overlay: { flex:1, backgroundColor:"#000000BB", alignItems:"center", justifyContent:"center" },
+  card: {
+    backgroundColor: Colors.surface, borderRadius:20, padding:22,
+    width:"88%", gap:10, alignItems:"center",
+  },
+  iconCircle: {
+    width:70, height:70, borderRadius:35,
+    backgroundColor: Colors.success + "18",
+    alignItems:"center", justifyContent:"center", marginBottom:4,
+  },
+  title: { fontSize:18, fontWeight:"bold", color:Colors.text, textAlign:"center" },
+  summaryBox: {
+    backgroundColor: Colors.surfaceElevated, borderRadius:12,
+    padding:12, width:"100%", gap:4, alignItems:"flex-end",
+  },
+  badge:     { paddingHorizontal:10, paddingVertical:4, borderRadius:8, marginBottom:4 },
+  badgeText: { fontSize:12, fontWeight:"bold" },
+  summaryText: { fontSize:13, color:Colors.textSecondary, textAlign:"right" },
+  fieldLabel: { fontSize:13, fontWeight:"600", color:Colors.textSecondary, textAlign:"right", alignSelf:"flex-end" },
+  input: {
+    backgroundColor: Colors.surfaceElevated, borderRadius:10,
+    borderWidth:1, borderColor:Colors.border, padding:10,
+    fontSize:14, color:Colors.text, textAlign:"right", width:"100%",
+  },
+  errBox: { flexDirection:"row-reverse", alignItems:"center", gap:6, backgroundColor:Colors.error+"18", borderRadius:8, padding:8, width:"100%" },
+  errText: { fontSize:13, color:Colors.error, flex:1, textAlign:"right" },
+  actions: { flexDirection:"row-reverse", gap:10, width:"100%", marginTop:4 },
+  cancelBtn: { flex:1, paddingVertical:12, borderRadius:12, alignItems:"center", backgroundColor:Colors.surfaceElevated },
+  cancelTxt: { fontSize:15, fontWeight:"bold", color:Colors.textSecondary },
+  confirmBtn:{ flex:1, paddingVertical:12, borderRadius:12, alignItems:"center", backgroundColor:Colors.success },
+  confirmTxt:{ fontSize:15, fontWeight:"bold", color:"#fff" },
 });
 
 /* ════════════════════════════════════════════════
