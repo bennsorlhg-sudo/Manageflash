@@ -307,6 +307,7 @@ export default function TaskTrackingScreen() {
               onExpand={() => setExpandedId(expandedId === item.id ? null : item.id)}
               onTimeline={() => openTimeline(item, "repair")}
               onDelete={() => openDelete(item.id, `#${item.id}`, "repair")}
+              onViewImage={setViewImageUrl}
             />
           ))
         ) : (
@@ -555,21 +556,24 @@ const fbStyles = StyleSheet.create({
 /* ════════════════════════════════════════════════
    بطاقة تذكرة الإصلاح
 ════════════════════════════════════════════════ */
-function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
+function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImage }: {
   item: any;
   expanded: boolean;
   onExpand: () => void;
   onTimeline: () => void;
   onDelete: () => void;
+  onViewImage?: (url: string) => void;
 }) {
-  const si        = STATUS[item.status] ?? STATUS["pending"];
-  const typeLabel = SERVICE_TYPE_AR[item.serviceType] ?? `إصلاح ${item.serviceType ?? ""}`;
-  const typeColor = SERVICE_TYPE_COLOR[item.serviceType] ?? Colors.primary;
-  const prioInfo  = PRIORITY_AR[item.priority] ?? { label: item.priority ?? "—", color: Colors.textMuted };
+  const si          = STATUS[item.status] ?? STATUS["pending"];
+  const typeLabel   = SERVICE_TYPE_AR[item.serviceType] ?? `إصلاح ${item.serviceType ?? ""}`;
+  const typeColor   = SERVICE_TYPE_COLOR[item.serviceType] ?? Colors.primary;
+  const prioInfo    = PRIORITY_AR[item.priority] ?? { label: item.priority ?? "—", color: Colors.textMuted };
   const showContact = item.serviceType !== "hotspot_external";
   const isCompleted = item.status === "completed";
   const hasPhone    = showContact && !!item.clientPhone;
   const hasMap      = !!item.locationUrl;
+  const hasContract = !!item.contractImageUrl;
+  const hasCompletion = isCompleted && !!item.completionPhotoUrl;
 
   const openMap = async (rawUrl: string) => {
     const coordMatch = rawUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
@@ -663,6 +667,17 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
         </View>
       )}
 
+      {/* ══ صورة التنفيذ (للمكتملة) ══ */}
+      {hasCompletion && onViewImage && (
+        <TouchableOpacity
+          style={rc.completionPhotoBtn}
+          onPress={() => onViewImage(item.completionPhotoUrl)}
+        >
+          <Ionicons name="camera" size={16} color={Colors.success} />
+          <Text style={[rc.mainBtnText, { color: Colors.success }]}>صورة التنفيذ للتأكيد</Text>
+        </TouchableOpacity>
+      )}
+
       {/* ══ التفاصيل الموسّعة ══ */}
       {expanded && (
         <View style={rc.expandedBox}>
@@ -680,7 +695,7 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
         <SuperActionBtn icon="time-outline" label="متابعة" color={SUPERVISOR_COLOR} onPress={onTimeline} />
       </View>
 
-      {/* ══ صف أساسي: اتصال + خريطة + حذف ══ */}
+      {/* ══ صف أساسي: اتصال + خريطة + صورة العقد + حذف ══ */}
       <View style={rc.mainBtnRow}>
         {hasPhone && (
           <TouchableOpacity
@@ -698,6 +713,15 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete }: {
           >
             <Ionicons name="map" size={16} color={Colors.info} />
             <Text style={[rc.mainBtnText, { color: Colors.info }]}>خريطة</Text>
+          </TouchableOpacity>
+        )}
+        {hasContract && onViewImage && (
+          <TouchableOpacity
+            style={[rc.mainBtn, { backgroundColor: "#9C27B022", borderColor: "#9C27B055" }]}
+            onPress={() => onViewImage(item.contractImageUrl)}
+          >
+            <Ionicons name="image" size={16} color="#9C27B0" />
+            <Text style={[rc.mainBtnText, { color: "#9C27B0" }]}>الصورة</Text>
           </TouchableOpacity>
         )}
         <TouchableOpacity
@@ -1077,6 +1101,18 @@ const rc = StyleSheet.create({
     borderRadius: 8, padding: 8,
   },
   completedEngineerText: { fontSize: 13, fontWeight: "bold", color: Colors.success, textAlign: "right" },
+  completionPhotoBtn: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: Colors.success + "18",
+    borderColor: Colors.success + "55",
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginTop: 6,
+  },
   expandedBox: {
     backgroundColor: Colors.surfaceElevated,
     borderRadius: 10, padding: 10, gap: 6,

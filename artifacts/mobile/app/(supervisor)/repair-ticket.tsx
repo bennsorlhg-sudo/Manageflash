@@ -84,9 +84,9 @@ export default function CreateRepairTicketScreen() {
     setFetching(true);
     setFetchMsg(null);
 
-    const isBroadband = cleaned.toLowerCase().startsWith("p");
+    /* P كبير أو صغير = برودباند */
+    const isBroadband = cleaned.startsWith("P") || cleaned.startsWith("p");
     const numericPart = parseInt(cleaned.replace(/\D/g, "")) || 0;
-    const detectedType: ServiceType = isBroadband ? "broadband" : serviceType;
 
     try {
       const endpoint = isBroadband
@@ -101,14 +101,20 @@ export default function CreateRepairTicketScreen() {
         ?? null;
 
       if (match) {
+        /* اكتشاف النوع من بيانات الشبكة */
+        const detected: ServiceType = isBroadband
+          ? "broadband"
+          : (match.hotspotType === "external" ? "hotspot_external" : "hotspot_internal");
+
         setClientName(match.clientName ?? match.name ?? "");
         setClientPhone(match.clientPhone ?? match.phone ?? "");
         setLocation(match.location ?? match.address ?? "");
         setLocationUrl(match.locationUrl ?? "");
-        setServiceType(detectedType);
+        setServiceType(detected);
         setFetchMsg({ text: "✔ تم جلب البيانات تلقائياً", ok: true });
       } else {
-        setServiceType(detectedType);
+        /* لا يوجد تطابق — لكن نحدد برودباند إن كان P */
+        if (isBroadband) setServiceType("broadband");
         setFetchMsg({
           text: "لا توجد بيانات لهذا الرقم – الرجاء إدخال البيانات يدوياً",
           ok: false,

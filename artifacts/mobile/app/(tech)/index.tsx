@@ -241,11 +241,12 @@ export default function TechEngineerScreen() {
     setCsaving(true);
     try {
       if (completeTicket.source === "repair") {
-        /* تذاكر الصيانة: PATCH بالحالة */
+        /* تذاكر الصيانة: PATCH بالحالة والصورة */
         await apiPatch(`/tickets/repair/${completeTicket.sourceId}`, token, {
           status: "completed",
           assignedToName: myName || undefined,
           ...(cNotes ? { notes: cNotes } : {}),
+          completionPhotoUrl: cPhotoBase64 || null,
         });
         setRepairs(prev => prev.filter(r => r.id !== completeTicket.sourceId));
       } else if (completeTicket.isRelayPoint) {
