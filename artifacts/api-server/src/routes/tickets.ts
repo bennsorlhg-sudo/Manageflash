@@ -30,6 +30,7 @@ router.post("/tickets/repair", requireAuth, async (req, res) => {
     const {
       serviceNumber, clientName, clientPhone, serviceType, problemDescription,
       priority, assignedToId, assignedToName, locationUrl, location, notes, status,
+      contractImageUrl,
     } = req.body;
 
     const [row] = await db.insert(repairTicketsTable).values({
@@ -45,6 +46,7 @@ router.post("/tickets/repair", requireAuth, async (req, res) => {
       assignedToName: assignedToName ?? null,
       locationUrl: locationUrl ?? null,
       notes: notes ?? null,
+      contractImageUrl: contractImageUrl ?? null,
       createdById: req.currentUser!.id,
       createdByName: req.currentUser!.name ?? null,
     }).returning();

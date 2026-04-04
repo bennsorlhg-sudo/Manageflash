@@ -390,6 +390,7 @@ export default function TechEngineerScreen() {
                 onCopy={copyPhone}
                 onOpenMap={openMap}
                 onCopyMap={copyMapUrl}
+                onViewImage={setViewImageUrl}
               />
             ))}
             {/* مجموعات التركيب (أب + نقاط بث وسيطة) */}
@@ -436,6 +437,7 @@ export default function TechEngineerScreen() {
                     onCopy={copyPhone}
                     onOpenMap={openMap}
                     onCopyMap={copyMapUrl}
+                    onViewImage={setViewImageUrl}
                   />
                 ) : (
                   <InstallCard
@@ -576,7 +578,7 @@ export default function TechEngineerScreen() {
 /* ════════════════════════════════════════════════
    بطاقة الإصلاح
 ════════════════════════════════════════════════ */
-function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap }: {
+function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap, onViewImage }: {
   ticket: Ticket;
   section: "new" | "inprogress";
   saving: boolean;
@@ -585,11 +587,13 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOp
   onCopy: (p: string) => void;
   onOpenMap: (url: string) => void;
   onCopyMap: (url: string) => void;
+  onViewImage: (url: string) => void;
 }) {
   const isExternal = ticket.serviceType === "hotspot_external";
   const typeInfo   = REPAIR_TYPE[ticket.serviceType] ?? { label: `إصلاح ${ticket.serviceType}`, color: Colors.error };
   const hasPhone   = !!ticket.clientPhone && !isExternal;
   const hasMap     = !!ticket.locationUrl;
+  const hasImage   = !!ticket.contractImageUrl;
 
   return (
     <View style={c.card}>
@@ -687,6 +691,9 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOp
         )}
         {hasMap && (
           <ActionBtn label="خريطة" icon="map" color={Colors.info} onPress={() => onOpenMap(ticket.locationUrl!)} flex={1} />
+        )}
+        {hasImage && (
+          <ActionBtn label="صورة" icon="image" color="#9C27B0" onPress={() => onViewImage(ticket.contractImageUrl!)} flex={1} />
         )}
       </View>
     </View>

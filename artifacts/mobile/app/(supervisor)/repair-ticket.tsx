@@ -52,6 +52,7 @@ export default function CreateRepairTicketScreen() {
   const [priority,      setPriority]        = useState<Priority>("normal");
   const [notes,         setNotes]           = useState("");
   const [photoUri,      setPhotoUri]        = useState<string | null>(null);
+  const [photoBase64,   setPhotoBase64]     = useState<string | null>(null);
 
   /* التخصيص */
   type AssignMode = "all" | "specific";
@@ -121,20 +122,25 @@ export default function CreateRepairTicketScreen() {
   };
 
   /* ─── اختيار صورة ─── */
-  const pickPhoto = async () => {
+  const pickPhoto = async (fromCamera = false) => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        const cam = await ImagePicker.requestCameraPermissionsAsync();
-        if (cam.status !== "granted") return;
-        const r = await ImagePicker.launchCameraAsync({ quality: 0.7 });
-        if (!r.canceled) setPhotoUri(r.assets[0].uri);
-        return;
+      if (fromCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") return;
+        const r = await ImagePicker.launchCameraAsync({ quality: 0.3, base64: true });
+        if (!r.canceled) {
+          setPhotoUri(r.assets[0].uri);
+          setPhotoBase64(r.assets[0].base64 ? `data:image/jpeg;base64,${r.assets[0].base64}` : null);
+        }
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") return;
+        const r = await ImagePicker.launchImageLibraryAsync({ quality: 0.3, base64: true, mediaTypes: ["images"] as any });
+        if (!r.canceled) {
+          setPhotoUri(r.assets[0].uri);
+          setPhotoBase64(r.assets[0].base64 ? `data:image/jpeg;base64,${r.assets[0].base64}` : null);
+        }
       }
-      const r = await ImagePicker.launchImageLibraryAsync({
-        quality: 0.7, mediaTypes: ["images"] as any,
-      });
-      if (!r.canceled) setPhotoUri(r.assets[0].uri);
     } catch {}
   };
 
@@ -174,6 +180,7 @@ export default function CreateRepairTicketScreen() {
         createdByName: user?.name ?? null,
         assignedToId:   assignMode === "specific" ? selectedEngineerId  : null,
         assignedToName: assignMode === "specific" ? selectedEngineerName : null,
+        contractImageUrl: photoBase64 ?? null,
       });
 
       showModal(
@@ -359,17 +366,22 @@ export default function CreateRepairTicketScreen() {
 
         {/* ══════════════ صورة ══════════════ */}
         <SectionTitle title="صورة (اختياري)" />
-        <TouchableOpacity style={styles.photoBtn} onPress={pickPhoto}>
-          <Ionicons name="camera-outline" size={20} color={Colors.textSecondary} />
-          <Text style={styles.photoBtnText}>
-            {photoUri ? "تغيير الصورة" : "إرفاق صورة"}
-          </Text>
-        </TouchableOpacity>
-        {photoUri && (
+        {photoUri ? (
           <View style={styles.photoPreviewBox}>
             <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
-            <TouchableOpacity style={styles.removePhoto} onPress={() => setPhotoUri(null)}>
+            <TouchableOpacity style={styles.removePhoto} onPress={() => { setPhotoUri(null); setPhotoBase64(null); }}>
               <Ionicons name="close-circle" size={22} color={Colors.error} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ flexDirection: "row-reverse", gap: 10 }}>
+            <TouchableOpacity style={[styles.photoBtn, { flex: 1 }]} onPress={() => pickPhoto(true)}>
+              <Ionicons name="camera-outline" size={20} color={Colors.textSecondary} />
+              <Text style={styles.photoBtnText}>كاميرا</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.photoBtn, { flex: 1 }]} onPress={() => pickPhoto(false)}>
+              <Ionicons name="images-outline" size={20} color={Colors.textSecondary} />
+              <Text style={styles.photoBtnText}>المعرض</Text>
             </TouchableOpacity>
           </View>
         )}
