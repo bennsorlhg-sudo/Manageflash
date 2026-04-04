@@ -109,6 +109,7 @@ export const purchaseRequestsTable = pgTable("purchase_requests", {
   quantity: integer("quantity"),
   unit: text("unit"),
   priority: text("priority").notNull().default("medium"),
+  transactionId: integer("transaction_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -124,6 +125,8 @@ export const financialTransactionsTable = pgTable("financial_transactions", {
   referenceId: text("reference_id"),
   paymentType: text("payment_type"),
   linkedLoanId: integer("linked_loan_id"),
+  itemsPhotoUrl: text("items_photo_url"),
+  invoicePhotoUrl: text("invoice_photo_url"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

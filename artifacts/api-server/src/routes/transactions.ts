@@ -78,7 +78,7 @@ router.post("/transactions/sell", requireAuth, async (req, res) => {
 
 router.post("/transactions/disburse", requireAuth, async (req, res) => {
   try {
-    const { expenseType, amount, description, paymentType, personName, notes } = req.body;
+    const { expenseType, amount, description, paymentType, personName, notes, itemsPhotoUrl, invoicePhotoUrl } = req.body;
     const parsedAmount = parseFloat(amount);
     if (!parsedAmount || parsedAmount <= 0) return res.status(400).json({ error: "المبلغ غير صحيح" });
 
@@ -89,6 +89,8 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
     const category = categoryMap[expenseType] ?? "operational";
     const desc = description ?? `صرفية - ${expenseType}`;
     const pt = paymentType === "debt" ? "debt" : "cash";
+
+    let transactionId: number | undefined;
 
     /* ── عملية ذرية ── */
     await db.transaction(async (tx) => {
@@ -107,7 +109,7 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
         linkedLoanId = loan.id;
       }
 
-      await tx.insert(financialTransactionsTable).values({
+      const [ftx] = await tx.insert(financialTransactionsTable).values({
         type: "expense",
         category: category as any,
         amount: String(parsedAmount),
@@ -117,7 +119,11 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
         referenceId: `EXP-${Date.now()}`,
         paymentType: pt,
         linkedLoanId: linkedLoanId ?? null,
-      });
+        itemsPhotoUrl: itemsPhotoUrl ?? null,
+        invoicePhotoUrl: invoicePhotoUrl ?? null,
+      }).returning();
+
+      transactionId = ftx.id;
 
       await tx.insert(expensesTable).values({
         description: desc,
@@ -132,9 +138,24 @@ router.post("/transactions/disburse", requireAuth, async (req, res) => {
       }
     });
 
-    res.json({ success: true, amount: parsedAmount });
+    res.json({ success: true, amount: parsedAmount, transactionId });
   } catch (error) {
     res.status(500).json({ error: "فشل في تسجيل الصرفية", details: String(error) });
+  }
+});
+
+/* ─────────────────────────────────────────────
+   GET /transactions/purchases
+   جلب المشتريات المكتملة (للمشرف — تبويب المكتملة)
+─────────────────────────────────────────────── */
+router.get("/transactions/purchases", requireAuth, async (req, res) => {
+  try {
+    const rows = await db.select().from(financialTransactionsTable)
+      .where(sql`category = 'other' AND description LIKE 'مشتريات:%'`)
+      .orderBy(desc(financialTransactionsTable.createdAt));
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: "فشل في جلب المشتريات", details: String(error) });
   }
 });
 
