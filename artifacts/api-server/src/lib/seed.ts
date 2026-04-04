@@ -14,12 +14,12 @@ const DEFAULT_USERS = [
 /* ── ترقية تلقائية آمنة للأعمدة الجديدة ── */
 export async function runSafeMigrations() {
   try {
-    await db.execute(sql`
-      ALTER TABLE debts ADD COLUMN IF NOT EXISTS entity_type TEXT DEFAULT 'other'
-    `);
-    await db.execute(sql`
-      ALTER TABLE loans ADD COLUMN IF NOT EXISTS entity_type TEXT DEFAULT 'other'
-    `);
+    await db.execute(sql`ALTER TABLE debts ADD COLUMN IF NOT EXISTS entity_type TEXT DEFAULT 'other'`);
+    await db.execute(sql`ALTER TABLE loans ADD COLUMN IF NOT EXISTS entity_type TEXT DEFAULT 'other'`);
+    /* صورة مرفقة في تذكرة الإصلاح */
+    await db.execute(sql`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS contract_image_url TEXT`);
+    /* صورة إتمام المهندس في تذكرة التركيب */
+    await db.execute(sql`ALTER TABLE installation_tickets ADD COLUMN IF NOT EXISTS completion_photo_url TEXT`);
     logger.info("Safe column migrations complete");
   } catch (err) {
     logger.error({ err }, "Safe migration failed (non-fatal)");
