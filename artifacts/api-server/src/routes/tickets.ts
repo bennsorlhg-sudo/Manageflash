@@ -64,7 +64,7 @@ router.patch("/tickets/repair/:id", requireAuth, async (req, res) => {
     const fields = [
       "status", "priority", "assignedToId", "assignedToName",
       "notes", "locationUrl", "location", "clientName", "clientPhone",
-      "problemDescription", "serviceType", "contractImageUrl", "completionPhotoUrl",
+      "problemDescription", "serviceType", "contractImageUrl", "completionPhotoUrl", "completionPhotoApproved",
     ];
     for (const f of fields) if (req.body[f] !== undefined) updates[f] = req.body[f];
     if (req.body.status === "in_progress") updates.startedAt  = new Date();

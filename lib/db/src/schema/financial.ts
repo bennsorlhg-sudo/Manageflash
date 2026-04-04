@@ -169,6 +169,7 @@ export const repairTicketsTable = pgTable("repair_tickets", {
   resolvedAt: timestamp("resolved_at"),
   contractImageUrl: text("contract_image_url"),
   completionPhotoUrl: text("completion_photo_url"),
+  completionPhotoApproved: boolean("completion_photo_approved").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

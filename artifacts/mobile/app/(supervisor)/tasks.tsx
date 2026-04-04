@@ -9,7 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiDelete, apiPost, formatDate } from "@/utils/api";
+import { apiGet, apiDelete, apiPost, apiPatch, formatDate } from "@/utils/api";
 
 /* ─────────────── ثوابت ─────────────── */
 const SUPERVISOR_COLOR = Colors.roles?.supervisor ?? "#00BCD4";
@@ -137,6 +137,21 @@ export default function TaskTrackingScreen() {
   useEffect(() => {
     apiGet("/users/engineers", token).then(setEngineers).catch(() => {});
   }, [token]);
+
+  /* ─── موافقة / حذف صورة تنفيذ الإصلاح ─── */
+  const handleApprovePhoto = async (id: number) => {
+    try {
+      await apiPatch(`/tickets/repair/${id}`, token, { completionPhotoApproved: true });
+      setRepairTickets(prev => prev.map(t => t.id === id ? { ...t, completionPhotoApproved: true } : t));
+    } catch {}
+  };
+
+  const handleDeletePhoto = async (id: number) => {
+    try {
+      await apiPatch(`/tickets/repair/${id}`, token, { completionPhotoUrl: null, completionPhotoApproved: false });
+      setRepairTickets(prev => prev.map(t => t.id === id ? { ...t, completionPhotoUrl: null, completionPhotoApproved: false } : t));
+    } catch {}
+  };
 
   /* ─── فلترة ─── */
   const filterItems = (items: any[]) => items.filter(item => {
@@ -308,6 +323,8 @@ export default function TaskTrackingScreen() {
               onTimeline={() => openTimeline(item, "repair")}
               onDelete={() => openDelete(item.id, `#${item.id}`, "repair")}
               onViewImage={setViewImageUrl}
+              onApprovePhoto={handleApprovePhoto}
+              onDeletePhoto={handleDeletePhoto}
             />
           ))
         ) : (
@@ -556,24 +573,28 @@ const fbStyles = StyleSheet.create({
 /* ════════════════════════════════════════════════
    بطاقة تذكرة الإصلاح
 ════════════════════════════════════════════════ */
-function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImage }: {
+function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImage, onApprovePhoto, onDeletePhoto }: {
   item: any;
   expanded: boolean;
   onExpand: () => void;
   onTimeline: () => void;
   onDelete: () => void;
   onViewImage?: (url: string) => void;
+  onApprovePhoto?: (id: number) => void;
+  onDeletePhoto?: (id: number) => void;
 }) {
-  const si          = STATUS[item.status] ?? STATUS["pending"];
-  const typeLabel   = SERVICE_TYPE_AR[item.serviceType] ?? `إصلاح ${item.serviceType ?? ""}`;
-  const typeColor   = SERVICE_TYPE_COLOR[item.serviceType] ?? Colors.primary;
-  const prioInfo    = PRIORITY_AR[item.priority] ?? { label: item.priority ?? "—", color: Colors.textMuted };
-  const showContact = item.serviceType !== "hotspot_external";
-  const isCompleted = item.status === "completed";
-  const hasPhone    = showContact && !!item.clientPhone;
-  const hasMap      = !!item.locationUrl;
-  const hasContract = !!item.contractImageUrl;
-  const hasCompletion = isCompleted && !!item.completionPhotoUrl;
+  const si            = STATUS[item.status] ?? STATUS["pending"];
+  const typeLabel     = SERVICE_TYPE_AR[item.serviceType] ?? `إصلاح ${item.serviceType ?? ""}`;
+  const typeColor     = SERVICE_TYPE_COLOR[item.serviceType] ?? Colors.primary;
+  const prioInfo      = PRIORITY_AR[item.priority] ?? { label: item.priority ?? "—", color: Colors.textMuted };
+  const showContact   = item.serviceType !== "hotspot_external";
+  const isCompleted   = item.status === "completed";
+  const hasPhone      = showContact && !!item.clientPhone;
+  const hasMap        = !!item.locationUrl;
+  const hasContract   = !!item.contractImageUrl;
+  /* صورة التنفيذ: معلقة (بانتظار المشرف) أو معتمدة */
+  const hasPendingPhoto  = isCompleted && !!item.completionPhotoUrl && !item.completionPhotoApproved;
+  const hasApprovedPhoto = isCompleted && !!item.completionPhotoUrl && !!item.completionPhotoApproved;
 
   const openMap = async (rawUrl: string) => {
     const coordMatch = rawUrl.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/);
@@ -667,14 +688,47 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImag
         </View>
       )}
 
-      {/* ══ صورة التنفيذ (للمكتملة) ══ */}
-      {hasCompletion && onViewImage && (
+      {/* ══ صورة التنفيذ المعلقة — تنتظر قرار المشرف ══ */}
+      {hasPendingPhoto && (
+        <View style={rc.pendingPhotoBox}>
+          <View style={rc.pendingPhotoHeader}>
+            <Ionicons name="hourglass-outline" size={15} color={Colors.warning} />
+            <Text style={rc.pendingPhotoTitle}>صورة التنفيذ — بانتظار موافقتك</Text>
+          </View>
+          <View style={rc.pendingPhotoActions}>
+            <TouchableOpacity
+              style={rc.pendingViewBtn}
+              onPress={() => onViewImage && onViewImage(item.completionPhotoUrl)}
+            >
+              <Ionicons name="eye-outline" size={14} color={Colors.info} />
+              <Text style={[rc.pendingBtnText, { color: Colors.info }]}>عرض</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={rc.pendingApproveBtn}
+              onPress={() => onApprovePhoto && onApprovePhoto(item.id)}
+            >
+              <Ionicons name="checkmark-circle-outline" size={14} color={Colors.success} />
+              <Text style={[rc.pendingBtnText, { color: Colors.success }]}>حفظ الصورة</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={rc.pendingDeleteBtn}
+              onPress={() => onDeletePhoto && onDeletePhoto(item.id)}
+            >
+              <Ionicons name="trash-outline" size={14} color={Colors.error} />
+              <Text style={[rc.pendingBtnText, { color: Colors.error }]}>حذف الصورة</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* ══ صورة التنفيذ المعتمدة ══ */}
+      {hasApprovedPhoto && onViewImage && (
         <TouchableOpacity
           style={rc.completionPhotoBtn}
           onPress={() => onViewImage(item.completionPhotoUrl)}
         >
           <Ionicons name="camera" size={16} color={Colors.success} />
-          <Text style={[rc.mainBtnText, { color: Colors.success }]}>صورة التنفيذ للتأكيد</Text>
+          <Text style={[rc.mainBtnText, { color: Colors.success }]}>صورة التنفيذ ✓</Text>
         </TouchableOpacity>
       )}
 
@@ -1112,6 +1166,76 @@ const rc = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 10,
     marginTop: 6,
+  },
+  /* صورة التنفيذ المعلقة */
+  pendingPhotoBox: {
+    marginTop: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Colors.warning + "55",
+    backgroundColor: Colors.warning + "10",
+    overflow: "hidden",
+  },
+  pendingPhotoHeader: {
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.warning + "30",
+  },
+  pendingPhotoTitle: {
+    fontSize: 12,
+    fontWeight: "bold",
+    color: Colors.warning,
+    textAlign: "right",
+    flex: 1,
+  },
+  pendingPhotoActions: {
+    flexDirection: "row-reverse",
+    padding: 8,
+    gap: 6,
+  },
+  pendingViewBtn: {
+    flex: 1,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 7,
+    backgroundColor: Colors.info + "20",
+    borderWidth: 1,
+    borderColor: Colors.info + "50",
+  },
+  pendingApproveBtn: {
+    flex: 1.3,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 7,
+    backgroundColor: Colors.success + "20",
+    borderWidth: 1,
+    borderColor: Colors.success + "50",
+  },
+  pendingDeleteBtn: {
+    flex: 1.3,
+    flexDirection: "row-reverse",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingVertical: 8,
+    borderRadius: 7,
+    backgroundColor: Colors.error + "18",
+    borderWidth: 1,
+    borderColor: Colors.error + "50",
+  },
+  pendingBtnText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
   expandedBox: {
     backgroundColor: Colors.surfaceElevated,

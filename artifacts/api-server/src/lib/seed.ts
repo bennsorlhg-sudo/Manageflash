@@ -19,6 +19,7 @@ export async function runSafeMigrations() {
     /* صور تذاكر الإصلاح */
     await db.execute(sql`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS contract_image_url TEXT`);
     await db.execute(sql`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS completion_photo_url TEXT`);
+    await db.execute(sql`ALTER TABLE repair_tickets ADD COLUMN IF NOT EXISTS completion_photo_approved boolean DEFAULT false`);
     /* صورة إتمام المهندس في تذكرة التركيب */
     await db.execute(sql`ALTER TABLE installation_tickets ADD COLUMN IF NOT EXISTS completion_photo_url TEXT`);
     logger.info("Safe column migrations complete");
