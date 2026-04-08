@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost, formatCurrency, formatDate } from "@/utils/api";
+import { apiGet, apiPost, apiPut, apiDelete, formatCurrency, formatDate } from "@/utils/api";
 
 /* ─── مودال تأكيد ─── */
 function ConfirmModal({ visible, title, message, color, onClose }: {
@@ -88,11 +88,20 @@ function AgentPickerCard({ agent, selected, onPress }: {
   );
 }
 
-/* ─── فئات الكروت ─── */
-const CARD_DENOMINATIONS = [200, 300, 500, 1000, 2000, 3000, 5000, 9000];
+/* ─── فئات الكروت (الاسم الظاهر → القيمة الفعلية) ─── */
+const CARD_DENOMS: { face: number; value: number }[] = [
+  { face: 200,  value: 180  },
+  { face: 300,  value: 270  },
+  { face: 500,  value: 450  },
+  { face: 1000, value: 900  },
+  { face: 2000, value: 1800 },
+  { face: 3000, value: 2700 },
+  { face: 5000, value: 5000 },
+  { face: 9000, value: 9000 },
+];
 
-type Tab = "send" | "receive" | "list";
-type DenomQtys = Record<number, string>;
+type Tab = "send" | "receive" | "list" | "ops";
+type DenomQtys = Record<number, string>; /* face → qty */
 
 export default function CustodyScreen() {
   const insets = useSafeAreaInsets();
@@ -117,15 +126,25 @@ export default function CustodyScreen() {
   const [recNotes,      setRecNotes]      = useState("");
   const [receiving,     setReceiving]     = useState(false);
 
-  /* إجمالي الكروت المحسوب */
-  const cardsAutoTotal = CARD_DENOMINATIONS.reduce((sum, d) => {
-    const qty = parseInt(denomQtys[d] ?? "0", 10) || 0;
-    return sum + d * qty;
+  /* إجمالي الكروت المحسوب (بالقيمة الفعلية لكل فئة) */
+  const cardsAutoTotal = CARD_DENOMS.reduce((sum, d) => {
+    const qty = parseInt(denomQtys[d.face] ?? "0", 10) || 0;
+    return sum + d.value * qty;
   }, 0);
   /* القيمة الفعلية المُرسَلة: التعديل اليدوي إن وُجد، وإلا التلقائي */
   const cardsFinal = cardsOverride.trim()
     ? parseFloat(cardsOverride.replace(/[^0-9.]/g, "")) || 0
     : cardsAutoTotal;
+
+  /* ─── تبويب العمليات ─── */
+  const [ops,       setOps]       = useState<any[]>([]);
+  const [opsLoad,   setOpsLoad]   = useState(false);
+  const [editOp,    setEditOp]    = useState<any | null>(null);
+  const [editAmt,   setEditAmt]   = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [saving,    setSaving]    = useState(false);
+  const [deleteOp,  setDeleteOp]  = useState<any | null>(null);
+  const [deleting,  setDeleting]  = useState(false);
 
   /* ─── قائمة العهد ─── */
   const [agents,     setAgents]     = useState<any[]>([]);
@@ -148,9 +167,53 @@ export default function CustodyScreen() {
     }
   }, [token]);
 
+  const fetchOps = useCallback(async () => {
+    setOpsLoad(true);
+    try {
+      const data = await apiGet("/custody", token);
+      setOps(Array.isArray(data) ? data : []);
+    } catch {} finally { setOpsLoad(false); }
+  }, [token]);
+
   useFocusEffect(useCallback(() => {
     fetchAgents();
-  }, [fetchAgents]));
+    fetchOps();
+  }, [fetchAgents, fetchOps]));
+
+  /* حذف عملية */
+  const handleDeleteOp = async () => {
+    if (!deleteOp) return;
+    setDeleting(true);
+    try {
+      await apiDelete(`/custody/${deleteOp.id}`, token);
+      setDeleteOp(null);
+      await Promise.all([fetchAgents(), fetchOps()]);
+      showOk("تم الحذف ✓", "تم حذف العملية وعكس تأثيرها على الصندوق");
+    } catch (e: any) {
+      showOk("خطأ", e?.message ?? "فشل الحذف", Colors.error);
+    } finally { setDeleting(false); }
+  };
+
+  /* تعديل عملية */
+  const openEditOp = (op: any) => {
+    setEditOp(op);
+    setEditAmt(String(parseFloat(op.amount ?? "0")));
+    setEditNotes(op.notes ?? "");
+  };
+  const handleEditOp = async () => {
+    if (!editOp) return;
+    const amt = parseFloat(editAmt.replace(/[^0-9.]/g, ""));
+    if (!amt || amt <= 0) return showOk("خطأ", "أدخل مبلغاً صحيحاً", Colors.error);
+    setSaving(true);
+    try {
+      await apiPut(`/custody/${editOp.id}`, token, { amount: amt, notes: editNotes.trim() || undefined });
+      setEditOp(null);
+      await Promise.all([fetchAgents(), fetchOps()]);
+      showOk("تم التعديل ✓", "تم تحديث العملية وعكس الفرق على الصندوق");
+    } catch (e: any) {
+      showOk("خطأ", e?.message ?? "فشل التعديل", Colors.error);
+    } finally { setSaving(false); }
+  };
 
   /* عند تغيير التبويب: امسح الاختيار */
   useEffect(() => {
@@ -229,9 +292,10 @@ export default function CustodyScreen() {
   const selectedAgentData = agents.find(a => a.agentName === selectedAgent);
 
   const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
-    { key: "send",    label: "تسليم",       icon: "arrow-up-circle",   color: Colors.warning },
-    { key: "receive", label: "استلام",       icon: "arrow-down-circle", color: Colors.success },
-    { key: "list",    label: "قائمة العهد", icon: "list",              color: Colors.info    },
+    { key: "send",    label: "تسليم",    icon: "arrow-up-circle",   color: Colors.warning },
+    { key: "receive", label: "استلام",   icon: "arrow-down-circle", color: Colors.success },
+    { key: "list",    label: "العهد",    icon: "list",              color: Colors.info    },
+    { key: "ops",     label: "العمليات", icon: "time-outline",      color: "#9C27B0"      },
   ];
 
   return (
@@ -405,23 +469,25 @@ export default function CustodyScreen() {
                   </View>
 
                   {/* ─ صفوف الفئات ─ */}
-                  {CARD_DENOMINATIONS.map(denom => {
-                    const qty = denomQtys[denom] ?? "";
-                    const rowTotal = denom * (parseInt(qty, 10) || 0);
+                  {CARD_DENOMS.map(({ face, value }) => {
+                    const qty = denomQtys[face] ?? "";
+                    const qtyNum = parseInt(qty, 10) || 0;
+                    const rowTotal = value * qtyNum;
+                    const active = qtyNum > 0;
                     return (
-                      <View key={denom} style={styles.denomRow}>
+                      <View key={face} style={styles.denomRow}>
                         {/* إجمالي الصف */}
-                        <Text style={styles.denomRowTotal}>
+                        <Text style={[styles.denomRowTotal, active && { color: Colors.info }]}>
                           {rowTotal > 0 ? formatCurrency(rowTotal) : "—"}
                         </Text>
 
                         {/* خانة العدد */}
                         <TextInput
-                          style={styles.denomQtyInput}
+                          style={[styles.denomQtyInput, active && { borderColor: Colors.info, color: Colors.info }]}
                           value={qty}
                           onChangeText={v => {
                             const n = v.replace(/\D/g, "");
-                            setDenomQtys(prev => ({ ...prev, [denom]: n }));
+                            setDenomQtys(prev => ({ ...prev, [face]: n }));
                             setCardsOverride(""); // مسح التعديل اليدوي عند التغيير
                           }}
                           placeholder="0"
@@ -430,17 +496,19 @@ export default function CustodyScreen() {
                           textAlign="center"
                         />
 
-                        {/* اسم الفئة */}
+                        {/* اسم الفئة + قيمتها */}
                         <View style={[
                           styles.denomBadge,
-                          (parseInt(qty, 10) || 0) > 0 && { backgroundColor: Colors.info + "20", borderColor: Colors.info + "60" }
+                          active && { backgroundColor: Colors.info + "15", borderColor: Colors.info + "60" }
                         ]}>
-                          <Text style={[
-                            styles.denomBadgeTxt,
-                            (parseInt(qty, 10) || 0) > 0 && { color: Colors.info, fontWeight: "800" }
-                          ]}>
-                            {denom.toLocaleString("ar-YE")} ر.س
+                          <Text style={[styles.denomBadgeTxt, active && { color: Colors.info, fontWeight: "800" }]}>
+                            {face.toLocaleString("ar-YE")} ر.س
                           </Text>
+                          {face !== value && (
+                            <Text style={styles.denomRealVal}>
+                              القيمة: {value.toLocaleString("ar-YE")}
+                            </Text>
+                          )}
                         </View>
                       </View>
                     );
@@ -645,6 +713,179 @@ export default function CustodyScreen() {
           <View style={{ height: 40 }} />
         </ScrollView>
       )}
+
+      {/* ══════════════ تبويب العمليات ══════════════ */}
+      {tab === "ops" && (
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl refreshing={opsLoad} onRefresh={fetchOps} tintColor="#9C27B0" />
+          }
+        >
+          {opsLoad && ops.length === 0 ? (
+            <ActivityIndicator size="large" color="#9C27B0" style={{ marginTop: 60 }} />
+          ) : ops.length === 0 ? (
+            <View style={styles.emptyBox}>
+              <Ionicons name="time-outline" size={60} color={Colors.textMuted} />
+              <Text style={styles.emptyTitle}>لا توجد عمليات</Text>
+              <Text style={styles.emptyHint}>سيظهر هنا سجل جميع العمليات</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.listCount}>{ops.length} عملية مسجّلة</Text>
+              {ops.map(op => {
+                const amt = parseFloat(op.amount ?? "0");
+                const isSend    = op.fromRole === "finance_manager";
+                const isCashRec = op.type === "cash" && op.fromRole === "tech_engineer";
+                const isOwnerIn = op.fromRole === "owner";
+                const typeColor = isSend ? Colors.warning : isCashRec ? Colors.success : Colors.info;
+                const typeLabel = isSend
+                  ? "تسليم كروت"
+                  : isCashRec
+                  ? "استلام نقد"
+                  : isOwnerIn
+                  ? (op.type === "cash" ? "نقد من المالك" : "كروت من المالك")
+                  : "استلام كروت";
+                const typeIcon: keyof typeof Ionicons.glyphMap = isSend
+                  ? "arrow-up-circle"
+                  : isCashRec
+                  ? "cash"
+                  : "card";
+
+                return (
+                  <View key={op.id} style={[styles.opCard, { borderRightColor: typeColor }]}>
+                    {/* رأس البطاقة */}
+                    <View style={styles.opHead}>
+                      {/* أزرار التعديل والحذف */}
+                      <View style={styles.opActions}>
+                        <TouchableOpacity style={styles.opEditBtn} onPress={() => openEditOp(op)}>
+                          <Ionicons name="create-outline" size={16} color={Colors.warning} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.opDelBtn} onPress={() => setDeleteOp(op)}>
+                          <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* النوع */}
+                      <View style={[styles.opTypeBadge, { backgroundColor: typeColor + "20" }]}>
+                        <Ionicons name={typeIcon} size={13} color={typeColor} />
+                        <Text style={[styles.opTypeTxt, { color: typeColor }]}>{typeLabel}</Text>
+                      </View>
+
+                      {/* المبلغ */}
+                      <Text style={[styles.opAmt, { color: typeColor }]}>
+                        {formatCurrency(amt)}
+                      </Text>
+                    </View>
+
+                    {/* المندوب + التاريخ */}
+                    <View style={styles.opMeta}>
+                      {op.toPersonName && (
+                        <View style={styles.opMetaItem}>
+                          <Ionicons name="person-outline" size={12} color={Colors.textMuted} />
+                          <Text style={styles.opMetaTxt}>{op.toPersonName}</Text>
+                        </View>
+                      )}
+                      <Text style={styles.opDate}>{formatDate(op.createdAt)}</Text>
+                    </View>
+
+                    {/* الملاحظات */}
+                    {!!op.notes && (
+                      <Text style={styles.opNotes} numberOfLines={2}>{op.notes}</Text>
+                    )}
+                  </View>
+                );
+              })}
+            </>
+          )}
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
+
+      {/* ══ مودال تأكيد الحذف ══ */}
+      <Modal visible={!!deleteOp} transparent animationType="fade">
+        <View style={styles.alertOverlay}>
+          <View style={styles.alertBox}>
+            <View style={[styles.alertIcon, { backgroundColor: Colors.error + "20" }]}>
+              <Ionicons name="trash-outline" size={36} color={Colors.error} />
+            </View>
+            <Text style={styles.alertTitle}>تأكيد الحذف</Text>
+            {deleteOp && (
+              <Text style={styles.alertMsg}>
+                هل تريد حذف هذه العملية؟{"\n"}
+                المبلغ: {formatCurrency(parseFloat(deleteOp.amount ?? "0"))}{"\n\n"}
+                ⚠ سيُعكس تأثيرها على الصندوق تلقائياً
+              </Text>
+            )}
+            <View style={{ flexDirection: "row-reverse", gap: 10, width: "100%" }}>
+              <TouchableOpacity
+                style={[styles.alertBtn, { flex: 1, backgroundColor: Colors.error }]}
+                onPress={handleDeleteOp} disabled={deleting}
+              >
+                {deleting
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.alertBtnText}>حذف</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.alertBtn, { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+                onPress={() => setDeleteOp(null)}
+              >
+                <Text style={[styles.alertBtnText, { color: Colors.textSecondary }]}>إلغاء</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ══ مودال التعديل ══ */}
+      <Modal visible={!!editOp} transparent animationType="slide">
+        <View style={styles.alertOverlay}>
+          <View style={[styles.alertBox, { alignItems: "stretch", gap: 12 }]}>
+            <Text style={[styles.alertTitle, { textAlign: "right" }]}>تعديل العملية</Text>
+            {editOp && (
+              <Text style={[styles.alertMsg, { textAlign: "right" }]}>
+                النوع: {editOp.type === "cash" ? "نقد" : "كروت"}
+                {editOp.toPersonName ? `\nالمندوب: ${editOp.toPersonName}` : ""}
+              </Text>
+            )}
+
+            <Text style={[styles.fieldLabel, { textAlign: "right" }]}>المبلغ الجديد (ر.س) *</Text>
+            <TextInput
+              style={[styles.fieldInput, { fontSize: 22, fontWeight: "900", textAlign: "right" }]}
+              value={editAmt}
+              onChangeText={v => setEditAmt(v.replace(/[^0-9.]/g, ""))}
+              placeholder="0" placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad"
+            />
+
+            <Text style={[styles.fieldLabel, { textAlign: "right" }]}>الملاحظات</Text>
+            <TextInput
+              style={[styles.fieldInput, { textAlign: "right" }]}
+              value={editNotes}
+              onChangeText={setEditNotes}
+              placeholder="اختياري..."
+              placeholderTextColor={Colors.textMuted}
+            />
+
+            <View style={{ flexDirection: "row-reverse", gap: 10 }}>
+              <TouchableOpacity
+                style={[styles.submitBtn, { flex: 1, backgroundColor: Colors.warning }, saving && { opacity: 0.5 }]}
+                onPress={handleEditOp} disabled={saving}
+              >
+                {saving
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.submitBtnText}>حفظ التعديل</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitBtn, { flex: 1, backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+                onPress={() => setEditOp(null)}
+              >
+                <Text style={[styles.submitBtnText, { color: Colors.textSecondary }]}>إلغاء</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <ConfirmModal
         visible={modal.visible} title={modal.title} message={modal.message} color={modal.color}
@@ -893,4 +1134,24 @@ const styles = StyleSheet.create({
     borderColor: Colors.border, color: Colors.text, paddingHorizontal: 12,
     paddingVertical: 8, fontSize: 15, textAlign: "right",
   },
+  denomRealVal: { fontSize: 10, color: Colors.textMuted, textAlign: "right" },
+
+  /* ─── بطاقات العمليات ─── */
+  opCard: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    marginBottom: 10, borderWidth: 1, borderColor: Colors.border,
+    borderRightWidth: 4, gap: 8,
+  },
+  opHead: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  opAmt: { flex: 1, fontSize: 17, fontWeight: "900", textAlign: "right" },
+  opTypeBadge: { flexDirection: "row-reverse", alignItems: "center", gap: 4, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
+  opTypeTxt: { fontSize: 11, fontWeight: "700" },
+  opActions: { flexDirection: "row-reverse", gap: 6 },
+  opEditBtn: { padding: 6, borderRadius: 8, backgroundColor: Colors.warning + "18" },
+  opDelBtn:  { padding: 6, borderRadius: 8, backgroundColor: Colors.error   + "18" },
+  opMeta: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  opMetaItem: { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
+  opMetaTxt: { fontSize: 12, color: Colors.textSecondary },
+  opDate: { fontSize: 11, color: Colors.textMuted },
+  opNotes: { fontSize: 12, color: Colors.textMuted, textAlign: "right", lineHeight: 18 },
 });

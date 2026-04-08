@@ -305,7 +305,9 @@ router.delete("/custody/:id", requireAuth, async (req, res) => {
     const amount = parseFloat(record.amount ?? "0");
 
     await db.transaction(async (tx) => {
+      /* ─── عكس أثر الصندوق بحسب نوع العملية ─── */
       if (record.type === "cash" && record.from_role === "owner") {
+        /* استلام نقد من المالك → ينقص من الصندوق عند الحذف */
         await tx.execute(
           sql`UPDATE cash_box SET balance = balance - ${amount}, updated_at = NOW() WHERE id = 1`
         );
@@ -320,7 +322,13 @@ router.delete("/custody/:id", requireAuth, async (req, res) => {
             ORDER BY created_at LIMIT 1
           )
         `);
+      } else if (record.type === "cash" && record.from_role === "tech_engineer") {
+        /* استلام نقد من مندوب → ينقص من الصندوق عند الحذف */
+        await tx.execute(
+          sql`UPDATE cash_box SET balance = balance - ${amount}, updated_at = NOW() WHERE id = 1`
+        );
       }
+      /* نوع cards لا يؤثر على cash_box */
       await tx.execute(sql`DELETE FROM custody_records WHERE id = ${recordId}`);
     });
 
@@ -352,21 +360,30 @@ router.put("/custody/:id", requireAuth, async (req, res) => {
     const diff = newAmount - oldAmount;
 
     await db.transaction(async (tx) => {
-      if (record.type === "cash" && record.from_role === "owner" && Math.abs(diff) > 0.001) {
-        await tx.execute(
-          sql`UPDATE cash_box SET balance = balance + ${diff}, updated_at = NOW() WHERE id = 1`
-        );
-        await tx.execute(sql`
-          UPDATE financial_transactions SET amount = ${String(newAmount)}
-          WHERE id = (
-            SELECT id FROM financial_transactions
-            WHERE type = 'custody_in' AND payment_type = 'cash'
-              AND amount::numeric = ${oldAmount}
-              AND created_at >= ${record.created_at}::timestamptz - interval '30 seconds'
-              AND created_at <= ${record.created_at}::timestamptz + interval '30 seconds'
-            ORDER BY created_at LIMIT 1
-          )
-        `);
+      if (Math.abs(diff) > 0.001) {
+        if (record.type === "cash" && record.from_role === "owner") {
+          /* نقد من المالك → عكس الفرق على الصندوق + تحديث المعاملة المالية */
+          await tx.execute(
+            sql`UPDATE cash_box SET balance = balance + ${diff}, updated_at = NOW() WHERE id = 1`
+          );
+          await tx.execute(sql`
+            UPDATE financial_transactions SET amount = ${String(newAmount)}
+            WHERE id = (
+              SELECT id FROM financial_transactions
+              WHERE type = 'custody_in' AND payment_type = 'cash'
+                AND amount::numeric = ${oldAmount}
+                AND created_at >= ${record.created_at}::timestamptz - interval '30 seconds'
+                AND created_at <= ${record.created_at}::timestamptz + interval '30 seconds'
+              ORDER BY created_at LIMIT 1
+            )
+          `);
+        } else if (record.type === "cash" && record.from_role === "tech_engineer") {
+          /* نقد من مندوب → عكس الفرق على الصندوق */
+          await tx.execute(
+            sql`UPDATE cash_box SET balance = balance + ${diff}, updated_at = NOW() WHERE id = 1`
+          );
+        }
+        /* نوع cards لا يؤثر على cash_box */
       }
       const newNotes = notes?.trim() ?? null;
       await tx.execute(sql`
