@@ -382,7 +382,9 @@ function BroadbandCard({ p, onEdit, onDelete, onCopy }: {
         <View style={[card.typeBadge, { backgroundColor: typeColor + "22" }]}>
           <Text style={[card.typeBadgeText, { color: typeColor }]}>برودباند</Text>
         </View>
-        {p.subscriptionFee ? (
+        {p.modemFee ? (
+          <Text style={card.fee}>{Number(p.modemFee).toLocaleString()} ر</Text>
+        ) : p.subscriptionFee ? (
           <Text style={card.fee}>{Number(p.subscriptionFee).toLocaleString()} ر</Text>
         ) : null}
         <View style={[card.statusDot, { backgroundColor: typeColor }]} />
@@ -449,8 +451,9 @@ function BroadbandCard({ p, onEdit, onDelete, onCopy }: {
       {/* ══ التفاصيل الموسّعة ══ */}
       {expanded && (
         <View style={card.expandedBox}>
-          {p.subscriptionFee ? <InfoRow icon="cash-outline" label="الاشتراك" value={`${Number(p.subscriptionFee).toLocaleString()} ر`} color={Colors.success} /> : null}
-          {p.locationUrl ? <InfoRow icon="link-outline" label="رابط الخريطة" value={p.locationUrl.substring(0, 40) + "..."} color={Colors.info} /> : null}
+          {p.installedByName ? <InfoRow icon="construct-outline" label="المهندس المركّب" value={p.installedByName} color={Colors.warning} /> : null}
+          {p.locationUrl ? <InfoRow icon="link-outline" label="رابط الموقع" value={p.locationUrl.substring(0, 45) + (p.locationUrl.length > 45 ? "..." : "")} color={Colors.info} /> : null}
+          {p.subscriptionFee ? <InfoRow icon="wifi-outline" label="اشتراك الإنترنت" value={`${Number(p.subscriptionFee).toLocaleString()} ر`} color={Colors.success} /> : null}
           {p.notes ? <InfoRow icon="document-text-outline" label="ملاحظات" value={p.notes} /> : null}
           <InfoRow icon="information-circle-outline" label="الحالة" value={p.status} />
         </View>
