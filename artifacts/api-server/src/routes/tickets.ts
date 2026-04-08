@@ -300,8 +300,16 @@ router.post("/tickets/installation/:id/execute", requireAuth, async (req, res) =
       }
     }
 
+    /* إذا كانت التذكرة مفتوحة (بدون مهندس محدد)، احفظ اسم المهندس الذي بدأها */
+    const execUpdates: any = { status: "in_progress", updatedAt: new Date() };
+    if (!t.assignedToName && req.currentUser?.name) {
+      execUpdates.assignedToName = req.currentUser.name;
+    }
+    if (!t.assignedToId && req.currentUser?.id) {
+      execUpdates.assignedToId = req.currentUser.id;
+    }
     const [row] = await db.update(installationTicketsTable)
-      .set({ status: "in_progress", updatedAt: new Date() })
+      .set(execUpdates)
       .where(eq(installationTicketsTable.id, id))
       .returning();
     res.json(row);
@@ -334,13 +342,22 @@ router.post("/tickets/installation/:id/complete", requireAuth, async (req, res) 
         return res.status(400).json({ error: "يجب إتمام جميع نقاط البث الوسيطة أولاً", pendingCount: pending.length });
     }
 
-    const [updated] = await db.update(installationTicketsTable).set({
+    const completeUpdates: any = {
       status: "completed",
       completedAt: new Date(),
       engineerNotes: engineerNotes ?? null,
       completionPhotoUrl: completionPhotoUrl ?? null,
       updatedAt: new Date(),
-    }).where(eq(installationTicketsTable.id, id)).returning();
+    };
+    /* احفظ اسم المهندس المنفذ إذا لم يكن محدداً مسبقاً */
+    if (!t.assignedToName && req.currentUser?.name) {
+      completeUpdates.assignedToName = req.currentUser.name;
+    }
+    if (!t.assignedToId && req.currentUser?.id) {
+      completeUpdates.assignedToId = req.currentUser.id;
+    }
+    const [updated] = await db.update(installationTicketsTable).set(completeUpdates)
+      .where(eq(installationTicketsTable.id, id)).returning();
 
     res.json(updated);
   } catch (error) {

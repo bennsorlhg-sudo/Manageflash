@@ -1872,7 +1872,13 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
 }) {
   /* ── نوع الخدمة — قابل للتعديل ── */
   type SvcType = "hotspot_internal" | "hotspot_external" | "broadband_internal";
-  const [svcType, setSvcType] = useState<SvcType>((item.serviceType as SvcType) ?? "hotspot_internal");
+  /* تطبيع: "external" (نقطة بث) = "hotspot_external" في نموذج الأرشفة */
+  const normalizeType = (t: string | null | undefined): SvcType => {
+    if (t === "hotspot_external" || t === "external") return "hotspot_external";
+    if (t === "broadband_internal") return "broadband_internal";
+    return "hotspot_internal";
+  };
+  const [svcType, setSvcType] = useState<SvcType>(normalizeType(item.serviceType));
 
   const isInternal  = svcType === "hotspot_internal";
   const isExternal  = svcType === "hotspot_external";
