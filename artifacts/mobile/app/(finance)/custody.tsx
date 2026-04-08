@@ -257,9 +257,9 @@ export default function CustodyScreen() {
     setReceiving(true);
     try {
       /* بناء ملخص الكروت للملاحظات */
-      const cardLines = CARD_DENOMINATIONS
-        .filter(d => (parseInt(denomQtys[d] ?? "0", 10) || 0) > 0)
-        .map(d => `${d} × ${parseInt(denomQtys[d] ?? "0", 10)}`)
+      const cardLines = CARD_DENOMS
+        .filter(({ face }) => (parseInt(denomQtys[face] ?? "0", 10) || 0) > 0)
+        .map(({ face }) => `${face} × ${parseInt(denomQtys[face] ?? "0", 10)}`)
         .join(" ، ");
 
       const autoNotes = cardLines ? `كروت: ${cardLines}` : "";
@@ -514,30 +514,43 @@ export default function CustodyScreen() {
                     );
                   })}
 
-                  {/* ─ فاصل الإجمالي ─ */}
-                  <View style={styles.denomTotalRow}>
-                    <View style={{ flex: 1 }}>
-                      {/* تعديل يدوي اختياري */}
-                      <Text style={styles.denomOverrideLbl}>تعديل الإجمالي (اختياري)</Text>
-                      <TextInput
-                        style={styles.denomOverrideInput}
-                        value={cardsOverride}
-                        onChangeText={v => setCardsOverride(v.replace(/[^0-9.]/g, ""))}
-                        placeholder={cardsAutoTotal > 0 ? formatCurrency(cardsAutoTotal) : "0"}
-                        placeholderTextColor={cardsAutoTotal > 0 ? Colors.info : Colors.textMuted}
-                        keyboardType="decimal-pad"
-                        textAlign="right"
-                      />
-                    </View>
-                    <View style={styles.denomTotalBox}>
+                  {/* ─ صندوق الإجمالي الثابت ─ */}
+                  <View style={[
+                    styles.denomTotalBanner,
+                    { borderColor: cardsFinal > 0 ? Colors.info : Colors.border }
+                  ]}>
+                    <View style={{ alignItems: "flex-end" }}>
                       <Text style={styles.denomTotalLbl}>الإجمالي</Text>
                       <Text style={[styles.denomTotalVal, { color: cardsFinal > 0 ? Colors.info : Colors.textMuted }]}>
-                        {cardsFinal > 0 ? formatCurrency(cardsFinal) : "0"}
+                        {formatCurrency(cardsFinal)}
                       </Text>
                       {cardsOverride.trim() && cardsFinal !== cardsAutoTotal && (
                         <Text style={styles.denomOverrideNote}>⚠ تعديل يدوي</Text>
                       )}
                     </View>
+                    <View style={{ alignItems: "flex-start" }}>
+                      <Text style={styles.denomTotalLbl}>المحسوب تلقائياً</Text>
+                      <Text style={[styles.denomTotalVal, { color: cardsAutoTotal > 0 ? Colors.textSecondary : Colors.textMuted, fontSize: 16 }]}>
+                        {formatCurrency(cardsAutoTotal)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* ─ تعديل يدوي اختياري ─ */}
+                  <View style={styles.denomOverrideWrap}>
+                    <Text style={styles.denomOverrideLbl}>تعديل الإجمالي يدوياً (اختياري — امسح للرجوع للحساب التلقائي)</Text>
+                    <TextInput
+                      style={[
+                        styles.denomOverrideInput,
+                        cardsOverride.trim() && { borderColor: Colors.warning, color: Colors.warning }
+                      ]}
+                      value={cardsOverride}
+                      onChangeText={v => setCardsOverride(v.replace(/[^0-9.]/g, ""))}
+                      placeholder={cardsAutoTotal > 0 ? String(cardsAutoTotal) : "اتركه فارغاً"}
+                      placeholderTextColor={Colors.textMuted}
+                      keyboardType="decimal-pad"
+                      textAlign="right"
+                    />
                   </View>
 
                   {cardsFinal > 0 && (
@@ -1117,22 +1130,23 @@ const styles = StyleSheet.create({
     width: 80, fontSize: 12, color: Colors.info, fontWeight: "700", textAlign: "left",
   },
 
-  denomTotalRow: {
-    flexDirection: "row-reverse", alignItems: "center", gap: 12,
-    marginTop: 10, paddingTop: 10, borderTopWidth: 1.5, borderTopColor: Colors.info + "40",
+  /* ─── صندوق الإجمالي الظاهر دائماً ─── */
+  denomTotalBanner: {
+    flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
+    marginTop: 12, padding: 14, borderRadius: 12,
+    backgroundColor: Colors.surfaceElevated ?? Colors.surface,
+    borderWidth: 1.5,
   },
-  denomTotalBox: {
-    alignItems: "flex-end", minWidth: 90,
-  },
-  denomTotalLbl: { fontSize: 11, color: Colors.textMuted, fontWeight: "600" },
-  denomTotalVal: { fontSize: 20, fontWeight: "900" },
-  denomOverrideNote: { fontSize: 10, color: Colors.warning, fontWeight: "700" },
+  denomTotalLbl: { fontSize: 11, color: Colors.textMuted, fontWeight: "600", marginBottom: 2 },
+  denomTotalVal: { fontSize: 22, fontWeight: "900" },
+  denomOverrideNote: { fontSize: 10, color: Colors.warning, fontWeight: "700", marginTop: 2 },
 
-  denomOverrideLbl: { fontSize: 11, color: Colors.textMuted, fontWeight: "600", textAlign: "right", marginBottom: 4 },
+  denomOverrideWrap: { marginTop: 10 },
+  denomOverrideLbl: { fontSize: 11, color: Colors.textMuted, fontWeight: "600", textAlign: "right", marginBottom: 5 },
   denomOverrideInput: {
     borderRadius: 10, backgroundColor: Colors.background, borderWidth: 1.5,
     borderColor: Colors.border, color: Colors.text, paddingHorizontal: 12,
-    paddingVertical: 8, fontSize: 15, textAlign: "right",
+    paddingVertical: 10, fontSize: 17, fontWeight: "700", textAlign: "right",
   },
   denomRealVal: { fontSize: 10, color: Colors.textMuted, textAlign: "right" },
 
