@@ -88,7 +88,11 @@ function AgentPickerCard({ agent, selected, onPress }: {
   );
 }
 
+/* ─── فئات الكروت ─── */
+const CARD_DENOMINATIONS = [200, 300, 500, 1000, 2000, 3000, 5000, 9000];
+
 type Tab = "send" | "receive" | "list";
+type DenomQtys = Record<number, string>;
 
 export default function CustodyScreen() {
   const insets = useSafeAreaInsets();
@@ -106,10 +110,22 @@ export default function CustodyScreen() {
 
   /* ─── استلام عهدة ─── */
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
-  const [recCash,     setRecCash]     = useState("");
-  const [recCards,    setRecCards]    = useState("");
-  const [recNotes,    setRecNotes]    = useState("");
-  const [receiving,   setReceiving]   = useState(false);
+  const [recCash,       setRecCash]       = useState("");
+  /* كروت: فئات + عدادات */
+  const [denomQtys,     setDenomQtys]     = useState<DenomQtys>({});
+  const [cardsOverride, setCardsOverride] = useState(""); // تعديل يدوي اختياري
+  const [recNotes,      setRecNotes]      = useState("");
+  const [receiving,     setReceiving]     = useState(false);
+
+  /* إجمالي الكروت المحسوب */
+  const cardsAutoTotal = CARD_DENOMINATIONS.reduce((sum, d) => {
+    const qty = parseInt(denomQtys[d] ?? "0", 10) || 0;
+    return sum + d * qty;
+  }, 0);
+  /* القيمة الفعلية المُرسَلة: التعديل اليدوي إن وُجد، وإلا التلقائي */
+  const cardsFinal = cardsOverride.trim()
+    ? parseFloat(cardsOverride.replace(/[^0-9.]/g, "")) || 0
+    : cardsAutoTotal;
 
   /* ─── قائمة العهد ─── */
   const [agents,     setAgents]     = useState<any[]>([]);
@@ -140,7 +156,7 @@ export default function CustodyScreen() {
   useEffect(() => {
     if (tab !== "receive") {
       setSelectedAgent(null);
-      setRecCash(""); setRecCards(""); setRecNotes("");
+      setRecCash(""); setDenomQtys({}); setCardsOverride(""); setRecNotes("");
     }
   }, [tab]);
 
@@ -171,23 +187,33 @@ export default function CustodyScreen() {
      استلام عهدة
   ═══════════════════════════════════════════ */
   const handleReceive = async () => {
-    const cash  = parseFloat(recCash.replace(/[^0-9.]/g, ""))  || 0;
-    const cards = parseFloat(recCards.replace(/[^0-9.]/g, "")) || 0;
-    if (!selectedAgent)            return showOk("خطأ", "اختر المندوب من القائمة أعلاه", Colors.error);
-    if (cash <= 0 && cards <= 0)   return showOk("خطأ", "أدخل مبلغ النقد أو قيمة الكروت المرتجعة", Colors.error);
+    const cash  = parseFloat(recCash.replace(/[^0-9.]/g, "")) || 0;
+    const cards = cardsFinal;
+    if (!selectedAgent)          return showOk("خطأ", "اختر المندوب من القائمة أعلاه", Colors.error);
+    if (cash <= 0 && cards <= 0) return showOk("خطأ", "أدخل مبلغ النقد أو حدّد كروت مرتجعة", Colors.error);
     setReceiving(true);
     try {
+      /* بناء ملخص الكروت للملاحظات */
+      const cardLines = CARD_DENOMINATIONS
+        .filter(d => (parseInt(denomQtys[d] ?? "0", 10) || 0) > 0)
+        .map(d => `${d} × ${parseInt(denomQtys[d] ?? "0", 10)}`)
+        .join(" ، ");
+
+      const autoNotes = cardLines ? `كروت: ${cardLines}` : "";
+      const finalNotes = [recNotes.trim(), autoNotes].filter(Boolean).join(" — ");
+
       await apiPost("/custody/receive", token, {
         agentName:     selectedAgent,
         cashReceived:  cash  > 0 ? cash  : undefined,
         cardsReturned: cards > 0 ? cards : undefined,
-        notes: recNotes.trim() || undefined,
+        notes: finalNotes || undefined,
       });
       const parts: string[] = [];
       if (cash  > 0) parts.push(`${formatCurrency(cash)} نقد → أُضيف للصندوق`);
       if (cards > 0) parts.push(`${formatCurrency(cards)} كروت مرتجعة`);
       const agentName = selectedAgent;
-      setSelectedAgent(null); setRecCash(""); setRecCards(""); setRecNotes("");
+      setSelectedAgent(null);
+      setRecCash(""); setDenomQtys({}); setCardsOverride(""); setRecNotes("");
       await fetchAgents();
       showOk("تم الاستلام ✓", `من المندوب: ${agentName}\n${parts.join("\n")}\nتم خصم المبلغ من عهدة المندوبين`);
     } catch (e: any) {
@@ -199,7 +225,7 @@ export default function CustodyScreen() {
      RENDER
   ══════════════════════════════════════════════════ */
   const sendValid = !!sendAgent.trim() && parseFloat(sendCards || "0") > 0;
-  const recValid  = !!selectedAgent && (parseFloat(recCash || "0") > 0 || parseFloat(recCards || "0") > 0);
+  const recValid  = !!selectedAgent && (parseFloat(recCash || "0") > 0 || cardsFinal > 0);
   const selectedAgentData = agents.find(a => a.agentName === selectedAgent);
 
   const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
@@ -365,22 +391,89 @@ export default function CustodyScreen() {
                   )}
                 </View>
 
-                {/* كروت */}
+                {/* ═══ الكروت المرتجعة: قائمة الفئات ═══ */}
                 <View style={styles.receiveSection}>
                   <View style={styles.receiveSectionHeader}>
                     <Ionicons name="card" size={16} color={Colors.info} />
-                    <Text style={[styles.receiveSectionTitle, { color: Colors.info }]}>الكروت المرتجعة (ر.س)</Text>
+                    <Text style={[styles.receiveSectionTitle, { color: Colors.info }]}>الكروت المرتجعة</Text>
                   </View>
-                  <TextInput
-                    style={styles.fieldInput}
-                    value={recCards}
-                    onChangeText={v => setRecCards(v.replace(/[^0-9.]/g, ""))}
-                    placeholder="0 — اتركه فارغاً إن لم تكن هناك كروت"
-                    placeholderTextColor={Colors.textMuted}
-                    keyboardType="decimal-pad" textAlign="right"
-                  />
-                  {parseFloat(recCards || "0") > 0 && (
-                    <Text style={[styles.fieldHint, { color: Colors.info }]}>
+
+                  {/* ─ رأس الجدول ─ */}
+                  <View style={styles.denomHeader}>
+                    <Text style={styles.denomHeaderQty}>العدد</Text>
+                    <Text style={styles.denomHeaderLabel}>الفئة</Text>
+                  </View>
+
+                  {/* ─ صفوف الفئات ─ */}
+                  {CARD_DENOMINATIONS.map(denom => {
+                    const qty = denomQtys[denom] ?? "";
+                    const rowTotal = denom * (parseInt(qty, 10) || 0);
+                    return (
+                      <View key={denom} style={styles.denomRow}>
+                        {/* إجمالي الصف */}
+                        <Text style={styles.denomRowTotal}>
+                          {rowTotal > 0 ? formatCurrency(rowTotal) : "—"}
+                        </Text>
+
+                        {/* خانة العدد */}
+                        <TextInput
+                          style={styles.denomQtyInput}
+                          value={qty}
+                          onChangeText={v => {
+                            const n = v.replace(/\D/g, "");
+                            setDenomQtys(prev => ({ ...prev, [denom]: n }));
+                            setCardsOverride(""); // مسح التعديل اليدوي عند التغيير
+                          }}
+                          placeholder="0"
+                          placeholderTextColor={Colors.textMuted}
+                          keyboardType="number-pad"
+                          textAlign="center"
+                        />
+
+                        {/* اسم الفئة */}
+                        <View style={[
+                          styles.denomBadge,
+                          (parseInt(qty, 10) || 0) > 0 && { backgroundColor: Colors.info + "20", borderColor: Colors.info + "60" }
+                        ]}>
+                          <Text style={[
+                            styles.denomBadgeTxt,
+                            (parseInt(qty, 10) || 0) > 0 && { color: Colors.info, fontWeight: "800" }
+                          ]}>
+                            {denom.toLocaleString("ar-YE")} ر.س
+                          </Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+
+                  {/* ─ فاصل الإجمالي ─ */}
+                  <View style={styles.denomTotalRow}>
+                    <View style={{ flex: 1 }}>
+                      {/* تعديل يدوي اختياري */}
+                      <Text style={styles.denomOverrideLbl}>تعديل الإجمالي (اختياري)</Text>
+                      <TextInput
+                        style={styles.denomOverrideInput}
+                        value={cardsOverride}
+                        onChangeText={v => setCardsOverride(v.replace(/[^0-9.]/g, ""))}
+                        placeholder={cardsAutoTotal > 0 ? formatCurrency(cardsAutoTotal) : "0"}
+                        placeholderTextColor={cardsAutoTotal > 0 ? Colors.info : Colors.textMuted}
+                        keyboardType="decimal-pad"
+                        textAlign="right"
+                      />
+                    </View>
+                    <View style={styles.denomTotalBox}>
+                      <Text style={styles.denomTotalLbl}>الإجمالي</Text>
+                      <Text style={[styles.denomTotalVal, { color: cardsFinal > 0 ? Colors.info : Colors.textMuted }]}>
+                        {cardsFinal > 0 ? formatCurrency(cardsFinal) : "0"}
+                      </Text>
+                      {cardsOverride.trim() && cardsFinal !== cardsAutoTotal && (
+                        <Text style={styles.denomOverrideNote}>⚠ تعديل يدوي</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {cardsFinal > 0 && (
+                    <Text style={[styles.fieldHint, { color: Colors.info, marginTop: 4 }]}>
                       ✓ تُضاف لإجمالي الكروت وتُنقص من عهدة المندوبين
                     </Text>
                   )}
@@ -412,18 +505,18 @@ export default function CustodyScreen() {
                       </Text>
                     </View>
                   )}
-                  {parseFloat(recCards || "0") > 0 && (
+                  {cardsFinal > 0 && (
                     <View style={styles.summaryRow}>
                       <Text style={styles.summaryLabel}>كروت مرتجعة → الكروت</Text>
                       <Text style={[styles.summaryValue, { color: Colors.info }]}>
-                        + {formatCurrency(parseFloat(recCards))}
+                        + {formatCurrency(cardsFinal)}
                       </Text>
                     </View>
                   )}
                   <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 8, marginTop: 4 }]}>
                     <Text style={styles.summaryLabel}>ينقص من عهدة المندوبين</Text>
                     <Text style={[styles.summaryValue, { color: Colors.error }]}>
-                      − {formatCurrency(parseFloat(recCash || "0") + parseFloat(recCards || "0"))}
+                      − {formatCurrency(parseFloat(recCash || "0") + cardsFinal)}
                     </Text>
                   </View>
                 </View>
@@ -755,4 +848,49 @@ const styles = StyleSheet.create({
   alertMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
   alertBtn: { paddingHorizontal: 40, paddingVertical: 12, borderRadius: 12, marginTop: 4 },
   alertBtnText: { fontSize: 15, fontWeight: "700", color: "#fff" },
+
+  /* ─── جدول فئات الكروت ─── */
+  denomHeader: {
+    flexDirection: "row-reverse", alignItems: "center",
+    paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border, marginBottom: 4,
+  },
+  denomHeaderLabel: { flex: 1, fontSize: 12, fontWeight: "700", color: Colors.textMuted, textAlign: "right" },
+  denomHeaderQty:   { width: 72, fontSize: 12, fontWeight: "700", color: Colors.textMuted, textAlign: "center" },
+
+  denomRow: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 8,
+    paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: Colors.border + "60",
+  },
+  denomBadge: {
+    flex: 1, paddingVertical: 6, paddingHorizontal: 10, borderRadius: 8,
+    backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border,
+    alignItems: "flex-end",
+  },
+  denomBadgeTxt: { fontSize: 14, color: Colors.textSecondary, fontWeight: "600" },
+  denomQtyInput: {
+    width: 72, height: 40, borderRadius: 10, backgroundColor: Colors.background,
+    borderWidth: 1.5, borderColor: Colors.border, color: Colors.text,
+    fontSize: 16, fontWeight: "700", textAlign: "center",
+  },
+  denomRowTotal: {
+    width: 80, fontSize: 12, color: Colors.info, fontWeight: "700", textAlign: "left",
+  },
+
+  denomTotalRow: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 12,
+    marginTop: 10, paddingTop: 10, borderTopWidth: 1.5, borderTopColor: Colors.info + "40",
+  },
+  denomTotalBox: {
+    alignItems: "flex-end", minWidth: 90,
+  },
+  denomTotalLbl: { fontSize: 11, color: Colors.textMuted, fontWeight: "600" },
+  denomTotalVal: { fontSize: 20, fontWeight: "900" },
+  denomOverrideNote: { fontSize: 10, color: Colors.warning, fontWeight: "700" },
+
+  denomOverrideLbl: { fontSize: 11, color: Colors.textMuted, fontWeight: "600", textAlign: "right", marginBottom: 4 },
+  denomOverrideInput: {
+    borderRadius: 10, backgroundColor: Colors.background, borderWidth: 1.5,
+    borderColor: Colors.border, color: Colors.text, paddingHorizontal: 12,
+    paddingVertical: 8, fontSize: 15, textAlign: "right",
+  },
 });
