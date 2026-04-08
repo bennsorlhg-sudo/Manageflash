@@ -34,6 +34,7 @@ interface BroadbandPoint {
   subscriptionName: string | null; deviceName: string | null; clientName: string | null;
   clientPhone: string | null; subscriptionFee: string | null; locationUrl: string | null;
   notes: string | null; status: string; isClientOwned: boolean | null;
+  installedByName: string | null; installDate: string | null;
 }
 type TabType = "hotspot" | "broadband";
 type HotspotFilter = "all" | "internal" | "external";
@@ -48,6 +49,7 @@ const blankH = () => ({
 const blankB = () => ({
   flashNumber: "", subscriptionName: "", deviceName: "", clientName: "",
   clientPhone: "", subscriptionFee: "", locationUrl: "", location: "",
+  installedByName: "", installDate: "",
 });
 
 /* ─── فتح خرائط جوجل بشكل صحيح ─── */
@@ -686,9 +688,10 @@ export default function DatabaseScreen() {
           p.ipAddress = hForm.ipAddress || null;
         } else {
           p.installPhoto = hForm.installPhoto || null;
-          p.installedByName = hForm.installedByName || null;
-          p.installDate = hForm.installDate ? new Date(hForm.installDate).toISOString() : null;
         }
+        /* حقول مشتركة بين الداخلي والخارجي */
+        p.installedByName = hForm.installedByName || null;
+        p.installDate = hForm.installDate ? new Date(hForm.installDate).toISOString() : null;
         const added = await apiPost("/network/hotspot-points", token, p);
         setHotspotPoints(prev => [added, ...prev]); setHotspotTotal(t => t + 1);
       } else {
@@ -698,6 +701,8 @@ export default function DatabaseScreen() {
           subscriptionName: bForm.subscriptionName || null, deviceName: bForm.deviceName || null,
           clientName: bForm.clientName || null, clientPhone: bForm.clientPhone.replace(/\D/g, "") || null,
           subscriptionFee: bForm.subscriptionFee || null, location: bForm.location || "-", locationUrl: bForm.locationUrl || null,
+          installedByName: bForm.installedByName || null,
+          installDate: bForm.installDate ? new Date(bForm.installDate).toISOString() : null,
         };
         const added = await apiPost("/network/broadband-points", token, p);
         setBroadbandPoints(prev => [added, ...prev]); setBroadbandTotal(t => t + 1);
@@ -714,7 +719,7 @@ export default function DatabaseScreen() {
       setEditHForm({ flashNumber: h.flashNumber ? String(h.flashNumber) : "", deviceName: h.deviceName ?? "", hotspotType: h.hotspotType ?? "internal", clientName: h.clientName ?? "", clientPhone: h.clientPhone ?? "", subscriptionFee: h.subscriptionFee ?? "", ipAddress: h.ipAddress ?? "", isClientOwned: h.isClientOwned ?? false, locationUrl: h.locationUrl ?? "", location: h.location ?? "", installPhoto: h.installPhoto ?? "", installedByName: h.installedByName ?? "", installDate: h.installDate ? h.installDate.substring(0, 10) : "" });
     } else {
       const b = item as BroadbandPoint;
-      setEditBForm({ flashNumber: b.flashNumber ? String(b.flashNumber) : "", subscriptionName: b.subscriptionName ?? "", deviceName: b.deviceName ?? "", clientName: b.clientName ?? "", clientPhone: b.clientPhone ?? "", subscriptionFee: b.subscriptionFee ?? "", locationUrl: b.locationUrl ?? "", location: b.location ?? "" });
+      setEditBForm({ flashNumber: b.flashNumber ? String(b.flashNumber) : "", subscriptionName: b.subscriptionName ?? "", deviceName: b.deviceName ?? "", clientName: b.clientName ?? "", clientPhone: b.clientPhone ?? "", subscriptionFee: b.subscriptionFee ?? "", locationUrl: b.locationUrl ?? "", location: b.location ?? "", installedByName: b.installedByName ?? "", installDate: b.installDate ? b.installDate.substring(0, 10) : "" });
     }
   };
 
@@ -729,7 +734,7 @@ export default function DatabaseScreen() {
         setHotspotPoints(prev => prev.map(x => x.id === updated.id ? updated : x));
       } else {
         const f = editBForm;
-        const p = { flashNumber: f.flashNumber ? parseInt(f.flashNumber) : null, name: `فلاش P${f.flashNumber}`, subscriptionName: f.subscriptionName || null, deviceName: f.deviceName || null, clientName: f.clientName || null, clientPhone: f.clientPhone.replace(/\D/g, "") || null, subscriptionFee: f.subscriptionFee || null, location: f.location || "-", locationUrl: f.locationUrl || null };
+        const p = { flashNumber: f.flashNumber ? parseInt(f.flashNumber) : null, name: `فلاش P${f.flashNumber}`, subscriptionName: f.subscriptionName || null, deviceName: f.deviceName || null, clientName: f.clientName || null, clientPhone: f.clientPhone.replace(/\D/g, "") || null, subscriptionFee: f.subscriptionFee || null, location: f.location || "-", locationUrl: f.locationUrl || null, installedByName: f.installedByName || null, installDate: f.installDate ? new Date(f.installDate).toISOString() : null };
         const updated = await apiPut(`/network/broadband-points/${editItem.id}`, token, p);
         setBroadbandPoints(prev => prev.map(x => x.id === updated.id ? updated : x));
       }
@@ -913,6 +918,9 @@ export default function DatabaseScreen() {
                           <FInput label="رسوم الاشتراك (ر)" value={hForm.subscriptionFee} onChangeText={(v: string) => setHForm(f => ({ ...f, subscriptionFee: v.replace(/\D/g, "") }))} keyboardType="numeric" />
                           <FInput label="عنوان IP" value={hForm.ipAddress} onChangeText={(v: string) => setHForm(f => ({ ...f, ipAddress: v }))} placeholder="192.168.0.x" />
                           <View style={sc.switchRow}><Switch value={hForm.isClientOwned} onValueChange={v => setHForm(f => ({ ...f, isClientOwned: v }))} trackColor={{ true: Colors.primary }} /><Text style={sc.switchLabel}>الجهاز ملك العميل</Text></View>
+                          <View style={sc.extSection}><Text style={sc.extSectionTitle}>بيانات التركيب (اختياري)</Text></View>
+                          <FInput label="اسم المهندس المركّب" value={hForm.installedByName} onChangeText={(v: string) => setHForm(f => ({ ...f, installedByName: v }))} />
+                          <FInput label="تاريخ التركيب" value={hForm.installDate} onChangeText={(v: string) => setHForm(f => ({ ...f, installDate: v }))} placeholder="2025-01-15" />
                         </>
                       ) : (
                         <>
@@ -944,6 +952,9 @@ export default function DatabaseScreen() {
                       <FInput label="رسوم الاشتراك (ر)" value={bForm.subscriptionFee} onChangeText={(v: string) => setBForm(f => ({ ...f, subscriptionFee: v.replace(/\D/g, "") }))} keyboardType="numeric" />
                       <FInput label="وصف الموقع" value={bForm.location} onChangeText={(v: string) => setBForm(f => ({ ...f, location: v }))} />
                       <FInput label="رابط خرائط جوجل" value={bForm.locationUrl} onChangeText={(v: string) => setBForm(f => ({ ...f, locationUrl: v }))} />
+                      <View style={sc.extSection}><Text style={sc.extSectionTitle}>بيانات التركيب (اختياري)</Text></View>
+                      <FInput label="اسم المهندس المركّب" value={bForm.installedByName} onChangeText={(v: string) => setBForm(f => ({ ...f, installedByName: v }))} />
+                      <FInput label="تاريخ التركيب" value={bForm.installDate} onChangeText={(v: string) => setBForm(f => ({ ...f, installDate: v }))} placeholder="2025-01-15" />
                     </>
                   )}
                   <View style={sc.modalBtns}>
@@ -987,6 +998,9 @@ export default function DatabaseScreen() {
                       <FInput label="رسوم الاشتراك" value={editHForm.subscriptionFee} onChangeText={(v: string) => setEditHForm((f: any) => ({ ...f, subscriptionFee: v.replace(/\D/g, "") }))} keyboardType="numeric" />
                       <FInput label="عنوان IP" value={editHForm.ipAddress} onChangeText={(v: string) => setEditHForm((f: any) => ({ ...f, ipAddress: v }))} />
                       <View style={sc.switchRow}><Switch value={editHForm.isClientOwned} onValueChange={v => setEditHForm((f: any) => ({ ...f, isClientOwned: v }))} trackColor={{ true: Colors.primary }} /><Text style={sc.switchLabel}>الجهاز ملك العميل</Text></View>
+                      <View style={sc.extSection}><Text style={sc.extSectionTitle}>بيانات التركيب (اختياري)</Text></View>
+                      <FInput label="اسم المهندس المركّب" value={editHForm.installedByName} onChangeText={(v: string) => setEditHForm((f: any) => ({ ...f, installedByName: v }))} />
+                      <FInput label="تاريخ التركيب" value={editHForm.installDate} onChangeText={(v: string) => setEditHForm((f: any) => ({ ...f, installDate: v }))} placeholder="2025-01-15" />
                     </>
                   ) : (
                     <>

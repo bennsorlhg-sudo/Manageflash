@@ -52,6 +52,8 @@ export const broadbandPointsTable = pgTable("broadband_points", {
   subscriptionFee: numeric("subscription_fee", { precision: 10, scale: 2 }),
   locationUrl: text("location_url"),
   isClientOwned: boolean("is_client_owned").default(false),
+  installedByName: text("installed_by_name"),
+  installDate: timestamp("install_date"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

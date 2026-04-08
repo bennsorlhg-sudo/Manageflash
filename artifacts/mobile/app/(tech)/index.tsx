@@ -59,6 +59,7 @@ interface Ticket {
   boosterSubscriptionFee: string | null;
   deviceName:             string | null;
   deviceSerial:           string | null;
+  assignedToName:         string | null;
 }
 
 /* ─────────────── نوع مجموعة التركيب ─────────────── */
@@ -149,6 +150,7 @@ export default function TechEngineerScreen() {
     boosterSubscriptionFee: raw.boosterSubscriptionFee ?? null,
     deviceName:             raw.deviceName ?? null,
     deviceSerial:           raw.deviceSerial ?? null,
+    assignedToName:         raw.assignedToName ?? null,
   });
 
   /* ─── بناء مجموعات التركيب (أب + نقاط بث وسيطة) ─── */
