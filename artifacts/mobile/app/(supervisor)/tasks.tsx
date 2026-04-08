@@ -1383,6 +1383,107 @@ const ic = StyleSheet.create({
 });
 
 /* ════════════════════════════════════════════════
+   قائمة أسماء الأجهزة المنسدلة
+════════════════════════════════════════════════ */
+const DEVICE_NAME_LIST = [
+  "LG",
+  "Tplink ثلاثة دقلات",
+  "Tplink",
+  "D-Link DIR-612",
+  "D-Link DIR-650",
+  "Xiaomi Mini R1C",
+  "D-Link R04",
+  "KT708",
+];
+
+function DeviceNameDropdown({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualVal, setManualVal] = useState("");
+
+  const confirmManual = () => {
+    if (manualVal.trim()) onChange(manualVal.trim());
+    setOpen(false);
+    setManualMode(false);
+  };
+
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={pm.fieldLabel}>اسم الجهاز *</Text>
+      <TouchableOpacity
+        style={[pm.input, { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", height: 44 }]}
+        onPress={() => { setOpen(true); setManualMode(false); }}
+        activeOpacity={0.7}
+      >
+        <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
+        <Text style={[{ fontSize: 14, textAlign: "right", flex: 1 }, value ? { color: Colors.text } : { color: Colors.textSecondary }]}>
+          {value || "اختر اسم الجهاز..."}
+        </Text>
+      </TouchableOpacity>
+
+      <Modal visible={open} transparent animationType="fade">
+        <View style={{ flex: 1, backgroundColor: "#000000BB", justifyContent: "center", padding: 20 }}>
+          <View style={{ backgroundColor: Colors.surface, borderRadius: 18, overflow: "hidden", borderWidth: 1, borderColor: Colors.border }}>
+            {/* رأس */}
+            <View style={{ flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: Colors.border }}>
+              <TouchableOpacity onPress={() => { setOpen(false); setManualMode(false); }}>
+                <Ionicons name="close" size={22} color={Colors.text} />
+              </TouchableOpacity>
+              <Text style={{ fontSize: 16, fontWeight: "bold", color: Colors.text }}>اختر اسم الجهاز</Text>
+            </View>
+            <ScrollView style={{ maxHeight: 350 }} keyboardShouldPersistTaps="handled">
+              {DEVICE_NAME_LIST.map(name => (
+                <TouchableOpacity
+                  key={name}
+                  style={{ flexDirection: "row-reverse", alignItems: "center", gap: 10, paddingVertical: 13, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: Colors.border + "60", backgroundColor: value === name ? Colors.primary + "18" : "transparent" }}
+                  onPress={() => { onChange(name); setOpen(false); setManualMode(false); }}
+                >
+                  {value === name
+                    ? <Ionicons name="checkmark-circle" size={18} color={Colors.primary} />
+                    : <View style={{ width: 18 }} />}
+                  <Text style={{ fontSize: 14, color: value === name ? Colors.primary : Colors.text, fontWeight: value === name ? "bold" : "normal", flex: 1, textAlign: "right" }}>
+                    {name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              {/* إدخال يدوي */}
+              <TouchableOpacity
+                style={{ flexDirection: "row-reverse", alignItems: "center", gap: 10, paddingVertical: 13, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: Colors.border }}
+                onPress={() => setManualMode(m => !m)}
+              >
+                <Ionicons name="pencil-outline" size={16} color={Colors.warning} />
+                <Text style={{ fontSize: 14, color: Colors.warning, fontWeight: "600", flex: 1, textAlign: "right" }}>
+                  إدخال اسم آخر يدوياً
+                </Text>
+              </TouchableOpacity>
+              {manualMode && (
+                <View style={{ paddingHorizontal: 14, paddingBottom: 14, gap: 8 }}>
+                  <TextInput
+                    style={[pm.input, { marginTop: 6 }]}
+                    value={manualVal}
+                    onChangeText={setManualVal}
+                    placeholder="اكتب اسم الجهاز..."
+                    placeholderTextColor={Colors.textSecondary}
+                    textAlign="right"
+                    autoFocus
+                  />
+                  <TouchableOpacity
+                    style={{ backgroundColor: Colors.primary, borderRadius: 10, padding: 11, alignItems: "center" }}
+                    onPress={confirmManual}
+                  >
+                    <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 14 }}>تأكيد</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+/* ════════════════════════════════════════════════
    مودال التجهيز
 ════════════════════════════════════════════════ */
 function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
@@ -1524,8 +1625,8 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
 
             {/* ── تسليم الجهاز ── */}
             <Text style={pm.sectionTitle}>بيانات الجهاز</Text>
-            <MF label="اسم الجهاز *" value={form.deviceName} onChange={v=>setF("deviceName",v)} />
-            <MF label="رقم الجهاز (Serial)" value={form.deviceSerial} onChange={v=>setF("deviceSerial",v)} />
+            <DeviceNameDropdown value={form.deviceName} onChange={v=>setF("deviceName",v)} />
+            <MF label="رقم الفلاش (Flash Number)" value={form.deviceSerial} onChange={v=>setF("deviceSerial",v)} kb="numeric" />
 
             {/* ── برودباند فقط ── */}
             {svc === "broadband_internal" && (
@@ -1552,8 +1653,8 @@ function PrepareModal({ item, engineers, submitting, onClose, onSubmit }: {
                       <Ionicons name="hardware-chip" size={15} color="#4CAF50" />
                       <Text style={pm.boosterTitle}>بيانات جهاز المقوي (هوتسبوت داخلي)</Text>
                     </View>
-                    <MF label="اسم الجهاز (مثال: شاومي Redmi) *" value={boosterForm.deviceName} onChange={v=>setBF("deviceName",v)} />
-                    <MF label="رقم الجهاز (Serial)" value={boosterForm.deviceSerial} onChange={v=>setBF("deviceSerial",v)} />
+                    <DeviceNameDropdown value={boosterForm.deviceName} onChange={v=>setBF("deviceName",v)} />
+                    <MF label="رقم الفلاش (Flash Number)" value={boosterForm.deviceSerial} onChange={v=>setBF("deviceSerial",v)} kb="numeric" />
                     <MF label="قيمة اشتراك المقوي (فارغ = لم يُدفع)" value={boosterForm.subscriptionFee} onChange={v=>setBF("subscriptionFee",v)} kb="decimal-pad" />
                     <View style={pm.boosterNote}>
                       <Ionicons name="information-circle-outline" size={13} color={Colors.warning} />
