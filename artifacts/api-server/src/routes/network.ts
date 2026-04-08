@@ -175,7 +175,7 @@ router.put("/broadband-points/:id", requireAuth, async (req, res) => {
 
   /* الحقول الأساسية الآمنة دائماً */
   const CORE = ["name", "location", "status", "notes", "supervisorId", "speed",
-    "flashNumber", "subscriptionName", "clientName", "clientPhone", "locationUrl", "subscriptionFee"];
+    "flashNumber", "subscriptionName", "deviceName", "clientName", "clientPhone", "locationUrl", "subscriptionFee"];
 
   /* الحقول الجديدة التي قد تكون غير موجودة في قواعد بيانات قديمة */
   const EXTENDED = ["modemFee", "installedByName", "installDate"];
