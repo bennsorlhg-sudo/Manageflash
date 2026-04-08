@@ -70,7 +70,8 @@ const STATUS_FILTERS = [
 ];
 
 /* ─────────────── نوع القسم ─────────────── */
-type Section = "repair" | "install";
+type Section = "repair" | "install" | "purchase";
+type PurchaseTab = "new" | "completed";
 
 /* ─────────────── مودال التايملاين ─────────────── */
 type TimelineData = {
@@ -94,6 +95,9 @@ export default function TaskTrackingScreen() {
   const [statusFilter,   setStatusFilter]   = useState("pending");
   const [repairTickets,  setRepairTickets]  = useState<any[]>([]);
   const [installTickets, setInstallTickets] = useState<any[]>([]);
+  const [purchaseItems,  setPurchaseItems]  = useState<any[]>([]);
+  const [purchaseTxns,   setPurchaseTxns]   = useState<any[]>([]);
+  const [purchaseTab,    setPurchaseTab]    = useState<PurchaseTab>("new");
   const [loading,        setLoading]        = useState(true);
   const [refreshing,     setRefreshing]     = useState(false);
 
@@ -121,12 +125,16 @@ export default function TaskTrackingScreen() {
   const fetchAll = useCallback(async (silent = false) => {
     if (!silent) { setLoading(true); }
     try {
-      const [r, i] = await Promise.all([
+      const [r, i, pr, ptx] = await Promise.all([
         apiGet("/tickets/repair", token),
         apiGet("/tickets/installation", token),
+        apiGet("/purchase-requests", token),
+        apiGet("/transactions/purchases", token),
       ]);
       setRepairTickets(Array.isArray(r) ? r : []);
       setInstallTickets(Array.isArray(i) ? i : []);
+      setPurchaseItems(Array.isArray(pr) ? pr.filter((p: any) => p.status === "pending") : []);
+      setPurchaseTxns(Array.isArray(ptx) ? ptx : []);
     } catch {} finally {
       setLoading(false);
       setRefreshing(false);
@@ -162,8 +170,6 @@ export default function TaskTrackingScreen() {
     if (statusFilter === "completed")   return s === "completed";
     return true;
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-  const items = filterItems(section === "repair" ? repairTickets : installTickets);
 
   /* ─── حذف ─── */
   const openDelete = (id: number, ticketNum: string, sec: Section) =>
@@ -265,9 +271,9 @@ export default function TaskTrackingScreen() {
           style={[styles.sectionBtn, section === "repair" && { backgroundColor: Colors.error + "22", borderColor: Colors.error }]}
           onPress={() => setSection("repair")}
         >
-          <Ionicons name="build" size={15} color={section === "repair" ? Colors.error : Colors.textSecondary} />
+          <Ionicons name="build" size={14} color={section === "repair" ? Colors.error : Colors.textSecondary} />
           <Text style={[styles.sectionBtnText, section === "repair" && { color: Colors.error, fontWeight: "bold" }]}>
-            مهام الإصلاح
+            الإصلاح
           </Text>
           <View style={[styles.countBubble, { backgroundColor: Colors.error }]}>
             <Text style={styles.countBubbleText}>{repairTickets.length}</Text>
@@ -278,22 +284,59 @@ export default function TaskTrackingScreen() {
           style={[styles.sectionBtn, section === "install" && { backgroundColor: Colors.info + "22", borderColor: Colors.info }]}
           onPress={() => setSection("install")}
         >
-          <Ionicons name="add-circle" size={15} color={section === "install" ? Colors.info : Colors.textSecondary} />
+          <Ionicons name="add-circle" size={14} color={section === "install" ? Colors.info : Colors.textSecondary} />
           <Text style={[styles.sectionBtnText, section === "install" && { color: Colors.info, fontWeight: "bold" }]}>
-            مهام التركيب
+            التركيب
           </Text>
           <View style={[styles.countBubble, { backgroundColor: Colors.info }]}>
             <Text style={styles.countBubbleText}>{installTickets.length}</Text>
           </View>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.sectionBtn, section === "purchase" && { backgroundColor: "#FF9800" + "22", borderColor: "#FF9800" }]}
+          onPress={() => setSection("purchase")}
+        >
+          <Ionicons name="cart" size={14} color={section === "purchase" ? "#FF9800" : Colors.textSecondary} />
+          <Text style={[styles.sectionBtnText, section === "purchase" && { color: "#FF9800", fontWeight: "bold" }]}>
+            الشراء
+          </Text>
+          <View style={[styles.countBubble, { backgroundColor: "#FF9800" }]}>
+            <Text style={styles.countBubbleText}>{purchaseItems.length}</Text>
+          </View>
+        </TouchableOpacity>
       </View>
 
-      {/* ── فلتر الحالة ── */}
-      <FilterBar
-        active={statusFilter}
-        onSelect={setStatusFilter}
-        source={section === "repair" ? repairTickets : installTickets}
-      />
+      {/* ── فلتر الحالة (إصلاح/تركيب فقط) ── */}
+      {section !== "purchase" && (
+        <FilterBar
+          active={statusFilter}
+          onSelect={setStatusFilter}
+          source={section === "repair" ? repairTickets : installTickets}
+        />
+      )}
+
+      {/* ── تبويبات المشتريات ── */}
+      {section === "purchase" && (
+        <View style={styles.purchaseTabRow}>
+          <TouchableOpacity
+            style={[styles.purchaseTabBtn, purchaseTab === "new" && { backgroundColor: Colors.info + "22", borderColor: Colors.info }]}
+            onPress={() => setPurchaseTab("new")}
+          >
+            <Text style={[styles.purchaseTabTxt, purchaseTab === "new" && { color: Colors.info, fontWeight: "bold" }]}>
+              الجديدة ({purchaseItems.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.purchaseTabBtn, purchaseTab === "completed" && { backgroundColor: Colors.success + "22", borderColor: Colors.success }]}
+            onPress={() => setPurchaseTab("completed")}
+          >
+            <Text style={[styles.purchaseTabTxt, purchaseTab === "completed" && { color: Colors.success, fontWeight: "bold" }]}>
+              المكتملة ({purchaseTxns.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* ── القائمة ── */}
       <ScrollView
@@ -306,41 +349,90 @@ export default function TaskTrackingScreen() {
           />
         }
       >
-        <Text style={styles.countText}>{items.length} تذكرة</Text>
-
-        {items.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Ionicons name="checkmark-circle-outline" size={52} color={Colors.textMuted} />
-            <Text style={styles.emptyText}>لا توجد تذاكر في هذا الفلتر</Text>
-          </View>
-        ) : section === "repair" ? (
-          items.map(item => (
-            <RepairCard
-              key={item.id}
-              item={item}
-              expanded={expandedId === item.id}
-              onExpand={() => setExpandedId(expandedId === item.id ? null : item.id)}
-              onTimeline={() => openTimeline(item, "repair")}
-              onDelete={() => openDelete(item.id, `#${item.id}`, "repair")}
-              onViewImage={setViewImageUrl}
-              onApprovePhoto={handleApprovePhoto}
-              onDeletePhoto={handleDeletePhoto}
-            />
-          ))
+        {section === "purchase" ? (
+          /* ════ قسم المشتريات ════ */
+          <>
+            {purchaseTab === "new" ? (
+              purchaseItems.length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="cart-outline" size={52} color={Colors.textMuted} />
+                  <Text style={styles.emptyText}>لا توجد طلبات شراء جديدة</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.countText}>{purchaseItems.length} صنف مطلوب</Text>
+                  {purchaseItems.map(item => (
+                    <PurchaseItemCard
+                      key={item.id}
+                      item={item}
+                      onDelete={() => {
+                        setPurchaseItems(prev => prev.filter(p => p.id !== item.id));
+                      }}
+                      token={token}
+                    />
+                  ))}
+                </>
+              )
+            ) : (
+              purchaseTxns.length === 0 ? (
+                <View style={styles.emptyBox}>
+                  <Ionicons name="bag-check-outline" size={52} color={Colors.textMuted} />
+                  <Text style={styles.emptyText}>لا توجد مشتريات مكتملة بعد</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.countText}>{purchaseTxns.length} عملية شراء</Text>
+                  {purchaseTxns.map(txn => (
+                    <PurchaseTransactionCard
+                      key={txn.id}
+                      txn={txn}
+                      onViewImage={setViewImageUrl}
+                    />
+                  ))}
+                </>
+              )
+            )}
+          </>
         ) : (
-          items.map(item => (
-            <InstallCard
-              key={item.id}
-              item={item}
-              expanded={expandedId === item.id}
-              onExpand={() => setExpandedId(expandedId === item.id ? null : item.id)}
-              onTimeline={() => openTimeline(item, "install")}
-              onDelete={() => openDelete(item.id, `#${item.id}`, "install")}
-              onPrepare={() => setPrepareItem(item)}
-              onArchive={() => setArchiveItem(item)}
-              onViewImage={setViewImageUrl}
-            />
-          ))
+          /* ════ الإصلاح والتركيب ════ */
+          <>
+            <Text style={styles.countText}>{filterItems(section === "repair" ? repairTickets : installTickets).length} تذكرة</Text>
+
+            {filterItems(section === "repair" ? repairTickets : installTickets).length === 0 ? (
+              <View style={styles.emptyBox}>
+                <Ionicons name="checkmark-circle-outline" size={52} color={Colors.textMuted} />
+                <Text style={styles.emptyText}>لا توجد تذاكر في هذا الفلتر</Text>
+              </View>
+            ) : section === "repair" ? (
+              filterItems(repairTickets).map(item => (
+                <RepairCard
+                  key={item.id}
+                  item={item}
+                  expanded={expandedId === item.id}
+                  onExpand={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                  onTimeline={() => openTimeline(item, "repair")}
+                  onDelete={() => openDelete(item.id, `#${item.id}`, "repair")}
+                  onViewImage={setViewImageUrl}
+                  onApprovePhoto={handleApprovePhoto}
+                  onDeletePhoto={handleDeletePhoto}
+                />
+              ))
+            ) : (
+              filterItems(installTickets).map(item => (
+                <InstallCard
+                  key={item.id}
+                  item={item}
+                  expanded={expandedId === item.id}
+                  onExpand={() => setExpandedId(expandedId === item.id ? null : item.id)}
+                  onTimeline={() => openTimeline(item, "install")}
+                  onDelete={() => openDelete(item.id, `#${item.id}`, "install")}
+                  onPrepare={() => setPrepareItem(item)}
+                  onArchive={() => setArchiveItem(item)}
+                  onViewImage={setViewImageUrl}
+                />
+              ))
+            )}
+          </>
         )}
 
         <View style={{ height: 60 }} />
@@ -1871,6 +1963,196 @@ const am = StyleSheet.create({
 });
 
 /* ════════════════════════════════════════════════
+   بطاقة صنف الشراء (الجديدة)
+════════════════════════════════════════════════ */
+function PurchaseItemCard({ item, onDelete, token }: {
+  item: any; onDelete: () => void; token: string | null;
+}) {
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    setDeleting(true);
+    try {
+      await apiDelete(`/purchase-requests/${item.id}`, token);
+      onDelete();
+    } catch {} finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <View style={pcs.card}>
+      <View style={pcs.top}>
+        <TouchableOpacity onPress={handleDelete} disabled={deleting} style={pcs.deleteBtn}>
+          {deleting
+            ? <ActivityIndicator size="small" color={Colors.error} />
+            : <Ionicons name="trash-outline" size={16} color={Colors.error} />}
+        </TouchableOpacity>
+
+        <View style={[pcs.statusDot, { backgroundColor: Colors.info }]} />
+
+        <Text style={pcs.name} numberOfLines={2}>{item.description}</Text>
+      </View>
+
+      {item.quantity && (
+        <View style={pcs.qtyRow}>
+          <Ionicons name="layers-outline" size={13} color={Colors.textSecondary} />
+          <Text style={pcs.qtyText}>الكمية: {item.quantity}</Text>
+        </View>
+      )}
+
+      <View style={pcs.footer}>
+        <View style={[pcs.newBadge]}>
+          <Ionicons name="time-outline" size={11} color={Colors.info} />
+          <Text style={[pcs.newBadgeTxt]}>بانتظار الشراء</Text>
+        </View>
+        <Text style={pcs.date}>{formatDate(item.createdAt)}</Text>
+      </View>
+    </View>
+  );
+}
+
+const pcs = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    marginBottom: 10, borderWidth: 1, borderColor: Colors.border,
+    borderRightWidth: 4, borderRightColor: Colors.info, gap: 8,
+  },
+  top: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  name: { flex: 1, fontSize: 15, fontWeight: "bold", color: Colors.text, textAlign: "right" },
+  statusDot: { width: 10, height: 10, borderRadius: 5 },
+  deleteBtn: { padding: 4 },
+  qtyRow: { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
+  qtyText: { fontSize: 13, color: Colors.textSecondary },
+  footer: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  newBadge: { flexDirection: "row-reverse", alignItems: "center", gap: 4, backgroundColor: Colors.info + "18", borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  newBadgeTxt: { fontSize: 11, fontWeight: "700", color: Colors.info },
+  date: { fontSize: 11, color: Colors.textMuted },
+});
+
+/* ════════════════════════════════════════════════
+   بطاقة معاملة الشراء المكتملة
+════════════════════════════════════════════════ */
+function PurchaseTransactionCard({ txn, onViewImage }: {
+  txn: any; onViewImage: (url: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const amtNum = parseFloat(txn.amount ?? "0");
+  const ptColor = txn.paymentType === "debt" ? Colors.warning : Colors.error;
+  const ptLabel = txn.paymentType === "debt" ? "دين" : "نقد";
+
+  /* استخراج أسماء الأصناف من الوصف */
+  const itemsDesc = (txn.description ?? "").replace(/^مشتريات:\s*/, "");
+
+  return (
+    <View style={ptc.card}>
+      {/* رأس البطاقة */}
+      <TouchableOpacity style={ptc.head} onPress={() => setExpanded(e => !e)} activeOpacity={0.8}>
+        <Ionicons
+          name={expanded ? "chevron-up" : "chevron-down"}
+          size={16} color={Colors.textMuted}
+        />
+        <View style={[ptc.ptBadge, { backgroundColor: ptColor + "18" }]}>
+          <Text style={[ptc.ptBadgeTxt, { color: ptColor }]}>{ptLabel}</Text>
+        </View>
+        <View style={[ptc.successBadge]}>
+          <Ionicons name="checkmark-circle" size={14} color={Colors.success} />
+          <Text style={ptc.successTxt}>تم الشراء</Text>
+        </View>
+        <Text style={ptc.amount}>{amtNum.toLocaleString("ar-YE")} ر.س</Text>
+      </TouchableOpacity>
+
+      {/* الوصف */}
+      <Text style={ptc.desc} numberOfLines={expanded ? undefined : 2}>{itemsDesc}</Text>
+
+      {/* التاريخ */}
+      <Text style={ptc.date}>{formatDate(txn.createdAt)}</Text>
+
+      {/* التفاصيل عند التوسيع */}
+      {expanded && (
+        <View style={ptc.expandedBox}>
+          {txn.personName && (
+            <View style={ptc.detailRow}>
+              <Text style={ptc.detailVal}>{txn.personName}</Text>
+              <Text style={ptc.detailKey}>المورد / الجهة</Text>
+            </View>
+          )}
+
+          {/* صورة المشتريات */}
+          {!!txn.itemsPhotoUrl && (
+            <View style={ptc.photoSection}>
+              <View style={ptc.photoLabelRow}>
+                <Ionicons name="bag-outline" size={13} color={Colors.info} />
+                <Text style={[ptc.photoLabel, { color: Colors.info }]}>صورة المشتريات</Text>
+              </View>
+              <TouchableOpacity onPress={() => onViewImage(txn.itemsPhotoUrl)} activeOpacity={0.85}>
+                <Image source={{ uri: txn.itemsPhotoUrl }} style={ptc.photoThumb} resizeMode="cover" />
+                <View style={ptc.photoTapHint}>
+                  <Ionicons name="expand-outline" size={13} color="#fff" />
+                  <Text style={ptc.photoTapTxt}>اضغط للتكبير</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* صورة الفاتورة */}
+          {!!txn.invoicePhotoUrl && (
+            <View style={ptc.photoSection}>
+              <View style={ptc.photoLabelRow}>
+                <Ionicons name="receipt-outline" size={13} color={Colors.warning} />
+                <Text style={[ptc.photoLabel, { color: Colors.warning }]}>صورة الفاتورة</Text>
+              </View>
+              <TouchableOpacity onPress={() => onViewImage(txn.invoicePhotoUrl)} activeOpacity={0.85}>
+                <Image source={{ uri: txn.invoicePhotoUrl }} style={ptc.photoThumb} resizeMode="cover" />
+                <View style={ptc.photoTapHint}>
+                  <Ionicons name="expand-outline" size={13} color="#fff" />
+                  <Text style={ptc.photoTapTxt}>اضغط للتكبير</Text>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {!txn.itemsPhotoUrl && !txn.invoicePhotoUrl && (
+            <View style={ptc.noPhotosRow}>
+              <Ionicons name="image-outline" size={14} color={Colors.textMuted} />
+              <Text style={ptc.noPhotosTxt}>لا توجد صور مرفقة</Text>
+            </View>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+const ptc = StyleSheet.create({
+  card: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    marginBottom: 10, borderWidth: 1, borderColor: Colors.border,
+    borderRightWidth: 4, borderRightColor: Colors.success, gap: 8,
+  },
+  head: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  amount: { flex: 1, fontSize: 16, fontWeight: "800", color: Colors.text, textAlign: "right" },
+  ptBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 7 },
+  ptBadgeTxt: { fontSize: 11, fontWeight: "700" },
+  successBadge: { flexDirection: "row-reverse", alignItems: "center", gap: 3, backgroundColor: Colors.success + "18", borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
+  successTxt: { fontSize: 11, fontWeight: "700", color: Colors.success },
+  desc: { fontSize: 13, color: Colors.textSecondary, textAlign: "right", lineHeight: 20 },
+  date: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+  expandedBox: { backgroundColor: Colors.surfaceElevated, borderRadius: 10, padding: 10, gap: 10, marginTop: 4 },
+  detailRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  detailKey: { fontSize: 12, color: Colors.textMuted, fontWeight: "600" },
+  detailVal: { fontSize: 13, color: Colors.text },
+  photoSection: { gap: 6 },
+  photoLabelRow: { flexDirection: "row-reverse", alignItems: "center", gap: 5 },
+  photoLabel: { fontSize: 12, fontWeight: "700" },
+  photoThumb: { width: "100%", height: 150, borderRadius: 10 },
+  photoTapHint: { position: "absolute", bottom: 6, right: 8, flexDirection: "row-reverse", alignItems: "center", gap: 4, backgroundColor: "#00000066", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 },
+  photoTapTxt: { fontSize: 11, color: "#fff" },
+  noPhotosRow: { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
+  noPhotosTxt: { fontSize: 12, color: Colors.textMuted },
+});
+
+/* ════════════════════════════════════════════════
    الأنماط
 ════════════════════════════════════════════════ */
 const styles = StyleSheet.create({
@@ -1890,20 +2172,31 @@ const styles = StyleSheet.create({
   refreshBtn: { padding: 6 },
 
   /* تبديل القسم */
-  sectionRow: { flexDirection: "row-reverse", gap: 10, paddingHorizontal: 14, paddingVertical: 12 },
+  sectionRow: { flexDirection: "row-reverse", gap: 8, paddingHorizontal: 14, paddingVertical: 10 },
   sectionBtn: {
     flex: 1,
     flexDirection: "row-reverse",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    paddingVertical: 11,
-    borderRadius: 14,
+    gap: 5,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1.5,
     borderColor: Colors.border,
     backgroundColor: Colors.surface,
   },
-  sectionBtnText: { fontSize: 13, color: Colors.textSecondary },
+  sectionBtnText: { fontSize: 12, color: Colors.textSecondary },
+
+  /* تبويبات المشتريات */
+  purchaseTabRow: {
+    flexDirection: "row-reverse", gap: 10, paddingHorizontal: 14, paddingBottom: 10,
+  },
+  purchaseTabBtn: {
+    flex: 1, alignItems: "center", paddingVertical: 10,
+    borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  purchaseTabTxt: { fontSize: 14, color: Colors.textSecondary },
   countBubble: {
     minWidth: 20, height: 20, borderRadius: 10,
     alignItems: "center", justifyContent: "center", paddingHorizontal: 5,

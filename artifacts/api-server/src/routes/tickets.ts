@@ -492,14 +492,26 @@ router.put("/purchase-requests/:id", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const updates: any = { updatedAt: new Date() };
-    if (req.body.status) updates.status = req.body.status;
+    if (req.body.status !== undefined) updates.status = req.body.status;
     if (req.body.notes !== undefined) updates.notes = req.body.notes;
+    if (req.body.transactionId !== undefined) updates.transactionId = req.body.transactionId;
 
     const [row] = await db.update(purchaseRequestsTable).set(updates)
       .where(eq(purchaseRequestsTable.id, id)).returning();
     res.json(row);
   } catch (error) {
     res.status(500).json({ error: "فشل في تحديث طلب الشراء", details: String(error) });
+  }
+});
+
+/* حذف طلب شراء */
+router.delete("/purchase-requests/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(purchaseRequestsTable).where(eq(purchaseRequestsTable.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حذف طلب الشراء", details: String(error) });
   }
 });
 

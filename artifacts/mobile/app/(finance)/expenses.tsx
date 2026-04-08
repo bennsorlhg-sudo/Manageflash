@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  Platform, TextInput, ActivityIndicator, RefreshControl, Modal,
+  Platform, TextInput, ActivityIndicator, RefreshControl, Modal, Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -95,6 +95,9 @@ export default function ExpensesScreen() {
 
   /* Alert Modal */
   const [alert, setAlert] = useState({ visible: false, title: "", message: "", color: Colors.success });
+
+  /* عرض صورة */
+  const [viewImg, setViewImg] = useState<string | null>(null);
   const showAlert = (title: string, message: string, color = Colors.success) =>
     setAlert({ visible: true, title, message, color });
 
@@ -329,6 +332,30 @@ export default function ExpensesScreen() {
                     </View>
                   </View>
 
+                  {/* صور المشتريات إن وجدت */}
+                  {(!!tx.itemsPhotoUrl || !!tx.invoicePhotoUrl) && (
+                    <View style={s.photosBtnRow}>
+                      {!!tx.itemsPhotoUrl && (
+                        <TouchableOpacity
+                          style={[s.photoBtn, { borderColor: Colors.info + "50" }]}
+                          onPress={() => setViewImg(tx.itemsPhotoUrl)}
+                        >
+                          <Ionicons name="bag-outline" size={13} color={Colors.info} />
+                          <Text style={[s.photoBtnTxt, { color: Colors.info }]}>صورة المشتريات</Text>
+                        </TouchableOpacity>
+                      )}
+                      {!!tx.invoicePhotoUrl && (
+                        <TouchableOpacity
+                          style={[s.photoBtn, { borderColor: Colors.warning + "50" }]}
+                          onPress={() => setViewImg(tx.invoicePhotoUrl)}
+                        >
+                          <Ionicons name="receipt-outline" size={13} color={Colors.warning} />
+                          <Text style={[s.photoBtnTxt, { color: Colors.warning }]}>صورة الفاتورة</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  )}
+
                   {/* أزرار الإجراءات */}
                   <View style={s.txActions}>
                     <TouchableOpacity
@@ -461,6 +488,35 @@ export default function ExpensesScreen() {
                 </View>
               );
             })()}
+
+            {/* الصور في التفاصيل */}
+            {detailItem && (!!detailItem.itemsPhotoUrl || !!detailItem.invoicePhotoUrl) && (
+              <View style={{ gap: 10, paddingTop: 4 }}>
+                {!!detailItem.itemsPhotoUrl && (
+                  <View style={{ gap: 6 }}>
+                    <View style={{ flexDirection: "row-reverse", alignItems: "center", gap: 5 }}>
+                      <Ionicons name="bag-outline" size={14} color={Colors.info} />
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: Colors.info }}>صورة المشتريات</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setViewImg(detailItem.itemsPhotoUrl)} activeOpacity={0.85}>
+                      <Image source={{ uri: detailItem.itemsPhotoUrl }} style={{ width: "100%", height: 140, borderRadius: 10 }} resizeMode="cover" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+                {!!detailItem.invoicePhotoUrl && (
+                  <View style={{ gap: 6 }}>
+                    <View style={{ flexDirection: "row-reverse", alignItems: "center", gap: 5 }}>
+                      <Ionicons name="receipt-outline" size={14} color={Colors.warning} />
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: Colors.warning }}>صورة الفاتورة</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => setViewImg(detailItem.invoicePhotoUrl)} activeOpacity={0.85}>
+                      <Image source={{ uri: detailItem.invoicePhotoUrl }} style={{ width: "100%", height: 140, borderRadius: 10 }} resizeMode="cover" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+
             <TouchableOpacity style={[s.modalSaveBtn, { backgroundColor: Colors.primary }]} onPress={() => setDetailItem(null)}>
               <Text style={s.modalSaveBtnTxt}>إغلاق</Text>
             </TouchableOpacity>
@@ -623,6 +679,18 @@ export default function ExpensesScreen() {
         visible={alert.visible} title={alert.title} message={alert.message} color={alert.color}
         onClose={() => setAlert(a => ({ ...a, visible: false }))}
       />
+
+      {/* ══════════════ مودال عرض الصورة ══════════════ */}
+      <Modal visible={!!viewImg} transparent animationType="fade" onRequestClose={() => setViewImg(null)}>
+        <TouchableOpacity style={s.imgOverlay} activeOpacity={1} onPress={() => setViewImg(null)}>
+          {!!viewImg && (
+            <Image source={{ uri: viewImg }} style={s.imgFull} resizeMode="contain" />
+          )}
+          <View style={s.imgClose}>
+            <Ionicons name="close-circle" size={32} color="#fff" />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -771,4 +839,21 @@ const s = StyleSheet.create({
   confirmYesTxt: { color: "#fff", fontWeight: "700", fontSize: 15 },
   confirmNo:     { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: "center", borderWidth: 1, borderColor: Colors.border },
   confirmNoTxt:  { color: Colors.textSecondary, fontWeight: "700", fontSize: 15 },
+
+  /* أزرار صور المشتريات في الكرت */
+  photosBtnRow: { flexDirection: "row-reverse", gap: 8, flexWrap: "wrap" },
+  photoBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 5,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+    borderWidth: 1, backgroundColor: Colors.surfaceElevated,
+  },
+  photoBtnTxt: { fontSize: 12, fontWeight: "600" },
+
+  /* مودال عرض الصورة */
+  imgOverlay: {
+    flex: 1, backgroundColor: "rgba(0,0,0,0.92)",
+    justifyContent: "center", alignItems: "center",
+  },
+  imgFull:  { width: "100%", height: "80%", borderRadius: 8 },
+  imgClose: { position: "absolute", top: 52, right: 18 },
 });

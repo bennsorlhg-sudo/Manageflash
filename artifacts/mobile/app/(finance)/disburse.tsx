@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Platform, ActivityIndicator, Modal,
+  TextInput, Platform, ActivityIndicator, Modal, Image,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Colors } from "@/constants/colors";
@@ -14,9 +15,9 @@ type ExpenseType = "daily" | "monthly" | "purchase";
 type PayType     = "cash"  | "debt";
 
 const EXPENSE_TYPES: { key: ExpenseType; label: string; icon: keyof typeof Ionicons.glyphMap; color: string; desc: string }[] = [
-  { key: "daily",    label: "مصروف يومي",  icon: "today",          color: Colors.warning, desc: "فواتير ومصروفات يومية" },
-  { key: "monthly",  label: "التزام شهري", icon: "calendar",       color: Colors.info,    desc: "إيجارات والتزامات ثابتة" },
-  { key: "purchase", label: "مشتريات",     icon: "cart",           color: "#9C27B0",      desc: "تنفيذ طلبات الشراء" },
+  { key: "daily",    label: "مصروف يومي",  icon: "today",    color: Colors.warning, desc: "فواتير ومصروفات يومية" },
+  { key: "monthly",  label: "التزام شهري", icon: "calendar", color: Colors.info,    desc: "إيجارات والتزامات ثابتة" },
+  { key: "purchase", label: "مشتريات",     icon: "cart",     color: "#9C27B0",      desc: "تنفيذ طلبات الشراء" },
 ];
 
 function AlertModal({ visible, title, message, color, onClose }: {
@@ -45,10 +46,42 @@ function AlertModal({ visible, title, message, color, onClose }: {
 
 const PRIORITY_MAP: Record<string, { label: string; color: string }> = {
   urgent: { label: "عاجل جداً", color: "#B71C1C"       },
-  high:   { label: "عاجل",    color: Colors.error    },
-  medium: { label: "متوسط",   color: Colors.warning  },
-  low:    { label: "منخفض",   color: Colors.success  },
+  high:   { label: "عاجل",      color: Colors.error    },
+  medium: { label: "متوسط",     color: Colors.warning  },
+  low:    { label: "منخفض",     color: Colors.success  },
 };
+
+/* ── مكوّن زر الصورة ── */
+function PhotoPickerBtn({ label, photoUri, onPick, onClear, color }: {
+  label: string; photoUri: string | null;
+  onPick: (fromCamera: boolean) => void;
+  onClear: () => void; color: string;
+}) {
+  return (
+    <View style={s.photoBox}>
+      <Text style={s.fieldLabel}>{label} — اختياري</Text>
+      {photoUri ? (
+        <View style={s.photoPreviewWrap}>
+          <Image source={{ uri: photoUri }} style={s.photoPreview} resizeMode="cover" />
+          <TouchableOpacity style={s.photoRemoveBtn} onPress={onClear}>
+            <Ionicons name="close-circle" size={22} color={Colors.error} />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={[s.photoPickerRow]}>
+          <TouchableOpacity style={[s.photoPickBtn, { borderColor: color + "50" }]} onPress={() => onPick(true)}>
+            <Ionicons name="camera" size={18} color={color} />
+            <Text style={[s.photoPickBtnTxt, { color }]}>كاميرا</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.photoPickBtn, { borderColor: color + "50" }]} onPress={() => onPick(false)}>
+            <Ionicons name="image" size={18} color={color} />
+            <Text style={[s.photoPickBtnTxt, { color }]}>معرض</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
+  );
+}
 
 export default function DisburseScreen() {
   const insets = useSafeAreaInsets();
@@ -69,6 +102,13 @@ export default function DisburseScreen() {
   const [selectedReqs,    setSelectedReqs]    = useState<Set<number>>(new Set());
   const [purchaseAmount,  setPurchaseAmount]  = useState("");
 
+  /* ── صور المشتريات (اختيارية) ── */
+  const [itemsPhotoUri,   setItemsPhotoUri]   = useState<string | null>(null);
+  const [invoicePhotoUri, setInvoicePhotoUri] = useState<string | null>(null);
+
+  /* عرض صورة مكبّرة */
+  const [viewImg, setViewImg] = useState<string | null>(null);
+
   const showMsg = (title: string, message: string, color = Colors.success) =>
     setModal({ visible: true, title, message, color });
 
@@ -86,7 +126,6 @@ export default function DisburseScreen() {
     if (expenseType === "purchase") fetchPurchaseReqs();
   }, [expenseType, fetchPurchaseReqs]);
 
-  /* حساب مجموع الأسعار التقديرية للطلبات المحددة */
   const calcPurchaseTotal = (ids: Set<number>) => {
     const total = purchaseReqs
       .filter(r => ids.has(r.id))
@@ -112,10 +151,31 @@ export default function DisburseScreen() {
     calcPurchaseTotal(all);
   };
 
+  /* ── التقاط صورة ── */
+  const pickPhoto = async (
+    setter: (v: string | null) => void,
+    fromCamera: boolean
+  ) => {
+    try {
+      let res: ImagePicker.ImagePickerResult;
+      if (fromCamera) {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") return;
+        res = await ImagePicker.launchCameraAsync({ quality: 0.3, base64: true });
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") return;
+        res = await ImagePicker.launchImageLibraryAsync({ quality: 0.3, base64: true, mediaTypes: ["images"] as any });
+      }
+      if (!res.canceled && res.assets[0]) {
+        setter(`data:image/jpeg;base64,${res.assets[0].base64}`);
+      }
+    } catch {}
+  };
+
   const parsedAmt = parseFloat(amount.replace(/[^0-9.]/g, "")) || 0;
   const parsedPurchaseAmt = parseFloat(purchaseAmount.replace(/[^0-9.]/g, "")) || 0;
 
-  /* صلاحية الحفظ */
   const canSave = expenseType === "purchase"
     ? selectedReqs.size > 0 && parsedPurchaseAmt > 0
     : parsedAmt > 0 && !!description.trim() && (payType === "cash" || !!personName.trim());
@@ -125,32 +185,40 @@ export default function DisburseScreen() {
     setSaving(true);
     try {
       if (expenseType === "purchase") {
-        /* ── تنفيذ المشتريات المحددة ── */
         const selected = purchaseReqs.filter(r => selectedReqs.has(r.id));
-        const desc = selected.map((r: any) => `${r.description ?? r.itemName ?? "صنف"} (${r.quantity} ${r.unit ?? ""})`).join("، ");
+        const desc = selected.map((r: any) =>
+          `${r.description ?? "صنف"} (${r.quantity ?? 1})`
+        ).join("، ");
 
-        await apiPost("/transactions/disburse", token, {
+        const result = await apiPost("/transactions/disburse", token, {
           expenseType: "purchase",
           paymentType: payType,
           amount: parsedPurchaseAmt,
           description: `مشتريات: ${desc}`,
           personName: payType === "debt" ? (personName.trim() || "المورد") : undefined,
+          itemsPhotoUrl:   itemsPhotoUri   ?? null,
+          invoicePhotoUrl: invoicePhotoUri ?? null,
         });
 
-        /* تحديث حالة الطلبات إلى "approved" */
+        const transactionId = result?.transactionId;
+
         await Promise.all(
-          selected.map(r => apiPut(`/purchase-requests/${r.id}`, token, { status: "approved" }))
+          selected.map(r => apiPut(`/purchase-requests/${r.id}`, token, {
+            status: "approved",
+            transactionId: transactionId ?? null,
+          }))
         );
 
         showMsg(
           "تم تنفيذ المشتريات ✓",
-          `تم تسجيل ${selected.length} طلب شراء وتحويلها إلى "منفذ"\nالإجمالي: ${formatCurrency(parsedPurchaseAmt)}`
+          `تم تسجيل ${selected.length} صنف\nالإجمالي: ${formatCurrency(parsedPurchaseAmt)}`
         );
         setSelectedReqs(new Set());
         setPurchaseAmount("");
+        setItemsPhotoUri(null);
+        setInvoicePhotoUri(null);
         fetchPurchaseReqs();
       } else {
-        /* ── صرف عادي ── */
         await apiPost("/transactions/disburse", token, {
           expenseType,
           paymentType: payType,
@@ -179,7 +247,6 @@ export default function DisburseScreen() {
 
   return (
     <View style={[s.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
-      {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="arrow-forward" size={24} color={Colors.text} />
@@ -190,7 +257,7 @@ export default function DisburseScreen() {
 
       <ScrollView contentContainerStyle={s.content} keyboardShouldPersistTaps="handled">
 
-        {/* ── نوع المصروف ── */}
+        {/* ── نوع الصرف ── */}
         <Text style={s.sectionLabel}>نوع الصرف</Text>
         <View style={s.typeRow}>
           {EXPENSE_TYPES.map(t => (
@@ -218,8 +285,8 @@ export default function DisburseScreen() {
         <Text style={s.sectionLabel}>طريقة الدفع</Text>
         <View style={s.payRow}>
           {([
-            { k: "cash", label: "نقد",  icon: "cash"    as const, c: Colors.error,   hint: "ينقص من الصندوق"  },
-            { k: "debt", label: "دين",  icon: "receipt" as const, c: Colors.warning, hint: "يُضاف للديون"     },
+            { k: "cash", label: "نقد", icon: "cash"    as const, c: Colors.error,   hint: "ينقص من الصندوق" },
+            { k: "debt", label: "دين", icon: "receipt" as const, c: Colors.warning, hint: "يُضاف للديون"    },
           ] as const).map(p => (
             <TouchableOpacity
               key={p.k}
@@ -233,19 +300,19 @@ export default function DisburseScreen() {
           ))}
         </View>
 
-        {/* ── المشتريات: قائمة الطلبات ── */}
+        {/* ══════════ قسم المشتريات ══════════ */}
         {expenseType === "purchase" ? (
           <View style={s.card}>
             <View style={s.purchaseHeader}>
               <TouchableOpacity onPress={selectAll} style={s.selectAllBtn}>
-                <Ionicons name="checkmark-done" size={14} color={Colors.primary} />
+                <Ionicons name="checkmark-done" size={14} color={"#9C27B0"} />
                 <Text style={s.selectAllTxt}>تحديد الكل</Text>
               </TouchableOpacity>
               <Text style={s.cardTitle}>طلبات الشراء المعلقة</Text>
             </View>
 
             {loadingReqs ? (
-              <ActivityIndicator color={Colors.primary} style={{ marginVertical: 20 }} />
+              <ActivityIndicator color={"#9C27B0"} style={{ marginVertical: 20 }} />
             ) : purchaseReqs.length === 0 ? (
               <View style={s.emptyReqs}>
                 <Ionicons name="cart-outline" size={36} color={Colors.textMuted} />
@@ -254,7 +321,6 @@ export default function DisburseScreen() {
             ) : purchaseReqs.map((req: any) => {
               const isSelected = selectedReqs.has(req.id);
               const prio = PRIORITY_MAP[req.priority ?? "medium"] ?? PRIORITY_MAP.medium;
-              const hasPrice = !!req.estimatedPrice && parseFloat(req.estimatedPrice) > 0;
               return (
                 <TouchableOpacity
                   key={req.id}
@@ -262,45 +328,31 @@ export default function DisburseScreen() {
                   onPress={() => toggleReq(req.id)}
                   activeOpacity={0.7}
                 >
-                  {/* Checkbox */}
                   <View style={[s.checkbox, isSelected && s.checkboxChecked]}>
                     {isSelected && <Ionicons name="checkmark" size={14} color="#fff" />}
                   </View>
-
-                  {/* المحتوى */}
                   <View style={s.reqContent}>
                     <View style={s.reqTopRow}>
                       <View style={[s.prioBadge, { backgroundColor: prio.color + "20" }]}>
                         <Text style={[s.prioBadgeTxt, { color: prio.color }]}>{prio.label}</Text>
                       </View>
-                      <Text style={s.reqName}>{req.description ?? req.itemName ?? "طلب شراء"}</Text>
+                      <Text style={s.reqName}>{req.description ?? "طلب شراء"}</Text>
                     </View>
-                    <View style={s.reqDetails}>
-                      {req.quantity && (
-                        <Text style={s.reqDetail}>الكمية: {req.quantity} {req.unit ?? ""}</Text>
-                      )}
-                      {hasPrice && (
-                        <Text style={[s.reqDetail, { color: Colors.warning }]}>
-                          {formatCurrency(parseFloat(req.estimatedPrice))}
-                        </Text>
-                      )}
-                    </View>
-                    {req.notes && <Text style={s.reqNotes}>{req.notes}</Text>}
+                    {req.quantity && (
+                      <Text style={s.reqDetail}>الكمية: {req.quantity}</Text>
+                    )}
                   </View>
                 </TouchableOpacity>
               );
             })}
 
-            {/* ملخص المحدد */}
             {selectedReqs.size > 0 && (
               <View style={s.selectedSummary}>
-                <Text style={s.selectedSummaryTxt}>
-                  {selectedReqs.size} طلب محدد
-                </Text>
+                <Text style={s.selectedSummaryTxt}>{selectedReqs.size} صنف محدد</Text>
               </View>
             )}
 
-            {/* خانة المبلغ الإجمالي للمشتريات */}
+            {/* ── المبلغ الإجمالي ── */}
             <View style={{ marginTop: 14 }}>
               <Text style={s.fieldLabel}>المبلغ الإجمالي (ر.س) *</Text>
               <TextInput
@@ -319,7 +371,7 @@ export default function DisburseScreen() {
               )}
             </View>
 
-            {/* اسم الجهة عند الدين */}
+            {/* ── اسم المورد عند الدين ── */}
             {payType === "debt" && (
               <View style={{ marginTop: 14 }}>
                 <Text style={s.fieldLabel}>اسم المورد / الجهة *</Text>
@@ -329,7 +381,32 @@ export default function DisburseScreen() {
                 />
               </View>
             )}
+
+            {/* ── صور اختيارية ── */}
+            <View style={s.photosSection}>
+              <View style={s.photosSectionHeader}>
+                <Ionicons name="images-outline" size={16} color={Colors.textSecondary} />
+                <Text style={s.photosSectionTitle}>صور المشتريات — اختياري</Text>
+              </View>
+
+              <PhotoPickerBtn
+                label="صورة المشتريات"
+                photoUri={itemsPhotoUri}
+                onPick={(fromCamera) => pickPhoto(setItemsPhotoUri, fromCamera)}
+                onClear={() => setItemsPhotoUri(null)}
+                color={"#9C27B0"}
+              />
+
+              <PhotoPickerBtn
+                label="صورة الفاتورة"
+                photoUri={invoicePhotoUri}
+                onPick={(fromCamera) => pickPhoto(setInvoicePhotoUri, fromCamera)}
+                onClear={() => setInvoicePhotoUri(null)}
+                color={"#FF9800"}
+              />
+            </View>
           </View>
+
         ) : (
           /* ── نموذج الصرف العادي ── */
           <View style={s.card}>
@@ -395,7 +472,7 @@ export default function DisburseScreen() {
             : <>
                 <Ionicons name="checkmark-circle" size={20} color="#fff" />
                 <Text style={s.saveBtnTxt}>
-                  {expenseType === "purchase" ? `تنفيذ ${selectedReqs.size} طلب` : "تأكيد الصرف"}
+                  {expenseType === "purchase" ? `تنفيذ شراء ${selectedReqs.size} صنف` : "تأكيد الصرف"}
                 </Text>
               </>}
         </TouchableOpacity>
@@ -407,6 +484,19 @@ export default function DisburseScreen() {
         visible={modal.visible} title={modal.title} message={modal.message} color={modal.color}
         onClose={() => setModal(m => ({ ...m, visible: false }))}
       />
+
+      {/* عرض الصورة مكبّرة */}
+      <Modal visible={!!viewImg} transparent animationType="fade">
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: "#000000CC", justifyContent: "center", alignItems: "center" }}
+          activeOpacity={1} onPress={() => setViewImg(null)}
+        >
+          {!!viewImg && (
+            <Image source={{ uri: viewImg }} style={{ width: "94%", height: 400, borderRadius: 12 }} resizeMode="contain" />
+          )}
+          <Text style={{ color: "#fff", marginTop: 12, fontSize: 13 }}>اضغط للإغلاق</Text>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -422,7 +512,6 @@ const s = StyleSheet.create({
 
   sectionLabel: { fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right", marginBottom: 10 },
 
-  /* أنواع الصرف — صف واحد من 3 */
   typeRow: { flexDirection: "row-reverse", gap: 8, marginBottom: 16 },
   typeCard: {
     flex: 1, backgroundColor: Colors.surface, borderRadius: 14, padding: 12,
@@ -436,7 +525,6 @@ const s = StyleSheet.create({
   typeLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, textAlign: "center" },
   typeDesc:  { fontSize: 10, color: Colors.textMuted, textAlign: "center" },
 
-  /* طريقة الدفع */
   payRow: { flexDirection: "row-reverse", gap: 10, marginBottom: 16 },
   payBtn: {
     flex: 1, alignItems: "center", paddingVertical: 14, borderRadius: 12,
@@ -445,7 +533,6 @@ const s = StyleSheet.create({
   payBtnLabel: { fontSize: 15, fontWeight: "700", color: Colors.textSecondary },
   payBtnHint:  { fontSize: 10, color: Colors.textMuted },
 
-  /* البطاقة العامة */
   card: {
     backgroundColor: Colors.surface, borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: Colors.border, marginBottom: 14,
@@ -463,10 +550,9 @@ const s = StyleSheet.create({
   },
   infoTxt: { flex: 1, fontSize: 11, color: Colors.textSecondary, textAlign: "right", lineHeight: 17 },
 
-  /* قائمة المشتريات */
   purchaseHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 14 },
   selectAllBtn:   { flexDirection: "row-reverse", alignItems: "center", gap: 4 },
-  selectAllTxt:   { fontSize: 12, color: Colors.primary, fontWeight: "700" },
+  selectAllTxt:   { fontSize: 12, color: "#9C27B0", fontWeight: "700" },
 
   emptyReqs:    { alignItems: "center", paddingVertical: 30, gap: 10 },
   emptyReqsTxt: { fontSize: 13, color: Colors.textMuted },
@@ -490,16 +576,39 @@ const s = StyleSheet.create({
   reqName:     { fontSize: 14, fontWeight: "700", color: Colors.text, flex: 1, textAlign: "right" },
   prioBadge:   { borderRadius: 6, paddingHorizontal: 7, paddingVertical: 2 },
   prioBadgeTxt: { fontSize: 10, fontWeight: "700" },
-  reqDetails:  { flexDirection: "row-reverse", justifyContent: "space-between" },
-  reqDetail:   { fontSize: 11, color: Colors.textSecondary },
-  reqNotes:    { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+  reqDetail:   { fontSize: 11, color: Colors.textSecondary, textAlign: "right" },
 
   selectedSummary: {
     backgroundColor: "#9C27B0" + "15", borderRadius: 10, padding: 10, marginTop: 8, alignItems: "center",
   },
   selectedSummaryTxt: { fontSize: 13, fontWeight: "700", color: "#9C27B0" },
 
-  /* ملخص الأثر */
+  /* قسم الصور */
+  photosSection: {
+    marginTop: 16, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 14, gap: 12,
+  },
+  photosSectionHeader: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 6, marginBottom: 4,
+  },
+  photosSectionTitle: {
+    fontSize: 13, fontWeight: "700", color: Colors.textSecondary,
+  },
+  photoBox: { gap: 6 },
+  photoBoxLabel: { fontSize: 12, color: Colors.textSecondary, textAlign: "right", fontWeight: "600" },
+  photoPickerRow: { flexDirection: "row-reverse", gap: 8 },
+  photoPickBtn: {
+    flex: 1, flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 6, paddingVertical: 10, borderRadius: 10, borderWidth: 1.5,
+    backgroundColor: Colors.background,
+  },
+  photoPickBtnTxt: { fontSize: 13, fontWeight: "600" },
+  photoPreviewWrap: { position: "relative" },
+  photoPreview: { width: "100%", height: 120, borderRadius: 10 },
+  photoRemoveBtn: {
+    position: "absolute", top: 6, left: 6,
+    backgroundColor: Colors.surface, borderRadius: 12,
+  },
+
   summaryBox: {
     backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
     borderWidth: 1.5, marginBottom: 14, gap: 6,
@@ -509,25 +618,23 @@ const s = StyleSheet.create({
   effectRow:      { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
   effectTxt:      { fontSize: 12, color: Colors.textSecondary },
 
-  /* زر الحفظ */
   saveBtn: {
     flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
     gap: 8, paddingVertical: 16, borderRadius: 14,
   },
   saveBtnTxt: { color: "#fff", fontSize: 16, fontWeight: "800" },
 
-  /* Alert */
   overlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center", alignItems: "center", padding: 24,
+    justifyContent: "center", alignItems: "center", padding: 30,
   },
   alertBox: {
-    backgroundColor: Colors.surface, borderRadius: 20, padding: 28,
-    width: "100%", maxWidth: 340, alignItems: "center", gap: 12,
+    backgroundColor: Colors.surface, borderRadius: 20, padding: 24,
+    borderWidth: 1, borderColor: Colors.border, width: "100%", alignItems: "center", gap: 10,
   },
-  alertIconWrap: { width: 76, height: 76, borderRadius: 38, justifyContent: "center", alignItems: "center" },
-  alertTitle:    { fontSize: 18, fontWeight: "800", color: Colors.text, textAlign: "center" },
-  alertMsg:      { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
-  alertBtn:      { paddingHorizontal: 44, paddingVertical: 12, borderRadius: 12, marginTop: 4 },
-  alertBtnTxt:   { fontSize: 15, fontWeight: "700", color: "#fff" },
+  alertIconWrap: { width: 72, height: 72, borderRadius: 36, justifyContent: "center", alignItems: "center" },
+  alertTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
+  alertMsg: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  alertBtn: { borderRadius: 12, paddingHorizontal: 30, paddingVertical: 12, marginTop: 4 },
+  alertBtnTxt: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
 });
