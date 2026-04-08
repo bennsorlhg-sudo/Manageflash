@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   ActivityIndicator, RefreshControl, Platform, Modal, Linking, TextInput, Image,
+  KeyboardAvoidingView,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
@@ -1863,6 +1864,27 @@ const pm = StyleSheet.create({
   submitTxt: { fontSize:15, fontWeight:"bold", color:"#fff" },
 });
 
+/* ────────────────────────────────────────────────────
+   حقل نصي مستقل لنموذج الأرشفة (خارج ArchiveModal تماماً)
+────────────────────────────────────────────────────── */
+function ArchiveField({ label, value, onChange, kb, ph, multi }: {
+  label: string; value: string; onChange: (v: string) => void;
+  kb?: any; ph?: string; multi?: boolean;
+}) {
+  return (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={am.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[am.input, multi && { height: 64 }]}
+        value={value} onChangeText={onChange}
+        placeholder={ph ?? label} placeholderTextColor={Colors.textSecondary}
+        keyboardType={kb} textAlign="right"
+        textAlignVertical={multi ? "top" : "center"} multiline={multi}
+      />
+    </View>
+  );
+}
+
 /* ════════════════════════════════════════════════
    مودال الأرشفة
 ════════════════════════════════════════════════ */
@@ -1966,19 +1988,6 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
     }
   };
 
-  /* ── مساعد حقل نصي داخل النموذج ── */
-  const Field = ({ label, value, onChange, kb, ph, multi }: { label:string; value:string; onChange:(v:string)=>void; kb?:any; ph?:string; multi?:boolean }) => (
-    <View style={{ marginBottom: 10 }}>
-      <Text style={am.fieldLabel}>{label}</Text>
-      <TextInput
-        style={[am.input, multi && { height: 64 }]}
-        value={value} onChangeText={onChange}
-        placeholder={ph ?? label} placeholderTextColor={Colors.textSecondary}
-        keyboardType={kb} textAlign="right"
-        textAlignVertical={multi ? "top" : "center"} multiline={multi}
-      />
-    </View>
-  );
 
   const svcOptions: { key: SvcType; label: string; color: string }[] = [
     { key: "hotspot_internal",  label: "هوتسبوت داخلي", color: Colors.primary },
@@ -1987,8 +1996,12 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
   ];
 
   return (
-    <Modal visible transparent animationType="slide">
-      <View style={am.overlay}>
+    <Modal visible transparent animationType="slide" statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={am.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
         <View style={am.sheet}>
 
           {/* ── رأس ── */}
@@ -2000,7 +2013,12 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
             <Ionicons name="archive" size={20} color={Colors.success} />
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={am.body} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={am.body}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="none"
+          >
 
             {/* ── نوع الخدمة ── */}
             <Text style={am.secTitle}>نوع الخدمة</Text>
@@ -2043,33 +2061,33 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
 
             {/* ── برودباند: اسم الاشتراك ── */}
             {isBroadband && (
-              <Field label="اسم الاشتراك (مثال: andls123)" value={subscriptionName} onChange={setSubName} ph="andls123" />
+              <ArchiveField label="اسم الاشتراك (مثال: andls123)" value={subscriptionName} onChange={setSubName} ph="andls123" />
             )}
 
             {/* ── داخلي + برودباند: بيانات العميل ── */}
             {(isInternal || isBroadband) && (
               <>
                 <Text style={am.secTitle}>بيانات العميل</Text>
-                <Field label="اسم العميل" value={clientName} onChange={setClientName} />
-                <Field label="رقم الجوال" value={clientPhone} onChange={v => setClientPhone(v.replace(/\D/g, ""))} kb="phone-pad" />
-                <Field label="رسوم الاشتراك — ما دفعه العميل للجهاز (ر)" value={subscriptionFee} onChange={setSubFee} kb="decimal-pad" ph="0" />
+                <ArchiveField label="اسم العميل" value={clientName} onChange={setClientName} />
+                <ArchiveField label="رقم الجوال" value={clientPhone} onChange={v => setClientPhone(v.replace(/\D/g, ""))} kb="phone-pad" />
+                <ArchiveField label="رسوم الاشتراك — ما دفعه العميل للجهاز (ر)" value={subscriptionFee} onChange={setSubFee} kb="decimal-pad" ph="0" />
               </>
             )}
 
             {/* ── برودباند: قيمة الباقة ── */}
             {isBroadband && (
-              <Field label="قيمة باقة الإنترنت الشهرية (ر)" value={internetFee} onChange={setInetFee} kb="decimal-pad" ph="0" />
+              <ArchiveField label="قيمة باقة الإنترنت الشهرية (ر)" value={internetFee} onChange={setInetFee} kb="decimal-pad" ph="0" />
             )}
 
             {/* ── الموقع ── */}
             <Text style={am.secTitle}>الموقع</Text>
-            <Field label="وصف الموقع *" value={address} onChange={setAddress} multi />
-            <Field label="رابط الموقع (Google Maps)" value={locationUrl} onChange={setLocationUrl} ph="https://maps.google.com/..." />
+            <ArchiveField label="وصف الموقع *" value={address} onChange={setAddress} multi />
+            <ArchiveField label="رابط الموقع (Google Maps)" value={locationUrl} onChange={setLocationUrl} ph="https://maps.google.com/..." />
 
             {/* ── بيانات التركيب ── */}
             <Text style={am.secTitle}>بيانات التركيب</Text>
-            <Field label="اسم المهندس المركّب" value={installedByName} onChange={setInstalledByName} />
-            <Field label="تاريخ التركيب" value={installDate} onChange={setInstallDate} ph="2025-01-15" />
+            <ArchiveField label="اسم المهندس المركّب" value={installedByName} onChange={setInstalledByName} />
+            <ArchiveField label="تاريخ التركيب" value={installDate} onChange={setInstallDate} ph="2025-01-15" />
 
             {/* ── صورة التركيب (خارجي) ── */}
             {isExternal && (
@@ -2148,7 +2166,7 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
             <View style={{ height: 30 }} />
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
 
       {/* ── عرض الصورة كاملة ── */}
       <Modal visible={imgVisible} transparent animationType="fade">
