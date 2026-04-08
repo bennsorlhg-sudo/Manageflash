@@ -356,50 +356,106 @@ router.post("/tickets/installation/:id/complete", requireAuth, async (req, res) 
 router.post("/tickets/installation/:id/archive", requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { archiveNotes, engineerNotes, address: addrOverride, locationUrl: urlOverride } = req.body;
+    const {
+      archiveNotes, engineerNotes,
+      /* حقول قابلة للتعديل من المشرف */
+      serviceType:    svcOverride,
+      flashNumber:    flashOverride,
+      deviceName:     deviceOverride,
+      clientName:     clientNameOverride,
+      clientPhone:    clientPhoneOverride,
+      subscriptionFee: subFeeOverride,
+      internetFee:    inetFeeOverride,
+      subscriptionName: subNameOverride,
+      address:        addrOverride,
+      locationUrl:    urlOverride,
+      installedByName: installerOverride,
+      installDate:    installDateOverride,
+      installPhoto:   installPhotoOverride,
+    } = req.body;
 
     const rows = await db.select().from(installationTicketsTable)
       .where(eq(installationTicketsTable.id, id));
     if (!rows[0]) return res.status(404).json({ error: "التذكرة غير موجودة" });
 
     const t = rows[0];
-    const finalAddress    = addrOverride ?? t.address;
-    const finalLocationUrl = urlOverride  ?? t.locationUrl;
+    /* الأولوية لما أرسله المشرف، ثم بيانات التذكرة الأصلية */
+    const finalSvcType     = svcOverride     ?? t.serviceType;
+    const finalAddress     = addrOverride    ?? t.address;
+    const finalLocationUrl = urlOverride     ?? t.locationUrl;
+    const finalDeviceName  = deviceOverride  ?? t.deviceName;
+    const finalClientName  = clientNameOverride  ?? t.clientName;
+    const finalClientPhone = clientPhoneOverride ?? t.clientPhone;
+    const finalSubFee      = subFeeOverride  ?? t.subscriptionFee;
+    const finalInetFee     = inetFeeOverride ?? t.internetFee;
+    const finalSubName     = subNameOverride ?? t.subscriptionName;
+    const finalInstaller   = installerOverride ?? t.assignedToName ?? null;
+    const finalInstallDate = installDateOverride ? new Date(installDateOverride) : (t.completedAt ?? new Date());
+    const finalInstallPhoto = installPhotoOverride ?? t.completionPhotoUrl ?? null;
 
     /* حفظ في قاعدة بيانات الشبكة — فقط للتذاكر الرئيسية (غير الوسيطة) */
     if (!t.isRelayPoint) {
-      if (t.serviceType === "hotspot_internal" || t.serviceType === "hotspot_external") {
-        const existing = await db.select({ fn: hotspotPointsTable.flashNumber })
-          .from(hotspotPointsTable).orderBy(desc(hotspotPointsTable.flashNumber)).limit(1);
-        const nextFlash = (existing[0]?.fn ?? 0) + 1;
+      if (finalSvcType === "hotspot_internal" || finalSvcType === "hotspot_external") {
+        /* تحديد رقم الفلاش: إما يحدده المشرف، أو آخر رقم + 1 */
+        let flashNum: number;
+        if (flashOverride && !isNaN(Number(flashOverride))) {
+          flashNum = Number(flashOverride);
+          /* التحقق من التكرار */
+          const dup = await db.select({ fn: hotspotPointsTable.flashNumber })
+            .from(hotspotPointsTable)
+            .where(eq(hotspotPointsTable.flashNumber, flashNum));
+          if (dup.length > 0) {
+            return res.status(409).json({ error: `الجهاز برقم فلاش ${flashNum} موجود بالفعل في قاعدة البيانات، يرجى اختيار رقم آخر` });
+          }
+        } else {
+          const existing = await db.select({ fn: hotspotPointsTable.flashNumber })
+            .from(hotspotPointsTable).orderBy(desc(hotspotPointsTable.flashNumber)).limit(1);
+          flashNum = (existing[0]?.fn ?? 0) + 1;
+        }
 
         await db.insert(hotspotPointsTable).values({
-          name: t.deviceName ?? `فلاش ${nextFlash}`,
+          name: `فلاش ${flashNum}`,
           location: finalAddress ?? "غير محدد",
-          hotspotType: t.serviceType === "hotspot_internal" ? "internal" : "external",
-          flashNumber: nextFlash,
-          deviceName: t.deviceName ?? null,
-          clientName: t.clientName ?? null,
-          clientPhone: t.clientPhone ?? null,
-          subscriptionFee: t.subscriptionFee ?? null,
+          hotspotType: finalSvcType === "hotspot_internal" ? "internal" : "external",
+          flashNumber: flashNum,
+          deviceName: finalDeviceName ?? null,
+          clientName: finalSvcType === "hotspot_internal" ? (finalClientName ?? null) : null,
+          clientPhone: finalSvcType === "hotspot_internal" ? (finalClientPhone ?? null) : null,
+          subscriptionFee: finalSvcType === "hotspot_internal" ? (finalSubFee ? String(finalSubFee) : null) : null,
           locationUrl: finalLocationUrl ?? null,
           status: "active",
           supervisorId: t.createdById ?? null,
           notes: archiveNotes ?? null,
+          installedByName: finalInstaller,
+          installDate: finalInstallDate,
+          installPhoto: finalSvcType === "hotspot_external" ? finalInstallPhoto : null,
         });
-      } else if (t.serviceType === "broadband_internal") {
-        const existing = await db.select({ fn: broadbandPointsTable.flashNumber })
-          .from(broadbandPointsTable).orderBy(desc(broadbandPointsTable.flashNumber)).limit(1);
-        const nextFlash = (existing[0]?.fn ?? 0) + 1;
+      } else if (finalSvcType === "broadband_internal") {
+        /* تحديد رقم الفلاش */
+        let flashNum: number;
+        if (flashOverride && !isNaN(Number(flashOverride))) {
+          flashNum = Number(flashOverride);
+          const dup = await db.select({ fn: broadbandPointsTable.flashNumber })
+            .from(broadbandPointsTable)
+            .where(eq(broadbandPointsTable.flashNumber, flashNum));
+          if (dup.length > 0) {
+            return res.status(409).json({ error: `الجهاز برودباند برقم فلاش P${flashNum} موجود بالفعل في قاعدة البيانات، يرجى اختيار رقم آخر` });
+          }
+        } else {
+          const existing = await db.select({ fn: broadbandPointsTable.flashNumber })
+            .from(broadbandPointsTable).orderBy(desc(broadbandPointsTable.flashNumber)).limit(1);
+          flashNum = (existing[0]?.fn ?? 0) + 1;
+        }
 
         await db.insert(broadbandPointsTable).values({
-          name: t.subscriptionName ?? `P${nextFlash}`,
+          name: `فلاش P${flashNum}`,
           location: finalAddress ?? "غير محدد",
-          flashNumber: nextFlash,
-          subscriptionName: t.subscriptionName ?? null,
-          clientName: t.clientName ?? null,
-          clientPhone: t.clientPhone ?? null,
-          subscriptionFee: t.internetFee ?? null,
+          flashNumber: flashNum,
+          subscriptionName: finalSubName ?? null,
+          deviceName: finalDeviceName ?? null,
+          clientName: finalClientName ?? null,
+          clientPhone: finalClientPhone ?? null,
+          subscriptionFee: finalInetFee ? String(finalInetFee) : null,
           locationUrl: finalLocationUrl ?? null,
           status: "active",
           supervisorId: t.createdById ?? null,
@@ -408,16 +464,23 @@ router.post("/tickets/installation/:id/archive", requireAuth, async (req, res) =
       }
     }
 
-    /* تحديث حالة التذكرة */
+    /* تحديث حالة التذكرة + كل الحقول المُعدَّلة */
     const updateSet: any = {
       status: "archived",
       archivedAt: new Date(),
       archiveNotes: archiveNotes ?? null,
       updatedAt: new Date(),
     };
-    if (addrOverride !== undefined) updateSet.address = addrOverride;
-    if (urlOverride  !== undefined) updateSet.locationUrl = urlOverride;
-    if (engineerNotes !== undefined) updateSet.engineerNotes = engineerNotes;
+    if (svcOverride       !== undefined) updateSet.serviceType      = svcOverride;
+    if (addrOverride      !== undefined) updateSet.address          = addrOverride;
+    if (urlOverride       !== undefined) updateSet.locationUrl      = urlOverride;
+    if (deviceOverride    !== undefined) updateSet.deviceName       = deviceOverride;
+    if (clientNameOverride !== undefined) updateSet.clientName      = clientNameOverride;
+    if (clientPhoneOverride !== undefined) updateSet.clientPhone    = clientPhoneOverride;
+    if (subFeeOverride    !== undefined) updateSet.subscriptionFee  = subFeeOverride;
+    if (inetFeeOverride   !== undefined) updateSet.internetFee      = inetFeeOverride;
+    if (subNameOverride   !== undefined) updateSet.subscriptionName = subNameOverride;
+    if (engineerNotes     !== undefined) updateSet.engineerNotes    = engineerNotes;
 
     const [updated] = await db.update(installationTicketsTable)
       .set(updateSet)

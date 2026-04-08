@@ -1870,113 +1870,256 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
   item: any; submitting: boolean;
   onClose: () => void; onSubmit: (payload: any) => Promise<void>;
 }) {
-  const [notes,       setNotes]       = useState("");
-  const [address,     setAddress]     = useState(item.address ?? "");
-  const [locationUrl, setLocationUrl] = useState(item.locationUrl ?? "");
-  const [errMsg,      setErrMsg]      = useState("");
-  const [imgVisible,  setImgVisible]  = useState(false);
-  const svcLabel = INSTALL_TYPE_AR[item.serviceType] ?? item.serviceType;
-  const svcColor = INSTALL_TYPE_COLOR[item.serviceType] ?? Colors.primary;
-  const hasPhoto = !!item.completionPhotoUrl;
+  /* ── نوع الخدمة — قابل للتعديل ── */
+  type SvcType = "hotspot_internal" | "hotspot_external" | "broadband_internal";
+  const [svcType, setSvcType] = useState<SvcType>((item.serviceType as SvcType) ?? "hotspot_internal");
+
+  const isInternal  = svcType === "hotspot_internal";
+  const isExternal  = svcType === "hotspot_external";
+  const isBroadband = svcType === "broadband_internal";
+
+  /* ── الحقول المشتركة ── */
+  const [flashNumber,     setFlashNumber]     = useState(item.deviceSerial ?? "");
+  const [deviceName,      setDeviceName]      = useState(item.deviceName ?? "");
+  const [address,         setAddress]         = useState(item.address ?? "");
+  const [locationUrl,     setLocationUrl]     = useState(item.locationUrl ?? "");
+  const [installedByName, setInstalledByName] = useState(item.assignedToName ?? "");
+  const installDateInit = item.completedAt ? new Date(item.completedAt).toISOString().substring(0,10) : new Date().toISOString().substring(0,10);
+  const [installDate,     setInstallDate]     = useState(installDateInit);
+
+  /* ── حقول الهوتسبوت الداخلي والبرودباند ── */
+  const [clientName,    setClientName]    = useState(item.clientName ?? "");
+  const [clientPhone,   setClientPhone]   = useState(item.clientPhone ?? "");
+  const [subscriptionFee, setSubFee]      = useState(item.subscriptionFee ?? "");
+
+  /* ── حقول البرودباند فقط ── */
+  const [subscriptionName, setSubName]   = useState(item.subscriptionName ?? "");
+  const [internetFee,      setInetFee]   = useState(item.internetFee ?? "");
+
+  /* ── صورة التركيب (خارجي) — تبدأ بصورة إتمام المهندس ── */
+  const [installPhoto, setInstallPhoto]   = useState<string | null>(item.completionPhotoUrl ?? null);
+  const [imgVisible,   setImgVisible]     = useState(false);
+
+  const [errMsg, setErrMsg] = useState("");
+
+  /* اختيار صورة بديلة */
+  const pickPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") return;
+      const res = await ImagePicker.launchImageLibraryAsync({ quality: 0.3, base64: true, mediaTypes: ["images"] as any });
+      if (!res.canceled && res.assets?.[0]?.base64) {
+        setInstallPhoto(`data:image/jpeg;base64,${res.assets[0].base64}`);
+      }
+    } catch {}
+  };
+  const pickPhotoCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") return;
+      const res = await ImagePicker.launchCameraAsync({ quality: 0.3, base64: true });
+      if (!res.canceled && res.assets?.[0]?.base64) {
+        setInstallPhoto(`data:image/jpeg;base64,${res.assets[0].base64}`);
+      }
+    } catch {}
+  };
 
   const handleSubmit = async () => {
+    if (!flashNumber.trim()) { setErrMsg("رقم الفلاش مطلوب"); return; }
+    if (!address.trim())     { setErrMsg("وصف الموقع مطلوب"); return; }
+    if (!deviceName.trim() && !isExternal) { setErrMsg("اسم الجهاز مطلوب"); return; }
     setErrMsg("");
+    const payload: any = {
+      serviceType:    svcType,
+      flashNumber:    parseInt(flashNumber.replace(/\D/g, "")) || undefined,
+      deviceName:     deviceName.trim() || null,
+      address:        address.trim()    || null,
+      locationUrl:    locationUrl.trim() || null,
+      installedByName: installedByName.trim() || null,
+      installDate:    installDate || null,
+    };
+    if (isInternal) {
+      payload.clientName     = clientName.trim() || null;
+      payload.clientPhone    = clientPhone.replace(/\D/g, "") || null;
+      payload.subscriptionFee = subscriptionFee || null;
+    }
+    if (isExternal) {
+      payload.installPhoto = installPhoto ?? null;
+    }
+    if (isBroadband) {
+      payload.subscriptionName = subscriptionName.trim() || null;
+      payload.clientName       = clientName.trim()  || null;
+      payload.clientPhone      = clientPhone.replace(/\D/g, "") || null;
+      payload.subscriptionFee  = subscriptionFee || null;
+      payload.internetFee      = internetFee || null;
+    }
     try {
-      await onSubmit({
-        archiveNotes: notes.trim() || null,
-        address:     address.trim()     || null,
-        locationUrl: locationUrl.trim() || null,
-      });
+      await onSubmit(payload);
     } catch (e: any) {
       setErrMsg(e?.message ?? "فشل الأرشفة");
     }
   };
 
+  /* ── مساعد حقل نصي داخل النموذج ── */
+  const Field = ({ label, value, onChange, kb, ph, multi }: { label:string; value:string; onChange:(v:string)=>void; kb?:any; ph?:string; multi?:boolean }) => (
+    <View style={{ marginBottom: 10 }}>
+      <Text style={am.fieldLabel}>{label}</Text>
+      <TextInput
+        style={[am.input, multi && { height: 64 }]}
+        value={value} onChangeText={onChange}
+        placeholder={ph ?? label} placeholderTextColor={Colors.textSecondary}
+        keyboardType={kb} textAlign="right"
+        textAlignVertical={multi ? "top" : "center"} multiline={multi}
+      />
+    </View>
+  );
+
+  const svcOptions: { key: SvcType; label: string; color: string }[] = [
+    { key: "hotspot_internal",  label: "هوتسبوت داخلي", color: Colors.primary },
+    { key: "hotspot_external",  label: "هوتسبوت خارجي", color: Colors.warning },
+    { key: "broadband_internal",label: "برودباند",        color: Colors.info    },
+  ];
+
   return (
-    <Modal visible transparent animationType="fade">
+    <Modal visible transparent animationType="slide">
       <View style={am.overlay}>
-        <ScrollView
-          contentContainerStyle={am.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          <View style={am.card}>
-            {/* أيقونة + عنوان */}
-            <View style={am.iconCircle}>
-              <Ionicons name="archive" size={36} color={Colors.success} />
-            </View>
-            <Text style={am.title}>تأكيد الأرشفة #{item.id}</Text>
+        <View style={am.sheet}>
 
-            {/* ملخص التذكرة */}
-            <View style={am.summaryBox}>
-              <View style={[am.badge, { backgroundColor: svcColor + "22" }]}>
-                <Text style={[am.badgeText, { color: svcColor }]}>{svcLabel}</Text>
-              </View>
-              {item.clientName    && <Text style={am.summaryText}>العميل: {item.clientName}</Text>}
-              {item.deviceName    && <Text style={am.summaryText}>الجهاز: {item.deviceName} — {item.deviceSerial ?? "—"}</Text>}
-              {item.subscriptionFee && <Text style={am.summaryText}>الاشتراك: {item.subscriptionFee} ريال</Text>}
-              {item.internetFee   && <Text style={am.summaryText}>رسوم الإنترنت: {item.internetFee} ريال</Text>}
-              {item.assignedToName && <Text style={am.summaryText}>المهندس: {item.assignedToName}</Text>}
-            </View>
+          {/* ── رأس ── */}
+          <View style={am.sheetHeader}>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
+            <Text style={am.sheetTitle}>أرشفة التذكرة #{item.id}</Text>
+            <Ionicons name="archive" size={20} color={Colors.success} />
+          </View>
 
-            {/* صورة إتمام المهندس */}
-            {hasPhoto && (
-              <View style={{ width: "100%", gap: 6 }}>
-                <View style={am.photoHeader}>
-                  <Ionicons name="image-outline" size={14} color={Colors.success} />
-                  <Text style={[am.fieldLabel, { color: Colors.success }]}>صورة إتمام المهندس</Text>
-                </View>
-                <TouchableOpacity onPress={() => setImgVisible(true)} activeOpacity={0.85}>
-                  <Image
-                    source={{ uri: item.completionPhotoUrl }}
-                    style={am.photoPreview}
-                    resizeMode="cover"
-                  />
-                  <View style={am.photoTapHint}>
-                    <Ionicons name="expand-outline" size={14} color="#fff" />
-                    <Text style={am.photoTapText}>اضغط للتكبير</Text>
-                  </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={am.body} keyboardShouldPersistTaps="handled">
+
+            {/* ── نوع الخدمة ── */}
+            <Text style={am.secTitle}>نوع الخدمة</Text>
+            <View style={{ flexDirection: "row-reverse", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
+              {svcOptions.map(opt => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[am.typeChip, svcType === opt.key && { backgroundColor: opt.color + "22", borderColor: opt.color }]}
+                  onPress={() => setSvcType(opt.key)}
+                >
+                  <Text style={[am.typeChipText, svcType === opt.key && { color: opt.color, fontWeight: "bold" }]}>{opt.label}</Text>
                 </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* ── رقم الفلاش ── */}
+            <Text style={am.secTitle}>بيانات الجهاز</Text>
+            <View style={{ marginBottom: 10 }}>
+              <Text style={am.fieldLabel}>رقم الفلاش {isBroadband ? "(سيُحفظ كـ P+الرقم)" : ""} *</Text>
+              <View style={{ flexDirection: "row-reverse", alignItems: "center", gap: 6 }}>
+                {isBroadband && (
+                  <View style={{ backgroundColor: Colors.info + "22", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 10, borderWidth: 1, borderColor: Colors.info + "55" }}>
+                    <Text style={{ color: Colors.info, fontWeight: "bold", fontSize: 16 }}>P</Text>
+                  </View>
+                )}
+                <TextInput
+                  style={[am.input, { flex: 1 }]}
+                  value={flashNumber}
+                  onChangeText={v => setFlashNumber(v.replace(/\D/g, ""))}
+                  placeholder="مثال: 15"
+                  placeholderTextColor={Colors.textSecondary}
+                  keyboardType="numeric"
+                  textAlign="right"
+                />
               </View>
+            </View>
+
+            {/* ── اسم الجهاز (لكل الأنواع) ── */}
+            <DeviceNameDropdown value={deviceName} onChange={setDeviceName} />
+
+            {/* ── برودباند: اسم الاشتراك ── */}
+            {isBroadband && (
+              <Field label="اسم الاشتراك (مثال: andls123)" value={subscriptionName} onChange={setSubName} ph="andls123" />
             )}
 
-            {/* العنوان — قابل للتعديل */}
-            <Text style={am.fieldLabel}>عنوان التركيب</Text>
-            <TextInput
-              style={am.input}
-              value={address}
-              onChangeText={setAddress}
-              placeholder="أدخل العنوان..."
-              placeholderTextColor={Colors.textSecondary}
-              textAlign="right"
-            />
+            {/* ── داخلي + برودباند: بيانات العميل ── */}
+            {(isInternal || isBroadband) && (
+              <>
+                <Text style={am.secTitle}>بيانات العميل</Text>
+                <Field label="اسم العميل" value={clientName} onChange={setClientName} />
+                <Field label="رقم الجوال" value={clientPhone} onChange={v => setClientPhone(v.replace(/\D/g, ""))} kb="phone-pad" />
+                <Field label="رسوم الاشتراك — ما دفعه العميل للجهاز (ر)" value={subscriptionFee} onChange={setSubFee} kb="decimal-pad" ph="0" />
+              </>
+            )}
 
-            {/* رابط الموقع — قابل للتعديل */}
-            <Text style={am.fieldLabel}>رابط الموقع (Google Maps)</Text>
-            <TextInput
-              style={am.input}
-              value={locationUrl}
-              onChangeText={setLocationUrl}
-              placeholder="https://maps.google.com/..."
-              placeholderTextColor={Colors.textSecondary}
-              textAlign="right"
-              autoCapitalize="none"
-              keyboardType="url"
-            />
+            {/* ── برودباند: قيمة الباقة ── */}
+            {isBroadband && (
+              <Field label="قيمة باقة الإنترنت الشهرية (ر)" value={internetFee} onChange={setInetFee} kb="decimal-pad" ph="0" />
+            )}
 
-            {/* ملاحظات */}
-            <Text style={am.fieldLabel}>ملاحظات الأرشفة — اختياري</Text>
-            <TextInput
-              style={[am.input, { height: 60 }]}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="أضف ملاحظة..."
-              placeholderTextColor={Colors.textSecondary}
-              textAlign="right"
-              textAlignVertical="top"
-              multiline
-            />
+            {/* ── الموقع ── */}
+            <Text style={am.secTitle}>الموقع</Text>
+            <Field label="وصف الموقع *" value={address} onChange={setAddress} multi />
+            <Field label="رابط الموقع (Google Maps)" value={locationUrl} onChange={setLocationUrl} ph="https://maps.google.com/..." />
 
+            {/* ── بيانات التركيب ── */}
+            <Text style={am.secTitle}>بيانات التركيب</Text>
+            <Field label="اسم المهندس المركّب" value={installedByName} onChange={setInstalledByName} />
+            <Field label="تاريخ التركيب" value={installDate} onChange={setInstallDate} ph="2025-01-15" />
+
+            {/* ── صورة التركيب (خارجي) ── */}
+            {isExternal && (
+              <>
+                <Text style={am.secTitle}>صورة التركيب</Text>
+                {installPhoto ? (
+                  <View style={{ marginBottom: 12 }}>
+                    <TouchableOpacity activeOpacity={0.85} onPress={() => setImgVisible(true)}>
+                      <Image source={{ uri: installPhoto }} style={{ width: "100%", height: 180, borderRadius: 10 }} resizeMode="cover" />
+                      <View style={{ position: "absolute", bottom: 6, right: 8, flexDirection: "row-reverse", alignItems: "center", gap: 4, backgroundColor: "#00000066", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3 }}>
+                        <Ionicons name="expand-outline" size={14} color="#fff" />
+                        <Text style={{ fontSize: 11, color: "#fff" }}>اضغط للتكبير</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <View style={{ flexDirection: "row-reverse", gap: 8, marginTop: 8 }}>
+                      <TouchableOpacity style={[am.photoActionBtn, { flex: 1 }]} onPress={pickPhotoCamera}>
+                        <Ionicons name="camera" size={16} color={Colors.primary} />
+                        <Text style={am.photoActionText}>كاميرا</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[am.photoActionBtn, { flex: 1 }]} onPress={pickPhoto}>
+                        <Ionicons name="image" size={16} color={Colors.primary} />
+                        <Text style={am.photoActionText}>معرض</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={[am.photoActionBtn, { flex: 1, borderColor: Colors.error + "55" }]} onPress={() => setInstallPhoto(null)}>
+                        <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                        <Text style={[am.photoActionText, { color: Colors.error }]}>حذف</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: "row-reverse", gap: 8, marginBottom: 12 }}>
+                    <TouchableOpacity style={[am.photoActionBtn, { flex: 1 }]} onPress={pickPhotoCamera}>
+                      <Ionicons name="camera" size={18} color={Colors.primary} />
+                      <Text style={am.photoActionText}>كاميرا</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[am.photoActionBtn, { flex: 1 }]} onPress={pickPhoto}>
+                      <Ionicons name="image" size={18} color={Colors.primary} />
+                      <Text style={am.photoActionText}>معرض الصور</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* ── صورة إتمام المهندس (للعرض فقط — لكل الأنواع) ── */}
+            {!isExternal && item.completionPhotoUrl && (
+              <TouchableOpacity
+                style={{ flexDirection: "row-reverse", alignItems: "center", gap: 8, padding: 10, backgroundColor: Colors.success + "15", borderRadius: 10, borderWidth: 1, borderColor: Colors.success + "40", marginBottom: 12 }}
+                onPress={() => setImgVisible(true)}
+              >
+                <Ionicons name="image-outline" size={16} color={Colors.success} />
+                <Text style={{ color: Colors.success, fontWeight: "600", fontSize: 13 }}>عرض صورة إتمام المهندس</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* ── خطأ ── */}
             {!!errMsg && (
               <View style={am.errBox}>
                 <Ionicons name="alert-circle-outline" size={14} color={Colors.error} />
@@ -1984,6 +2127,7 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
               </View>
             )}
 
+            {/* ── أزرار ── */}
             <View style={am.actions}>
               <TouchableOpacity style={am.cancelBtn} onPress={onClose} disabled={submitting}>
                 <Text style={am.cancelTxt}>إلغاء</Text>
@@ -1991,76 +2135,77 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
               <TouchableOpacity style={[am.confirmBtn, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
                 {submitting
                   ? <ActivityIndicator size="small" color="#fff" />
-                  : <Text style={am.confirmTxt}>تأكيد الأرشفة</Text>
+                  : <><Ionicons name="archive" size={16} color="#fff" /><Text style={am.confirmTxt}>تأكيد الأرشفة وحفظ</Text></>
                 }
               </TouchableOpacity>
             </View>
-          </View>
-        </ScrollView>
+            <View style={{ height: 30 }} />
+          </ScrollView>
+        </View>
       </View>
 
-      {/* عرض الصورة كاملة */}
-      {hasPhoto && (
-        <Modal visible={imgVisible} transparent animationType="fade">
-          <TouchableOpacity
-            style={{ flex: 1, backgroundColor: "#000000CC", justifyContent: "center", alignItems: "center" }}
-            activeOpacity={1}
-            onPress={() => setImgVisible(false)}
-          >
-            <Image
-              source={{ uri: item.completionPhotoUrl }}
-              style={{ width: "94%", height: 400, borderRadius: 12 }}
-              resizeMode="contain"
-            />
-            <Text style={{ color: "#fff", marginTop: 12, fontSize: 13 }}>اضغط للإغلاق</Text>
-          </TouchableOpacity>
-        </Modal>
-      )}
+      {/* ── عرض الصورة كاملة ── */}
+      <Modal visible={imgVisible} transparent animationType="fade">
+        <TouchableOpacity
+          style={{ flex: 1, backgroundColor: "#000000CC", justifyContent: "center", alignItems: "center" }}
+          activeOpacity={1}
+          onPress={() => setImgVisible(false)}
+        >
+          <Image
+            source={{ uri: (isExternal ? installPhoto : item.completionPhotoUrl) ?? "" }}
+            style={{ width: "94%", height: 420, borderRadius: 12 }}
+            resizeMode="contain"
+          />
+          <Text style={{ color: "#fff", marginTop: 12, fontSize: 13 }}>اضغط للإغلاق</Text>
+        </TouchableOpacity>
+      </Modal>
     </Modal>
   );
 }
 
 const am = StyleSheet.create({
-  overlay:       { flex: 1, backgroundColor: "#000000BB" },
-  scrollContent: { alignItems: "center", justifyContent: "center", flexGrow: 1, paddingVertical: 24, paddingHorizontal: 16 },
-  card: {
-    backgroundColor: Colors.surface, borderRadius: 20, padding: 22,
-    width: "100%", gap: 10, alignItems: "center",
+  overlay: { flex: 1, backgroundColor: "#000000AA", justifyContent: "flex-end" },
+  sheet: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    maxHeight: "94%",
+    borderTopWidth: 1, borderColor: Colors.border,
   },
-  iconCircle: {
-    width: 70, height: 70, borderRadius: 35,
-    backgroundColor: Colors.success + "18",
-    alignItems: "center", justifyContent: "center", marginBottom: 4,
+  sheetHeader: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 10,
+    paddingHorizontal: 18, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
-  title: { fontSize: 18, fontWeight: "bold", color: Colors.text, textAlign: "center" },
-  summaryBox: {
-    backgroundColor: Colors.surfaceElevated, borderRadius: 12,
-    padding: 12, width: "100%", gap: 4, alignItems: "flex-end",
+  sheetTitle: { flex: 1, fontSize: 16, fontWeight: "bold", color: Colors.text, textAlign: "right" },
+  body: { paddingHorizontal: 18, paddingTop: 14 },
+  secTitle: {
+    fontSize: 13, fontWeight: "700", color: Colors.textSecondary, textAlign: "right",
+    marginTop: 8, marginBottom: 8, borderBottomWidth: 1, borderBottomColor: Colors.border, paddingBottom: 4,
   },
-  badge:       { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginBottom: 4 },
-  badgeText:   { fontSize: 12, fontWeight: "bold" },
-  summaryText: { fontSize: 13, color: Colors.textSecondary, textAlign: "right" },
-  fieldLabel:  { fontSize: 13, fontWeight: "600", color: Colors.textSecondary, textAlign: "right", alignSelf: "flex-end" },
+  typeChip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10,
+    borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.background,
+  },
+  typeChipText: { fontSize: 13, color: Colors.textSecondary },
+  fieldLabel: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary, textAlign: "right", marginBottom: 4 },
   input: {
     backgroundColor: Colors.surfaceElevated, borderRadius: 10,
-    borderWidth: 1, borderColor: Colors.border, padding: 10,
-    fontSize: 14, color: Colors.text, textAlign: "right", width: "100%",
+    borderWidth: 1, borderColor: Colors.border, padding: 11,
+    fontSize: 14, color: Colors.text, textAlign: "right", height: 44,
   },
-  photoHeader:  { flexDirection: "row-reverse", alignItems: "center", gap: 5 },
-  photoPreview: { width: "100%", height: 160, borderRadius: 10 },
-  photoTapHint: {
-    position: "absolute", bottom: 6, right: 8,
-    flexDirection: "row-reverse", alignItems: "center", gap: 4,
-    backgroundColor: "#00000066", borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3,
+  photoActionBtn: {
+    flex: 1, flexDirection: "row-reverse", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 10, borderRadius: 10, borderWidth: 1,
+    borderColor: Colors.primary + "55", backgroundColor: Colors.primary + "15",
   },
-  photoTapText: { fontSize: 11, color: "#fff" },
-  errBox:  { flexDirection: "row-reverse", alignItems: "center", gap: 6, backgroundColor: Colors.error + "18", borderRadius: 8, padding: 8, width: "100%" },
+  photoActionText: { fontSize: 13, fontWeight: "600", color: Colors.primary },
+  errBox:  { flexDirection: "row-reverse", alignItems: "center", gap: 6, backgroundColor: Colors.error + "18", borderRadius: 8, padding: 8, marginBottom: 8 },
   errText: { fontSize: 13, color: Colors.error, flex: 1, textAlign: "right" },
-  actions:    { flexDirection: "row-reverse", gap: 10, width: "100%", marginTop: 4 },
-  cancelBtn:  { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: Colors.surfaceElevated },
-  cancelTxt:  { fontSize: 15, fontWeight: "bold", color: Colors.textSecondary },
-  confirmBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, alignItems: "center", backgroundColor: Colors.success },
-  confirmTxt: { fontSize: 15, fontWeight: "bold", color: "#fff" },
+  actions: { flexDirection: "row-reverse", gap: 10, marginTop: 8 },
+  cancelBtn:  { flex: 1, paddingVertical: 13, borderRadius: 12, alignItems: "center", backgroundColor: Colors.surfaceElevated, borderWidth: 1, borderColor: Colors.border },
+  cancelTxt:  { fontSize: 14, fontWeight: "bold", color: Colors.textSecondary },
+  confirmBtn: { flex: 2, paddingVertical: 13, borderRadius: 12, alignItems: "center", backgroundColor: Colors.success, flexDirection: "row-reverse", justifyContent: "center", gap: 8 },
+  confirmTxt: { fontSize: 14, fontWeight: "bold", color: "#fff" },
 });
 
 /* ════════════════════════════════════════════════
