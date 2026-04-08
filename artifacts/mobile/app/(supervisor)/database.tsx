@@ -450,10 +450,9 @@ function BroadbandCard({ p, onEdit, onDelete, onCopy }: {
       {expanded && (
         <View style={card.expandedBox}>
           {p.installedByName ? <InfoRow icon="construct-outline" label="المهندس المركّب" value={p.installedByName} color={Colors.warning} /> : null}
+          {p.installDate ? <InfoRow icon="calendar-outline" label="تاريخ التركيب" value={p.installDate.substring(0, 10)} /> : null}
           {p.locationUrl ? <InfoRow icon="link-outline" label="رابط الموقع" value={p.locationUrl.substring(0, 45) + (p.locationUrl.length > 45 ? "..." : "")} color={Colors.info} /> : null}
           {p.subscriptionFee ? <InfoRow icon="wifi-outline" label="اشتراك الإنترنت" value={`${Number(p.subscriptionFee).toLocaleString()} ر`} color={Colors.success} /> : null}
-          {p.notes ? <InfoRow icon="document-text-outline" label="ملاحظات" value={p.notes} /> : null}
-          <InfoRow icon="information-circle-outline" label="الحالة" value={p.status} />
         </View>
       )}
 
