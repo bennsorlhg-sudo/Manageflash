@@ -297,13 +297,11 @@ function HotspotCard({ p, onEdit, onDelete, onViewPhoto, onCopy }: {
       {/* ══ التفاصيل الموسّعة ══ */}
       {expanded && (
         <View style={card.expandedBox}>
+          {p.installedByName ? <InfoRow icon="construct-outline" label="المهندس المركّب" value={p.installedByName} color={Colors.warning} /> : null}
+          {p.installDate ? <InfoRow icon="calendar-outline" label="تاريخ التركيب" value={p.installDate.substring(0, 10)} /> : null}
+          {p.locationUrl ? <InfoRow icon="link-outline" label="رابط الموقع" value={p.locationUrl.substring(0, 45) + (p.locationUrl.length > 45 ? "..." : "")} color={Colors.info} /> : null}
           {isInt && p.ipAddress ? <InfoRow icon="globe-outline" label="عنوان IP" value={p.ipAddress} color={Colors.info} /> : null}
-          {isInt && p.subscriptionFee ? <InfoRow icon="cash-outline" label="الاشتراك" value={`${Number(p.subscriptionFee).toLocaleString()} ر`} color={Colors.success} /> : null}
-          {!isInt && p.installedByName ? <InfoRow icon="person-circle-outline" label="المهندس" value={p.installedByName} /> : null}
-          {!isInt && p.installDate ? <InfoRow icon="calendar-outline" label="تاريخ التركيب" value={p.installDate.substring(0, 10)} /> : null}
-          {p.locationUrl ? <InfoRow icon="link-outline" label="رابط الخريطة" value={p.locationUrl.substring(0, 40) + "..."} color={Colors.info} /> : null}
           {p.notes ? <InfoRow icon="document-text-outline" label="ملاحظات" value={p.notes} /> : null}
-          <InfoRow icon="information-circle-outline" label="الحالة" value={p.status} />
 
           {/* صورة التركيب (خارجي) */}
           {!isInt && p.installPhoto ? (
