@@ -11,6 +11,7 @@ const HOTSPOT_FIELDS = [
   "hotspotType", "flashNumber", "deviceName",
   "clientName", "clientPhone", "subscriptionFee",
   "ipAddress", "isClientOwned", "locationUrl",
+  "installPhoto", "installedByName", "installDate",
 ];
 
 const BROADBAND_FIELDS = [
@@ -67,6 +68,16 @@ router.post("/hotspot-points", requireAuth, async (req, res) => {
       if (req.body[f] !== undefined) vals[f] = req.body[f];
     }
     if (!vals.name && vals.flashNumber) vals.name = `فلاش ${vals.flashNumber}`;
+    // Check for duplicate flash number
+    if (vals.flashNumber) {
+      const existing = await db.select({ id: hotspotPointsTable.id, name: hotspotPointsTable.name })
+        .from(hotspotPointsTable)
+        .where(eq(hotspotPointsTable.flashNumber, Number(vals.flashNumber)))
+        .limit(1);
+      if (existing.length > 0) {
+        return res.status(409).json({ error: `الجهاز برقم ${vals.flashNumber} موجود بالفعل (${existing[0].name})، يجب حذفه أولاً ثم إضافة الجديد` });
+      }
+    }
     const [row] = await db.insert(hotspotPointsTable).values(vals).returning();
     res.json(row);
   } catch (error) {

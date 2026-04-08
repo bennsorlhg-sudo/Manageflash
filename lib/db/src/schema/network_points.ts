@@ -17,7 +17,7 @@ export const hotspotPointsTable = pgTable("hotspot_points", {
   status: pointStatusEnum("status").notNull().default("empty"),
   supervisorId: integer("supervisor_id"),
   notes: text("notes"),
-  // New fields
+  // Core fields
   hotspotType: text("hotspot_type").default("internal"),   // "internal" | "external"
   flashNumber: integer("flash_number"),                    // e.g. 1, 3, 5
   deviceName: text("device_name"),                         // e.g. "LG", "Huawei"
@@ -27,6 +27,10 @@ export const hotspotPointsTable = pgTable("hotspot_points", {
   ipAddress: text("ip_address"),
   isClientOwned: boolean("is_client_owned").default(false),
   locationUrl: text("location_url"),                       // Google Maps URL
+  // External hotspot archiving fields
+  installPhoto: text("install_photo"),                     // base64 image from tech engineer
+  installedByName: text("installed_by_name"),              // tech engineer name
+  installDate: timestamp("install_date"),                  // installation date
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
