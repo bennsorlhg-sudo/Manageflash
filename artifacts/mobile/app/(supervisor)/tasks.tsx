@@ -1034,11 +1034,19 @@ function InstallCard({ item, expanded, onExpand, onTimeline, onDelete, onPrepare
         </View>
       )}
 
-      {/* ══ الاشتراك ══ */}
+      {/* ══ الاشتراك / الموديم ══ */}
       {item.subscriptionFee && (
         <View style={rc.row}>
           <Ionicons name="cash-outline" size={14} color={Colors.success} />
-          <Text style={[rc.rowText, { color: Colors.success }]}>قيمة الاشتراك: {item.subscriptionFee} ريال</Text>
+          <Text style={[rc.rowText, { color: Colors.success }]}>
+            {item.serviceType === "broadband_internal" ? "قيمة الموديم" : "قيمة الاشتراك"}: {item.subscriptionFee} ريال
+          </Text>
+        </View>
+      )}
+      {item.serviceType === "broadband_internal" && item.internetFee && (
+        <View style={rc.row}>
+          <Ionicons name="wifi-outline" size={14} color={Colors.success} />
+          <Text style={[rc.rowText, { color: Colors.success }]}>اشتراك الإنترنت الشهري: {item.internetFee} ريال</Text>
         </View>
       )}
 
@@ -2070,7 +2078,7 @@ function ArchiveModal({ item, submitting, onClose, onSubmit }: {
                 <Text style={am.secTitle}>بيانات العميل</Text>
                 <ArchiveField label="اسم العميل" value={clientName} onChange={setClientName} />
                 <ArchiveField label="رقم الجوال" value={clientPhone} onChange={v => setClientPhone(v.replace(/\D/g, ""))} kb="phone-pad" />
-                <ArchiveField label="رسوم الاشتراك — ما دفعه العميل للجهاز (ر)" value={subscriptionFee} onChange={setSubFee} kb="decimal-pad" ph="0" />
+                <ArchiveField label="رسوم إدخال الموديم — ما دفعه العميل للجهاز (ر)" value={subscriptionFee} onChange={setSubFee} kb="decimal-pad" ph="0" />
               </>
             )}
 

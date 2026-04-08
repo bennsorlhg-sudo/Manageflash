@@ -32,8 +32,8 @@ interface HotspotPoint {
 interface BroadbandPoint {
   id: number; flashNumber: number | null; name: string; location: string;
   subscriptionName: string | null; deviceName: string | null; clientName: string | null;
-  clientPhone: string | null; subscriptionFee: string | null; locationUrl: string | null;
-  notes: string | null; status: string; isClientOwned: boolean | null;
+  clientPhone: string | null; subscriptionFee: string | null; modemFee: string | null;
+  locationUrl: string | null; notes: string | null; status: string; isClientOwned: boolean | null;
   installedByName: string | null; installDate: string | null;
 }
 type TabType = "hotspot" | "broadband";
@@ -48,7 +48,7 @@ const blankH = () => ({
 });
 const blankB = () => ({
   flashNumber: "", subscriptionName: "", deviceName: "", clientName: "",
-  clientPhone: "", subscriptionFee: "", locationUrl: "", location: "",
+  clientPhone: "", subscriptionFee: "", modemFee: "", locationUrl: "", location: "",
   installedByName: "", installDate: "",
 });
 
@@ -700,7 +700,8 @@ export default function DatabaseScreen() {
           flashNumber: parseInt(bForm.flashNumber), name: `فلاش P${bForm.flashNumber}`,
           subscriptionName: bForm.subscriptionName || null, deviceName: bForm.deviceName || null,
           clientName: bForm.clientName || null, clientPhone: bForm.clientPhone.replace(/\D/g, "") || null,
-          subscriptionFee: bForm.subscriptionFee || null, location: bForm.location || "-", locationUrl: bForm.locationUrl || null,
+          subscriptionFee: bForm.subscriptionFee || null, modemFee: bForm.modemFee || null,
+          location: bForm.location || "-", locationUrl: bForm.locationUrl || null,
           installedByName: bForm.installedByName || null,
           installDate: bForm.installDate ? new Date(bForm.installDate).toISOString() : null,
         };
@@ -719,7 +720,7 @@ export default function DatabaseScreen() {
       setEditHForm({ flashNumber: h.flashNumber ? String(h.flashNumber) : "", deviceName: h.deviceName ?? "", hotspotType: h.hotspotType ?? "internal", clientName: h.clientName ?? "", clientPhone: h.clientPhone ?? "", subscriptionFee: h.subscriptionFee ?? "", ipAddress: h.ipAddress ?? "", isClientOwned: h.isClientOwned ?? false, locationUrl: h.locationUrl ?? "", location: h.location ?? "", installPhoto: h.installPhoto ?? "", installedByName: h.installedByName ?? "", installDate: h.installDate ? h.installDate.substring(0, 10) : "" });
     } else {
       const b = item as BroadbandPoint;
-      setEditBForm({ flashNumber: b.flashNumber ? String(b.flashNumber) : "", subscriptionName: b.subscriptionName ?? "", deviceName: b.deviceName ?? "", clientName: b.clientName ?? "", clientPhone: b.clientPhone ?? "", subscriptionFee: b.subscriptionFee ?? "", locationUrl: b.locationUrl ?? "", location: b.location ?? "", installedByName: b.installedByName ?? "", installDate: b.installDate ? b.installDate.substring(0, 10) : "" });
+      setEditBForm({ flashNumber: b.flashNumber ? String(b.flashNumber) : "", subscriptionName: b.subscriptionName ?? "", deviceName: b.deviceName ?? "", clientName: b.clientName ?? "", clientPhone: b.clientPhone ?? "", subscriptionFee: b.subscriptionFee ?? "", modemFee: b.modemFee ?? "", locationUrl: b.locationUrl ?? "", location: b.location ?? "", installedByName: b.installedByName ?? "", installDate: b.installDate ? b.installDate.substring(0, 10) : "" });
     }
   };
 
@@ -734,7 +735,7 @@ export default function DatabaseScreen() {
         setHotspotPoints(prev => prev.map(x => x.id === updated.id ? updated : x));
       } else {
         const f = editBForm;
-        const p = { flashNumber: f.flashNumber ? parseInt(f.flashNumber) : null, name: `فلاش P${f.flashNumber}`, subscriptionName: f.subscriptionName || null, deviceName: f.deviceName || null, clientName: f.clientName || null, clientPhone: f.clientPhone.replace(/\D/g, "") || null, subscriptionFee: f.subscriptionFee || null, location: f.location || "-", locationUrl: f.locationUrl || null, installedByName: f.installedByName || null, installDate: f.installDate ? new Date(f.installDate).toISOString() : null };
+        const p = { flashNumber: f.flashNumber ? parseInt(f.flashNumber) : null, name: `فلاش P${f.flashNumber}`, subscriptionName: f.subscriptionName || null, deviceName: f.deviceName || null, clientName: f.clientName || null, clientPhone: f.clientPhone.replace(/\D/g, "") || null, subscriptionFee: f.subscriptionFee || null, modemFee: f.modemFee || null, location: f.location || "-", locationUrl: f.locationUrl || null, installedByName: f.installedByName || null, installDate: f.installDate ? new Date(f.installDate).toISOString() : null };
         const updated = await apiPut(`/network/broadband-points/${editItem.id}`, token, p);
         setBroadbandPoints(prev => prev.map(x => x.id === updated.id ? updated : x));
       }
@@ -949,7 +950,8 @@ export default function DatabaseScreen() {
                       <DeviceDropdown value={bForm.deviceName} onChange={(v) => setBForm(f => ({ ...f, deviceName: v }))} />
                       <FInput label="اسم العميل" value={bForm.clientName} onChangeText={(v: string) => setBForm(f => ({ ...f, clientName: v }))} />
                       <FInput label="رقم الجوال" value={bForm.clientPhone} onChangeText={(v: string) => setBForm(f => ({ ...f, clientPhone: v.replace(/\D/g, "") }))} keyboardType="phone-pad" />
-                      <FInput label="رسوم الاشتراك (ر)" value={bForm.subscriptionFee} onChangeText={(v: string) => setBForm(f => ({ ...f, subscriptionFee: v.replace(/\D/g, "") }))} keyboardType="numeric" />
+                      <FInput label="اشتراك الإنترنت الشهري (ر)" value={bForm.subscriptionFee} onChangeText={(v: string) => setBForm(f => ({ ...f, subscriptionFee: v.replace(/\D/g, "") }))} keyboardType="numeric" placeholder="قيمة الاشتراك الشهري" />
+                      <FInput label="اشتراك إدخال الموديم (ر)" value={bForm.modemFee} onChangeText={(v: string) => setBForm(f => ({ ...f, modemFee: v.replace(/\D/g, "") }))} keyboardType="numeric" placeholder="ما دفعه العميل للجهاز" />
                       <FInput label="وصف الموقع" value={bForm.location} onChangeText={(v: string) => setBForm(f => ({ ...f, location: v }))} />
                       <FInput label="رابط خرائط جوجل" value={bForm.locationUrl} onChangeText={(v: string) => setBForm(f => ({ ...f, locationUrl: v }))} />
                       <View style={sc.extSection}><Text style={sc.extSectionTitle}>بيانات التركيب (اختياري)</Text></View>
@@ -1028,9 +1030,13 @@ export default function DatabaseScreen() {
                   <DeviceDropdown value={editBForm.deviceName} onChange={(v) => setEditBForm((f: any) => ({ ...f, deviceName: v }))} />
                   <FInput label="اسم العميل" value={editBForm.clientName} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, clientName: v }))} />
                   <FInput label="رقم الجوال" value={editBForm.clientPhone} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, clientPhone: v.replace(/\D/g, "") }))} keyboardType="phone-pad" />
-                  <FInput label="رسوم الاشتراك" value={editBForm.subscriptionFee} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, subscriptionFee: v.replace(/\D/g, "") }))} keyboardType="numeric" />
+                  <FInput label="اشتراك الإنترنت الشهري (ر)" value={editBForm.subscriptionFee} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, subscriptionFee: v.replace(/\D/g, "") }))} keyboardType="numeric" />
+                  <FInput label="اشتراك إدخال الموديم (ر)" value={editBForm.modemFee} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, modemFee: v.replace(/\D/g, "") }))} keyboardType="numeric" />
                   <FInput label="وصف الموقع" value={editBForm.location} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, location: v }))} />
                   <FInput label="رابط الخريطة" value={editBForm.locationUrl} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, locationUrl: v }))} />
+                  <View style={sc.extSection}><Text style={sc.extSectionTitle}>بيانات التركيب (اختياري)</Text></View>
+                  <FInput label="اسم المهندس المركّب" value={editBForm.installedByName} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, installedByName: v }))} />
+                  <FInput label="تاريخ التركيب" value={editBForm.installDate} onChangeText={(v: string) => setEditBForm((f: any) => ({ ...f, installDate: v }))} placeholder="2025-01-15" />
                 </>
               ) : null}
               <View style={sc.modalBtns}>

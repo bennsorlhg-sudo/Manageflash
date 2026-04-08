@@ -17,7 +17,7 @@ const HOTSPOT_FIELDS = [
 const BROADBAND_FIELDS = [
   "name", "location", "status", "notes", "supervisorId", "speed",
   "flashNumber", "subscriptionName", "clientName", "clientPhone",
-  "subscriptionFee", "locationUrl", "installedByName", "installDate",
+  "subscriptionFee", "modemFee", "locationUrl", "installedByName", "installDate",
 ];
 
 router.get("/hotspot-points", requireAuth, async (req, res) => {

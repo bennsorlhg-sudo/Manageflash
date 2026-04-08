@@ -472,11 +472,14 @@ router.post("/tickets/installation/:id/archive", requireAuth, async (req, res) =
           deviceName: finalDeviceName ?? null,
           clientName: finalClientName ?? null,
           clientPhone: finalClientPhone ?? null,
-          subscriptionFee: finalInetFee ? String(finalInetFee) : null,
+          subscriptionFee: finalInetFee ? String(finalInetFee) : null, /* رسوم الإنترنت الشهرية */
+          modemFee: finalSubFee ? String(finalSubFee) : null,          /* رسوم إدخال الموديم */
           locationUrl: finalLocationUrl ?? null,
           status: "active",
           supervisorId: t.createdById ?? null,
           notes: archiveNotes ?? null,
+          installedByName: finalInstaller,
+          installDate: finalInstallDate,
         });
       }
     }

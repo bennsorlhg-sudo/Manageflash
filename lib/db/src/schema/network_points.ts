@@ -49,7 +49,8 @@ export const broadbandPointsTable = pgTable("broadband_points", {
   deviceName: text("device_name"),
   clientName: text("client_name"),
   clientPhone: text("client_phone"),
-  subscriptionFee: numeric("subscription_fee", { precision: 10, scale: 2 }),
+  subscriptionFee: numeric("subscription_fee", { precision: 10, scale: 2 }), /* رسوم الإنترنت الشهرية */
+  modemFee: numeric("modem_fee", { precision: 10, scale: 2 }),               /* رسوم إدخال الموديم */
   locationUrl: text("location_url"),
   isClientOwned: boolean("is_client_owned").default(false),
   installedByName: text("installed_by_name"),
