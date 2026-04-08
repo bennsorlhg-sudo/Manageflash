@@ -36,7 +36,7 @@ export default function SupervisorDashboard() {
     try {
       const [tasks, fieldTasks, repairTickets, installTickets, purchaseReqs, deliveries] =
         await Promise.all([
-          apiGet("/tasks", token).catch(() => []),
+          apiGet("/tasks?myTasks=1", token).catch(() => []),
           apiGet("/field-tasks", token).catch(() => []),
           apiGet("/tickets/repair", token).catch(() => []),
           apiGet("/tickets/installation", token).catch(() => []),
@@ -44,8 +44,9 @@ export default function SupervisorDashboard() {
           apiGet("/subscription-deliveries", token).catch(() => []),
         ]);
 
+      /* مهامي: كلها مُسندة لي عبر myTasks=1 */
       const ownerTasks = (tasks as any[]).filter(
-        (t: any) => t.assignedByRole === "owner" || t.targetRole === "supervisor"
+        (t: any) => t.status !== "completed" && t.status !== "cancelled"
       );
       const withdrawal = (fieldTasks as any[]).filter(
         (t: any) => t.taskType === "withdrawal" || t.type === "withdrawal"

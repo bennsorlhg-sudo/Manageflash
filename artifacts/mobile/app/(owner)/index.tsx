@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost, formatCurrency, DENOMINATIONS, CARD_PRICES } from "@/utils/api";
+import { apiGet, apiPost, apiPatch, apiDelete, formatCurrency, formatDate, DENOMINATIONS, CARD_PRICES } from "@/utils/api";
 
 /* ─────────────────────────────────────────────────────
    بطاقة KPI — نفس تصميم المسؤول المالي
@@ -95,6 +95,9 @@ export default function OwnerDashboard() {
   const [totalLoans,   setTotalLoans]   = useState(0);
   const [totalDebts,   setTotalDebts]   = useState(0);
 
+  /* ─── المهام ─── */
+  const [tasks, setTasks] = useState<any[]>([]);
+
   /* ─── Modals ─── */
   const [showCustodyModal, setShowCustodyModal] = useState(false);
   const [showTaskModal,    setShowTaskModal]    = useState(false);
@@ -106,13 +109,20 @@ export default function OwnerDashboard() {
 
   const fetchData = useCallback(async () => {
     try {
-      const summary = await apiGet("/finances/summary", token);
+      const [summary, taskList] = await Promise.all([
+        apiGet("/finances/summary", token),
+        apiGet("/tasks", token),
+      ]);
       setTotalCustody(summary.totalCustody ?? 0);
       setCashBalance(summary.cashBalance   ?? 0);
       setCardsValue(summary.cardsValue     ?? 0);
       setAgentCustody(summary.agentCustody ?? 0);
       setTotalLoans(summary.totalLoans     ?? 0);
       setTotalDebts(summary.totalDebts ?? summary.totalOwed ?? 0);
+      const active = Array.isArray(taskList)
+        ? taskList.filter((t: any) => t.status !== "completed" && t.status !== "cancelled")
+        : [];
+      setTasks(active);
     } catch {
     } finally {
       setLoading(false);
@@ -224,6 +234,40 @@ export default function OwnerDashboard() {
             />
           </View>
         </View>
+
+        {/* ══════════════════════════════════════════════
+            قائمة المهام
+        ══════════════════════════════════════════════ */}
+        <View style={styles.sectionHeader}>
+          <View style={[styles.sectionDot, { backgroundColor: Colors.info }]} />
+          <Text style={styles.sectionTitle}>المهام ({tasks.length})</Text>
+        </View>
+
+        {tasks.length === 0 ? (
+          <View style={styles.emptyTasks}>
+            <Ionicons name="checkmark-done-circle-outline" size={38} color={Colors.textMuted} />
+            <Text style={styles.emptyTasksTxt}>لا توجد مهام نشطة</Text>
+          </View>
+        ) : (
+          tasks.map(task => (
+            <OwnerTaskCard
+              key={task.id}
+              task={task}
+              onDone={async () => {
+                try {
+                  await apiPatch(`/tasks/${task.id}`, token, { status: "completed" });
+                  setTasks(prev => prev.filter(t => t.id !== task.id));
+                } catch {}
+              }}
+              onDelete={async () => {
+                try {
+                  await apiDelete(`/tasks/${task.id}`, token);
+                  setTasks(prev => prev.filter(t => t.id !== task.id));
+                } catch {}
+              }}
+            />
+          ))
+        )}
 
       </ScrollView>
 
@@ -454,33 +498,90 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
 }
 
 /* ═══════════════════════════════════════════════════
-   Modal إضافة مهمة
+   بطاقة مهمة عند المالك
+═══════════════════════════════════════════════════ */
+const ROLE_COLOR: Record<string, string> = {
+  finance_manager: Colors.success,
+  supervisor:      Colors.info,
+  tech_engineer:   Colors.warning,
+};
+const ROLE_LABEL: Record<string, string> = {
+  finance_manager: "مسؤول مالي",
+  supervisor:      "مشرف",
+  tech_engineer:   "مهندس فني",
+};
+
+function OwnerTaskCard({ task, onDone, onDelete }: {
+  task: any; onDone: () => void; onDelete: () => void;
+}) {
+  const color = ROLE_COLOR[task.targetRole] ?? Colors.primary;
+  return (
+    <View style={[styles.taskCard, { borderColor: color + "40" }]}>
+      <View style={styles.taskTop}>
+        <View style={[styles.taskRoleBadge, { backgroundColor: color + "20" }]}>
+          <Text style={[styles.taskRoleTxt, { color }]}>{ROLE_LABEL[task.targetRole] ?? task.targetRole}</Text>
+        </View>
+        {task.targetPersonName ? (
+          <Text style={styles.taskPersonName}>{task.targetPersonName}</Text>
+        ) : null}
+      </View>
+      <Text style={styles.taskDesc} numberOfLines={3}>{task.description}</Text>
+      <Text style={styles.taskDate}>{formatDate(task.createdAt)}</Text>
+      <View style={styles.taskActions}>
+        <TouchableOpacity style={styles.taskDeleteBtn} onPress={onDelete}>
+          <Ionicons name="trash-outline" size={16} color={Colors.error} />
+          <Text style={[styles.taskBtnTxt, { color: Colors.error }]}>حذف</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.taskDoneBtn, { backgroundColor: Colors.success + "18", borderColor: Colors.success + "60" }]} onPress={onDone}>
+          <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
+          <Text style={[styles.taskBtnTxt, { color: Colors.success }]}>تم التنفيذ</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Modal إضافة مهمة — مع أسماء الفريق
 ═══════════════════════════════════════════════════ */
 function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
   visible: boolean; token: string | null;
   onClose: () => void; onSuccess: () => void; onError: (msg: string) => void;
 }) {
-  const [targetRole,  setTargetRole]  = useState<"finance_manager" | "supervisor" | "tech_engineer">("finance_manager");
-  const [description, setDescription] = useState("");
-  const [saving,      setSaving]      = useState(false);
+  const [members,       setMembers]       = useState<{ id: number; name: string; role: string }[]>([]);
+  const [selectedId,    setSelectedId]    = useState<number | null>(null);
+  const [description,   setDescription]   = useState("");
+  const [saving,        setSaving]        = useState(false);
 
-  const roles = [
-    { v: "finance_manager" as const, l: "المسؤول المالي" },
-    { v: "supervisor"      as const, l: "المشرف"          },
-    { v: "tech_engineer"   as const, l: "المهندس الفني"   },
-  ];
+  useEffect(() => {
+    if (visible) {
+      apiGet("/users", token)
+        .then((data: any) => {
+          const list = Array.isArray(data) ? data : (data.users ?? []);
+          const team = list.filter((u: any) => u.role !== "owner" && u.isActive !== false);
+          setMembers(team);
+          if (team.length > 0 && selectedId === null) setSelectedId(team[0].id);
+        })
+        .catch(() => {});
+    }
+  }, [visible]);
+
+  const selectedMember = members.find(m => m.id === selectedId);
 
   const handleSubmit = async () => {
     if (!description.trim()) return onError("يرجى كتابة وصف المهمة");
+    if (!selectedMember) return onError("يرجى اختيار شخص");
     setSaving(true);
     try {
       await apiPost("/tasks", token, {
         title: description.slice(0, 80),
         description,
-        targetRole,
+        targetRole: selectedMember.role,
+        assignedToId: selectedMember.id,
         assignedByRole: "owner",
       });
       setDescription("");
+      setSelectedId(null);
       onSuccess();
     } catch (e: any) {
       onError(e?.message ?? "فشل إضافة المهمة");
@@ -498,18 +599,30 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.fieldLabel}>الجهة المستهدفة</Text>
-          <View style={styles.segRow}>
-            {roles.map(r => (
-              <TouchableOpacity
-                key={r.v}
-                style={[styles.segBtn, targetRole === r.v && styles.segBtnActive]}
-                onPress={() => setTargetRole(r.v)}
-              >
-                <Text style={[styles.segBtnTxt, targetRole === r.v && styles.segBtnTxtActive]}>{r.l}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={styles.fieldLabel}>اختر الشخص المسؤول</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
+            <View style={{ flexDirection: "row-reverse", gap: 8, paddingBottom: 4 }}>
+              {members.map(m => {
+                const color = ROLE_COLOR[m.role] ?? Colors.primary;
+                const active = selectedId === m.id;
+                return (
+                  <TouchableOpacity
+                    key={m.id}
+                    style={[styles.memberBtn, active && { borderColor: color, backgroundColor: color + "18" }]}
+                    onPress={() => setSelectedId(m.id)}
+                  >
+                    <View style={[styles.memberIcon, { backgroundColor: color + "22" }]}>
+                      <Ionicons name="person" size={14} color={color} />
+                    </View>
+                    <View>
+                      <Text style={[styles.memberName, active && { color }]}>{m.name}</Text>
+                      <Text style={styles.memberRole}>{ROLE_LABEL[m.role] ?? m.role}</Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
 
           <Text style={[styles.fieldLabel, { marginTop: 16 }]}>وصف المهمة</Text>
           <TextInput
@@ -642,6 +755,44 @@ const styles = StyleSheet.create({
     padding: 15, alignItems: "center", marginTop: 20,
   },
   saveBtnTxt: { color: "#fff", fontWeight: "800", fontSize: 15 },
+
+  /* Task cards */
+  emptyTasks: { alignItems: "center", paddingVertical: 20, gap: 8 },
+  emptyTasksTxt: { fontSize: 14, color: Colors.textMuted },
+  taskCard: {
+    backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1.5,
+    padding: 14, gap: 8,
+  },
+  taskTop: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  taskRoleBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+  taskRoleTxt: { fontSize: 12, fontWeight: "700" },
+  taskPersonName: { fontSize: 13, fontWeight: "700", color: Colors.text },
+  taskDesc: { fontSize: 14, color: Colors.text, textAlign: "right", lineHeight: 20 },
+  taskDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+  taskActions: { flexDirection: "row-reverse", gap: 8, marginTop: 4 },
+  taskDoneBtn: {
+    flex: 1, flexDirection: "row-reverse", alignItems: "center",
+    justifyContent: "center", gap: 6, paddingVertical: 9,
+    borderRadius: 10, borderWidth: 1,
+  },
+  taskDeleteBtn: {
+    flexDirection: "row-reverse", alignItems: "center",
+    justifyContent: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 9,
+    borderRadius: 10, borderWidth: 1, borderColor: Colors.error + "50",
+    backgroundColor: Colors.error + "10",
+  },
+  taskBtnTxt: { fontSize: 13, fontWeight: "700" },
+
+  /* Member selection */
+  memberBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.background,
+  },
+  memberIcon: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  memberName: { fontSize: 13, fontWeight: "700", color: Colors.text, textAlign: "right" },
+  memberRole: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
 
   /* Alert */
   alertOverlay: {

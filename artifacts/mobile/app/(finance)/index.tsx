@@ -101,7 +101,7 @@ export default function FinanceDashboard() {
     try {
       const [summary, tasks, reqs] = await Promise.all([
         apiGet("/finances/summary", token),
-        apiGet("/tasks?targetRole=finance_manager", token),
+        apiGet("/tasks?myTasks=1", token),
         apiGet("/purchase-requests", token),
       ]);
 
