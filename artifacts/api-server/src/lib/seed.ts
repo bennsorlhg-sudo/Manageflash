@@ -27,6 +27,12 @@ export async function runSafeMigrations() {
     await db.execute(sql`ALTER TABLE financial_transactions ADD COLUMN IF NOT EXISTS invoice_photo_url TEXT`);
     /* ربط طلبات الشراء بالمعاملة المالية */
     await db.execute(sql`ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS transaction_id INTEGER`);
+    /* بيانات المركّب في نقاط الهوتسبوت والبرودباند */
+    await db.execute(sql`ALTER TABLE hotspot_points ADD COLUMN IF NOT EXISTS installed_by_name TEXT`);
+    await db.execute(sql`ALTER TABLE hotspot_points ADD COLUMN IF NOT EXISTS install_date TIMESTAMP`);
+    await db.execute(sql`ALTER TABLE broadband_points ADD COLUMN IF NOT EXISTS installed_by_name TEXT`);
+    await db.execute(sql`ALTER TABLE broadband_points ADD COLUMN IF NOT EXISTS install_date TIMESTAMP`);
+    await db.execute(sql`ALTER TABLE broadband_points ADD COLUMN IF NOT EXISTS modem_fee NUMERIC(10,2)`);
     logger.info("Safe column migrations complete");
   } catch (err) {
     logger.error({ err }, "Safe migration failed (non-fatal)");
