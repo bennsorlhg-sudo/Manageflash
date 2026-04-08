@@ -163,17 +163,40 @@ router.post("/broadband-points", requireAuth, async (req, res) => {
 });
 
 router.put("/broadband-points/:id", requireAuth, async (req, res) => {
-  try {
-    const id = parseInt(req.params.id);
-    const updates: any = { updatedAt: new Date() };
-    for (const f of BROADBAND_FIELDS) {
-      if (req.body[f] !== undefined) updates[f] = req.body[f];
+  const id = parseInt(req.params.id);
+
+  const buildUpdates = (fields: string[]) => {
+    const u: any = { updatedAt: new Date() };
+    for (const f of fields) {
+      if (req.body[f] !== undefined) u[f] = req.body[f];
     }
+    return u;
+  };
+
+  /* الحقول الأساسية الآمنة دائماً */
+  const CORE = ["name", "location", "status", "notes", "supervisorId", "speed",
+    "flashNumber", "subscriptionName", "clientName", "clientPhone", "locationUrl", "subscriptionFee"];
+
+  /* الحقول الجديدة التي قد تكون غير موجودة في قواعد بيانات قديمة */
+  const EXTENDED = ["modemFee", "installedByName", "installDate"];
+
+  try {
+    const updates = buildUpdates([...CORE, ...EXTENDED]);
     const [row] = await db.update(broadbandPointsTable).set(updates)
       .where(eq(broadbandPointsTable.id, id)).returning();
-    res.json(row);
-  } catch (error) {
-    res.status(500).json({ error: "فشل في تحديث نقطة الباقات", details: String(error) });
+    if (!row) return res.status(404).json({ error: "النقطة غير موجودة" });
+    return res.json(row);
+  } catch (err1: any) {
+    /* fallback: حاول بدون الحقول الجديدة إذا كانت الأعمدة غير موجودة */
+    try {
+      const updates = buildUpdates(CORE);
+      const [row] = await db.update(broadbandPointsTable).set(updates)
+        .where(eq(broadbandPointsTable.id, id)).returning();
+      if (!row) return res.status(404).json({ error: "النقطة غير موجودة" });
+      return res.json(row);
+    } catch (err2: any) {
+      return res.status(500).json({ error: "فشل في تحديث نقطة الباقات", details: String(err2) });
+    }
   }
 });
 
