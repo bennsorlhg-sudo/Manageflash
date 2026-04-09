@@ -30,7 +30,7 @@ export default function FinanceLayout() {
       <Stack.Screen name="custody" />
       <Stack.Screen name="sales" />
       <Stack.Screen name="expenses" />
-      <Stack.Screen name="debts-loans" />
+      <Stack.Screen name="operations" />
       <Stack.Screen name="sales-points" />
       <Stack.Screen name="profile" />
     </Stack>

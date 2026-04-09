@@ -193,7 +193,7 @@ export default function FinanceDashboard() {
           </View>
           <View style={styles.actionRow}>
             <ActionBtn label="المصاريف"     icon="receipt"        color="#FF5722"        onPress={() => router.push("/(finance)/expenses")} />
-            <ActionBtn label="ديون/سلف"    icon="stats-chart"    color="#795548"        onPress={() => router.push("/(finance)/debts-loans")} />
+            <ActionBtn label="كل العمليات" icon="list"           color="#795548"        onPress={() => router.push("/(finance)/operations")} />
             <ActionBtn label="المبيعات"     icon="bar-chart"      color="#4CAF50"        onPress={() => router.push("/(finance)/sales")} />
           </View>
         </View>
