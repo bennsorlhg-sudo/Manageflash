@@ -10,13 +10,29 @@ import { Colors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPut, apiDelete, formatCurrency, formatDateTime } from "@/utils/api";
 
-const PERIODS   = [{ key: "day", label: "اليوم" }, { key: "week", label: "الأسبوع" }, { key: "month", label: "الشهر" }];
-const PAY_TYPES = [{ key: "all", label: "الكل" }, { key: "cash", label: "نقدي" }, { key: "loan", label: "سلفة" }];
-const CATS      = [{ key: "all", label: "الكل" }, { key: "hotspot", label: "هوتسبوت" }, { key: "broadband", label: "برودباند" }];
+/* ─── ثوابت ─── */
+type Period = "day" | "week" | "month" | "custom";
 
-/* ─────────────────────────────────────────────────────
-   Alert Modal
-───────────────────────────────────────────────────── */
+const PERIODS: { key: Period; label: string }[] = [
+  { key: "month",  label: "الشهر"  },
+  { key: "week",   label: "الأسبوع" },
+  { key: "day",    label: "اليوم"  },
+  { key: "custom", label: "تحديد"  },
+];
+const CAT_FILTERS   = [{ key: "all", label: "الكل" }, { key: "hotspot", label: "هوتسبوت" }, { key: "broadband", label: "برودباند" }];
+const PAY_FILTERS   = [{ key: "all", label: "الكل" }, { key: "cash",    label: "نقد"      }, { key: "loan",      label: "سلفة"     }];
+
+/* ─── مساعد: مكون صف تفاصيل ─── */
+function DR({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <View style={st.drRow}>
+      <Text style={[st.drVal, color ? { color, fontWeight: "700" } : {}]}>{value}</Text>
+      <Text style={st.drKey}>{label}</Text>
+    </View>
+  );
+}
+
+/* ─── Modal تنبيه ─── */
 function AlertModal({ visible, title, message, color, onClose }: {
   visible: boolean; title: string; message: string; color: string; onClose: () => void;
 }) {
@@ -38,9 +54,7 @@ function AlertModal({ visible, title, message, color, onClose }: {
   );
 }
 
-/* ─────────────────────────────────────────────────────
-   Detail Modal
-───────────────────────────────────────────────────── */
+/* ─── Modal تفاصيل ─── */
 function DetailModal({ item, onClose }: { item: any | null; onClose: () => void }) {
   if (!item) return null;
   const isCash = (item.paymentType ?? "cash") === "cash";
@@ -57,8 +71,8 @@ function DetailModal({ item, onClose }: { item: any | null; onClose: () => void 
             <DR label="المبلغ"       value={formatCurrency(parseFloat(item.amount ?? 0))} color={Colors.success} />
             <DR label="البيان"       value={item.description ?? "—"} />
             {item.personName ? <DR label="الاسم / الجهة" value={item.personName} /> : null}
-            <DR label="الخدمة"       value={isHot ? "هوتسبوت" : "برودباند"}    color={isHot ? Colors.primary : Colors.info} />
-            <DR label="طريقة الدفع"  value={isCash ? "نقدي ✓" : "سلفة ↺"}     color={isCash ? Colors.success : Colors.warning} />
+            <DR label="الخدمة"       value={isHot ? "هوتسبوت" : "برودباند"} color={isHot ? Colors.primary : Colors.info} />
+            <DR label="طريقة الدفع"  value={isCash ? "نقدي ✓" : "سلفة ↺"}  color={isCash ? Colors.success : Colors.warning} />
             <DR label="التاريخ"      value={formatDateTime(item.createdAt)} />
           </View>
           <TouchableOpacity style={[st.primaryBtn, { backgroundColor: Colors.primary }]} onPress={onClose}>
@@ -70,26 +84,24 @@ function DetailModal({ item, onClose }: { item: any | null; onClose: () => void 
   );
 }
 
-/* ─────────────────────────────────────────────────────
-   Edit Modal
-───────────────────────────────────────────────────── */
+/* ─── Modal تعديل ─── */
 function EditModal({ item, token, onClose, onSuccess, onError }: {
   item: any | null; token: string | null;
   onClose: () => void; onSuccess: () => void; onError: (msg: string) => void;
 }) {
-  const [personName,   setPersonName]   = useState("");
-  const [amount,       setAmount]       = useState("");
-  const [category,     setCategory]     = useState<"hotspot" | "broadband">("hotspot");
-  const [paymentType,  setPaymentType]  = useState<"cash" | "loan">("cash");
-  const [description,  setDescription]  = useState("");
-  const [saving,       setSaving]       = useState(false);
+  const [personName,  setPersonName]  = useState("");
+  const [amount,      setAmount]      = useState("");
+  const [category,    setCategory]    = useState<"hotspot" | "broadband">("hotspot");
+  const [paymentType, setPaymentType] = useState<"cash" | "loan">("cash");
+  const [description, setDescription] = useState("");
+  const [saving,      setSaving]      = useState(false);
 
   React.useEffect(() => {
     if (item) {
       setPersonName(item.personName ?? "");
       setAmount(String(parseFloat(item.amount ?? 0)));
       setCategory(item.category === "broadband" ? "broadband" : "hotspot");
-      setPaymentType((item.paymentType === "loan") ? "loan" : "cash");
+      setPaymentType(item.paymentType === "loan" ? "loan" : "cash");
       setDescription(item.description ?? "");
     }
   }, [item]);
@@ -102,11 +114,8 @@ function EditModal({ item, token, onClose, onSuccess, onError }: {
     setSaving(true);
     try {
       await apiPut(`/transactions/${item.id}`, token, {
-        amount: parsedAmt,
-        personName: personName.trim() || undefined,
-        category,
-        paymentType,
-        description: description.trim() || undefined,
+        amount: parsedAmt, personName: personName.trim() || undefined,
+        category, paymentType, description: description.trim() || undefined,
       });
       onSuccess();
     } catch (e: any) {
@@ -122,19 +131,15 @@ function EditModal({ item, token, onClose, onSuccess, onError }: {
             <Text style={st.sheetTitle}>تعديل عملية البيع</Text>
             <TouchableOpacity onPress={onClose}><Ionicons name="close" size={22} color={Colors.textSecondary} /></TouchableOpacity>
           </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-
+          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <Text style={st.lbl}>الاسم / الجهة</Text>
             <TextInput style={st.inp} value={personName} onChangeText={setPersonName} textAlign="right"
-              placeholder="اسم العميل أو الجهة" placeholderTextColor={Colors.textMuted} />
+              placeholder="اسم العميل" placeholderTextColor={Colors.textMuted} />
 
             <Text style={[st.lbl, { marginTop: 14 }]}>نوع الخدمة</Text>
             <View style={st.segRow}>
-              {[["hotspot", "هوتسبوت", "wifi"] as const, ["broadband", "برودباند", "globe"] as const].map(([v, l, icon]) => (
-                <TouchableOpacity
-                  key={v} style={[st.segBtn, category === v && st.segBtnActive]}
-                  onPress={() => setCategory(v)}
-                >
+              {([["hotspot","هوتسبوت","wifi"],["broadband","برودباند","globe"]] as const).map(([v,l,icon]) => (
+                <TouchableOpacity key={v} style={[st.segBtn, category === v && st.segBtnActive]} onPress={() => setCategory(v)}>
                   <Ionicons name={icon} size={15} color={category === v ? Colors.primary : Colors.textSecondary} />
                   <Text style={[st.segBtnTxt, category === v && st.segBtnTxtActive]}>{l}</Text>
                 </TouchableOpacity>
@@ -142,16 +147,15 @@ function EditModal({ item, token, onClose, onSuccess, onError }: {
             </View>
 
             <Text style={[st.lbl, { marginTop: 14 }]}>المبلغ (ر.س)</Text>
-            <TextInput style={st.inp} value={amount} onChangeText={setAmount} keyboardType="numeric"
-              textAlign="right" placeholder="0" placeholderTextColor={Colors.textMuted} />
+            <TextInput style={st.inp} value={amount} onChangeText={setAmount}
+              keyboardType="decimal-pad" textAlign="right" placeholder="0" placeholderTextColor={Colors.textMuted} />
 
             <Text style={[st.lbl, { marginTop: 14 }]}>طريقة الدفع</Text>
             <View style={st.segRow}>
-              {([["cash", "نقدي", Colors.success] as const, ["loan", "سلفة", Colors.warning] as const]).map(([v, l, c]) => (
-                <TouchableOpacity
-                  key={v} style={[st.segBtn, paymentType === v && { borderColor: c, backgroundColor: c + "18" }]}
-                  onPress={() => setPaymentType(v)}
-                >
+              {([["cash","نقدي",Colors.success],["loan","سلفة",Colors.warning]] as const).map(([v,l,c]) => (
+                <TouchableOpacity key={v}
+                  style={[st.segBtn, paymentType === v && { borderColor: c, backgroundColor: c + "18" }]}
+                  onPress={() => setPaymentType(v)}>
                   <Text style={[st.segBtnTxt, paymentType === v && { color: c }]}>{l}</Text>
                 </TouchableOpacity>
               ))}
@@ -163,16 +167,11 @@ function EditModal({ item, token, onClose, onSuccess, onError }: {
 
             <View style={st.warnBox}>
               <Ionicons name="information-circle" size={15} color={Colors.warning} />
-              <Text style={st.warnTxt}>
-                {paymentType !== (item.paymentType === "loan" ? "loan" : "cash")
-                  ? paymentType === "loan"
-                    ? "سيتم تحويل العملية لسلفة وخصم المبلغ من الصندوق"
-                    : "سيتم تحويل العملية لنقدي وحذف السلفة المرتبطة وإضافة المبلغ للصندوق"
-                  : "سيُعدَّل الفرق تلقائياً على الصندوق أو السلف"}
-              </Text>
+              <Text style={st.warnTxt}>سيُعدَّل الفرق تلقائياً على الصندوق أو السلف</Text>
             </View>
 
-            <TouchableOpacity style={[st.primaryBtn, { backgroundColor: Colors.primary }, saving && { opacity: 0.5 }]}
+            <TouchableOpacity
+              style={[st.primaryBtn, { backgroundColor: Colors.primary }, saving && { opacity: 0.5 }]}
               onPress={handleSave} disabled={saving}>
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={st.primaryBtnTxt}>حفظ التعديل</Text>}
             </TouchableOpacity>
@@ -183,9 +182,7 @@ function EditModal({ item, token, onClose, onSuccess, onError }: {
   );
 }
 
-/* ─────────────────────────────────────────────────────
-   Confirm Delete Modal
-───────────────────────────────────────────────────── */
+/* ─── Modal تأكيد الحذف ─── */
 function ConfirmDelete({ item, onCancel, onConfirm, deleting }: {
   item: any | null; onCancel: () => void; onConfirm: () => void; deleting: boolean;
 }) {
@@ -205,28 +202,20 @@ function ConfirmDelete({ item, onCancel, onConfirm, deleting }: {
             {`\nو${isCash ? "خصم المبلغ من الصندوق النقدي" : "حذف السلفة المرتبطة بها"}.`}
           </Text>
           <View style={st.confirmRow}>
-            <TouchableOpacity style={[st.alertBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]} onPress={onCancel}>
+            <TouchableOpacity
+              style={[st.alertBtn, { backgroundColor: Colors.surface, borderWidth: 1, borderColor: Colors.border }]}
+              onPress={onCancel}>
               <Text style={[st.alertBtnTxt, { color: Colors.text }]}>إلغاء</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[st.alertBtn, { backgroundColor: Colors.error, flex: 1 }]} onPress={onConfirm} disabled={deleting}>
+            <TouchableOpacity
+              style={[st.alertBtn, { backgroundColor: Colors.error, flex: 1 }]}
+              onPress={onConfirm} disabled={deleting}>
               {deleting ? <ActivityIndicator color="#fff" size="small" /> : <Text style={st.alertBtnTxt}>حذف</Text>}
             </TouchableOpacity>
           </View>
         </View>
       </View>
     </Modal>
-  );
-}
-
-/* ─────────────────────────────────────────────────────
-   Detail Row helper
-───────────────────────────────────────────────────── */
-function DR({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <View style={st.drRow}>
-      <Text style={[st.drVal, color ? { color, fontWeight: "700" } : {}]}>{value}</Text>
-      <Text style={st.drKey}>{label}</Text>
-    </View>
   );
 }
 
@@ -238,9 +227,11 @@ export default function SalesScreen() {
   const router = useRouter();
   const { token } = useAuth();
 
-  const [period,       setPeriod]       = useState<"day" | "week" | "month">("month");
-  const [payType,      setPayType]      = useState("all");
+  const [period,       setPeriod]       = useState<Period>("month");
+  const [fromDate,     setFromDate]     = useState(""); /* YYYY-MM-DD */
+  const [toDate,       setToDate]       = useState("");
   const [catType,      setCatType]      = useState("all");
+  const [payType,      setPayType]      = useState("all");
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [refreshing,   setRefreshing]   = useState(false);
@@ -249,39 +240,54 @@ export default function SalesScreen() {
   const [editItem,   setEditItem]   = useState<any>(null);
   const [deleteItem, setDeleteItem] = useState<any>(null);
   const [deleting,   setDeleting]   = useState(false);
-
   const [alert, setAlert] = useState({ visible: false, title: "", message: "", color: Colors.success });
   const showAlert = (title: string, message: string, color = Colors.success) =>
     setAlert({ visible: true, title, message, color });
 
   const fetchSales = useCallback(async () => {
     try {
+      /* جلب المبيعات — نستثني تحصيل السلف (paymentType=collect) لأنها في العمليات */
       const data = await apiGet("/transactions?type=sale&limit=500", token);
-      setTransactions(Array.isArray(data) ? data : []);
+      const all  = Array.isArray(data) ? data : [];
+      setTransactions(all.filter((t: any) => t.paymentType !== "collect"));
     } catch {} finally { setLoading(false); setRefreshing(false); }
   }, [token]);
 
   useFocusEffect(useCallback(() => { fetchSales(); }, [fetchSales]));
 
+  /* ─── فلترة بالفترة ─── */
   const filterByPeriod = (items: any[]) => {
     const now = new Date();
     return items.filter(t => {
       const d = new Date(t.createdAt);
-      if (period === "day")  return d.toDateString() === now.toDateString();
-      if (period === "week") { const w = new Date(now); w.setDate(now.getDate() - 7); return d >= w; }
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      if (period === "day")   return d.toDateString() === now.toDateString();
+      if (period === "week")  { const w = new Date(now); w.setDate(now.getDate() - 7); return d >= w; }
+      if (period === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      if (period === "custom") {
+        const from = fromDate ? new Date(fromDate + "T00:00:00") : null;
+        const to   = toDate   ? new Date(toDate   + "T23:59:59") : null;
+        if (from && d < from) return false;
+        if (to   && d > to)   return false;
+        return true;
+      }
+      return true;
     });
   };
 
-  const filtered = filterByPeriod(transactions)
-    .filter(t => payType === "all" || (t.paymentType ?? "cash") === payType)
-    .filter(t => catType === "all" || t.category === catType);
+  /* ─── البيانات المُعالَجة ─── */
+  const periodItems = filterByPeriod(transactions);
 
-  const total     = filtered.reduce((s, t) => s + parseFloat(t.amount ?? 0), 0);
-  const hotspot   = filtered.filter(t => t.category === "hotspot")  .reduce((s, t) => s + parseFloat(t.amount ?? 0), 0);
-  const broadband = filtered.filter(t => t.category === "broadband").reduce((s, t) => s + parseFloat(t.amount ?? 0), 0);
-  const cashTotal = filtered.filter(t => (t.paymentType ?? "cash") === "cash").reduce((s, t) => s + parseFloat(t.amount ?? 0), 0);
-  const loanTotal = filtered.filter(t => t.paymentType === "loan").reduce((s, t) => s + parseFloat(t.amount ?? 0), 0);
+  /* ملخص الفترة (بصرف النظر عن فلاتر الخدمة/الدفع) */
+  const bbCash  = periodItems.filter(t => t.category === "broadband" && (t.paymentType ?? "cash") === "cash").reduce((s,t) => s + parseFloat(t.amount ?? 0), 0);
+  const bbLoan  = periodItems.filter(t => t.category === "broadband" && t.paymentType === "loan").reduce((s,t) => s + parseFloat(t.amount ?? 0), 0);
+  const hotCash = periodItems.filter(t => t.category === "hotspot"   && (t.paymentType ?? "cash") === "cash").reduce((s,t) => s + parseFloat(t.amount ?? 0), 0);
+  const hotLoan = periodItems.filter(t => t.category === "hotspot"   && t.paymentType === "loan").reduce((s,t) => s + parseFloat(t.amount ?? 0), 0);
+  const totalPeriod = bbCash + bbLoan + hotCash + hotLoan;
+
+  /* القائمة النهائية بعد كل الفلاتر */
+  const filtered = periodItems
+    .filter(t => catType === "all" || t.category === catType)
+    .filter(t => payType === "all" || (t.paymentType ?? "cash") === payType);
 
   const handleDelete = async () => {
     if (!deleteItem) return;
@@ -299,6 +305,8 @@ export default function SalesScreen() {
 
   const pt = Platform.OS === "web" ? 20 : insets.top;
   const pb = Platform.OS === "web" ? 40 : insets.bottom + 30;
+
+  const periodLabel = PERIODS.find(p => p.key === period)?.label ?? "";
 
   if (loading) {
     return (
@@ -321,80 +329,141 @@ export default function SalesScreen() {
       </View>
 
       {/* ── فلتر الفترة ── */}
-      <View style={st.filterRow}>
+      <View style={st.periodRow}>
         {PERIODS.map(p => (
-          <TouchableOpacity key={p.key} style={[st.filterBtn, period === p.key && st.filterBtnActive]}
-            onPress={() => setPeriod(p.key as any)}>
-            <Text style={[st.filterBtnTxt, period === p.key && st.filterBtnTxtActive]}>{p.label}</Text>
+          <TouchableOpacity
+            key={p.key}
+            style={[st.periodBtn, period === p.key && st.periodBtnActive]}
+            onPress={() => setPeriod(p.key)}
+          >
+            <Text style={[st.periodBtnTxt, period === p.key && st.periodBtnTxtActive]}>{p.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
 
+      {/* ── تحديد تاريخ مخصص ── */}
+      {period === "custom" && (
+        <View style={st.dateRow}>
+          <View style={st.dateField}>
+            <Text style={st.dateLabel}>إلى</Text>
+            <TextInput
+              style={st.dateInput}
+              value={toDate}
+              onChangeText={setToDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={Colors.textMuted}
+              textAlign="right"
+            />
+          </View>
+          <Ionicons name="arrow-back" size={16} color={Colors.textMuted} />
+          <View style={st.dateField}>
+            <Text style={st.dateLabel}>من</Text>
+            <TextInput
+              style={st.dateInput}
+              value={fromDate}
+              onChangeText={setFromDate}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={Colors.textMuted}
+              textAlign="right"
+            />
+          </View>
+        </View>
+      )}
+
       <ScrollView
         contentContainerStyle={[st.content, { paddingBottom: pb }]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchSales(); }} />}
       >
 
-        {/* ── بطاقة الملخص ── */}
+        {/* ══ لوحة الملخص ══ */}
         <View style={st.summaryCard}>
-          <Text style={st.summaryTitle}>إجمالي {PERIODS.find(p => p.key === period)?.label}</Text>
-          <Text style={st.summaryTotal}>{formatCurrency(total)}</Text>
-          <View style={st.summaryRow}>
-            <View style={st.summaryItem}>
-              <Ionicons name="wifi" size={14} color={Colors.primary} />
-              <Text style={st.summaryItemLabel}>هوتسبوت</Text>
-              <Text style={[st.summaryItemValue, { color: Colors.primary }]}>{formatCurrency(hotspot)}</Text>
+
+          {/* الإجمالي */}
+          <Text style={st.summaryLabel}>إجمالي {periodLabel}</Text>
+          <Text style={st.summaryTotal}>{formatCurrency(totalPeriod)}</Text>
+
+          {/* 2×2 شبكة: برودباند | هوتسبوت */}
+          <View style={st.summaryGrid}>
+
+            {/* برودباند */}
+            <View style={[st.summaryCell, { borderColor: Colors.info + "40", backgroundColor: Colors.info + "08" }]}>
+              <View style={st.summaryCellHdr}>
+                <Ionicons name="globe" size={13} color={Colors.info} />
+                <Text style={[st.summaryCellTitle, { color: Colors.info }]}>برودباند</Text>
+              </View>
+              <View style={st.summaryCellRow}>
+                <Text style={st.summaryCellKey}>نقد</Text>
+                <Text style={[st.summaryCellVal, { color: Colors.success }]}>{formatCurrency(bbCash)}</Text>
+              </View>
+              <View style={st.summaryCellRow}>
+                <Text style={st.summaryCellKey}>سلفة</Text>
+                <Text style={[st.summaryCellVal, { color: Colors.warning }]}>{formatCurrency(bbLoan)}</Text>
+              </View>
+              <View style={[st.summaryCellRow, { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 4, marginTop: 2 }]}>
+                <Text style={[st.summaryCellKey, { fontWeight: "700" }]}>المجموع</Text>
+                <Text style={[st.summaryCellVal, { color: Colors.info, fontWeight: "800" }]}>{formatCurrency(bbCash + bbLoan)}</Text>
+              </View>
             </View>
-            <View style={st.summaryDivider} />
-            <View style={st.summaryItem}>
-              <Ionicons name="globe" size={14} color={Colors.info} />
-              <Text style={st.summaryItemLabel}>برودباند</Text>
-              <Text style={[st.summaryItemValue, { color: Colors.info }]}>{formatCurrency(broadband)}</Text>
+
+            {/* هوتسبوت */}
+            <View style={[st.summaryCell, { borderColor: Colors.primary + "40", backgroundColor: Colors.primary + "08" }]}>
+              <View style={st.summaryCellHdr}>
+                <Ionicons name="wifi" size={13} color={Colors.primary} />
+                <Text style={[st.summaryCellTitle, { color: Colors.primary }]}>هوتسبوت</Text>
+              </View>
+              <View style={st.summaryCellRow}>
+                <Text style={st.summaryCellKey}>نقد</Text>
+                <Text style={[st.summaryCellVal, { color: Colors.success }]}>{formatCurrency(hotCash)}</Text>
+              </View>
+              <View style={st.summaryCellRow}>
+                <Text style={st.summaryCellKey}>سلفة</Text>
+                <Text style={[st.summaryCellVal, { color: Colors.warning }]}>{formatCurrency(hotLoan)}</Text>
+              </View>
+              <View style={[st.summaryCellRow, { borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 4, marginTop: 2 }]}>
+                <Text style={[st.summaryCellKey, { fontWeight: "700" }]}>المجموع</Text>
+                <Text style={[st.summaryCellVal, { color: Colors.primary, fontWeight: "800" }]}>{formatCurrency(hotCash + hotLoan)}</Text>
+              </View>
             </View>
-          </View>
-          <View style={[st.summaryRow, { marginTop: 8, borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10 }]}>
-            <View style={st.summaryItem}>
-              <Ionicons name="cash" size={14} color={Colors.success} />
-              <Text style={st.summaryItemLabel}>نقدي</Text>
-              <Text style={[st.summaryItemValue, { color: Colors.success }]}>{formatCurrency(cashTotal)}</Text>
-            </View>
-            <View style={st.summaryDivider} />
-            <View style={st.summaryItem}>
-              <Ionicons name="receipt" size={14} color={Colors.warning} />
-              <Text style={st.summaryItemLabel}>سلفة</Text>
-              <Text style={[st.summaryItemValue, { color: Colors.warning }]}>{formatCurrency(loanTotal)}</Text>
-            </View>
+
           </View>
         </View>
 
-        {/* ── فلاتر إضافية ── */}
-        <View style={st.subFiltersRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={st.subFilterLabel}>نوع الدفع</Text>
-            <View style={st.subFilterBtns}>
-              {PAY_TYPES.map(p => (
-                <TouchableOpacity key={p.key} style={[st.subBtn, payType === p.key && st.subBtnActive]}
-                  onPress={() => setPayType(p.key)}>
-                  <Text style={[st.subBtnTxt, payType === p.key && st.subBtnTxtActive]}>{p.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={st.subFilterLabel}>الخدمة</Text>
-            <View style={st.subFilterBtns}>
-              {CATS.map(c => (
-                <TouchableOpacity key={c.key} style={[st.subBtn, catType === c.key && st.subBtnActive]}
-                  onPress={() => setCatType(c.key)}>
+        {/* ══ فلاتر الخدمة والدفع ══ */}
+        <View style={st.filtersRow}>
+          <View style={st.filterGroup}>
+            <Text style={st.filterGroupLabel}>نوع الخدمة</Text>
+            <View style={st.filterGroupBtns}>
+              {CAT_FILTERS.map(c => (
+                <TouchableOpacity
+                  key={c.key}
+                  style={[st.subBtn, catType === c.key && st.subBtnActive]}
+                  onPress={() => setCatType(c.key)}
+                >
                   <Text style={[st.subBtnTxt, catType === c.key && st.subBtnTxtActive]}>{c.label}</Text>
                 </TouchableOpacity>
               ))}
             </View>
           </View>
+          <View style={st.filtersDivider} />
+          <View style={st.filterGroup}>
+            <Text style={st.filterGroupLabel}>نوع الدفع</Text>
+            <View style={st.filterGroupBtns}>
+              {PAY_FILTERS.map(p => (
+                <TouchableOpacity
+                  key={p.key}
+                  style={[st.subBtn, payType === p.key && st.subBtnActive]}
+                  onPress={() => setPayType(p.key)}
+                >
+                  <Text style={[st.subBtnTxt, payType === p.key && st.subBtnTxtActive]}>{p.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
 
-        {/* ── قائمة المعاملات ── */}
+        {/* ══ قائمة المعاملات ══ */}
         {filtered.length === 0 ? (
           <View style={st.empty}>
             <Ionicons name="receipt-outline" size={48} color={Colors.textMuted} />
@@ -408,7 +477,6 @@ export default function SalesScreen() {
               const isCash = (t.paymentType ?? "cash") === "cash";
               return (
                 <View key={t.id} style={st.txCard}>
-                  {/* الوصف + المبلغ */}
                   <View style={st.txTop}>
                     <Text style={st.txDesc} numberOfLines={1}>{t.description}</Text>
                     <Text style={[st.txAmt, { color: Colors.success }]}>
@@ -416,8 +484,6 @@ export default function SalesScreen() {
                     </Text>
                   </View>
                   {t.personName ? <Text style={st.txPerson}>{t.personName}</Text> : null}
-
-                  {/* التاريخ + التاقات */}
                   <View style={st.txFooter}>
                     <Text style={st.txDate}>{formatDateTime(t.createdAt)}</Text>
                     <View style={st.txTags}>
@@ -435,20 +501,21 @@ export default function SalesScreen() {
                       </View>
                     </View>
                   </View>
-
-                  {/* ── أزرار الإجراءات ── */}
                   <View style={st.actionsRow}>
-                    <TouchableOpacity style={[st.actionBtn, { borderColor: Colors.primary + "50", backgroundColor: Colors.primary + "12" }]}
+                    <TouchableOpacity
+                      style={[st.actionBtn, { borderColor: Colors.primary + "50", backgroundColor: Colors.primary + "12" }]}
                       onPress={() => setViewItem(t)}>
                       <Ionicons name="eye-outline" size={14} color={Colors.primary} />
                       <Text style={[st.actionBtnTxt, { color: Colors.primary }]}>تفاصيل</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[st.actionBtn, { borderColor: Colors.warning + "50", backgroundColor: Colors.warning + "12" }]}
+                    <TouchableOpacity
+                      style={[st.actionBtn, { borderColor: Colors.warning + "50", backgroundColor: Colors.warning + "12" }]}
                       onPress={() => setEditItem(t)}>
                       <Ionicons name="create-outline" size={14} color={Colors.warning} />
                       <Text style={[st.actionBtnTxt, { color: Colors.warning }]}>تعديل</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[st.actionBtn, { borderColor: Colors.error + "50", backgroundColor: Colors.error + "12" }]}
+                    <TouchableOpacity
+                      style={[st.actionBtn, { borderColor: Colors.error + "50", backgroundColor: Colors.error + "12" }]}
                       onPress={() => setDeleteItem(t)}>
                       <Ionicons name="trash-outline" size={14} color={Colors.error} />
                       <Text style={[st.actionBtnTxt, { color: Colors.error }]}>حذف</Text>
@@ -490,44 +557,75 @@ export default function SalesScreen() {
 ═══════════════════════════════════════════════════ */
 const st = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+
   header: {
     flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
-    paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border,
+    paddingHorizontal: 20, paddingVertical: 16,
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   title: { fontSize: 20, fontWeight: "bold", color: Colors.text },
 
-  filterRow: { flexDirection: "row-reverse", padding: 14, gap: 8 },
-  filterBtn: {
-    flex: 1, paddingVertical: 9, alignItems: "center", borderRadius: 10,
+  /* ─ فلتر الفترة ─ */
+  periodRow: {
+    flexDirection: "row-reverse", paddingHorizontal: 14, paddingVertical: 10, gap: 6,
+  },
+  periodBtn: {
+    flex: 1, paddingVertical: 8, alignItems: "center", borderRadius: 10,
     borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
   },
-  filterBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  filterBtnTxt: { fontSize: 13, color: Colors.textSecondary, fontWeight: "600" },
-  filterBtnTxtActive: { color: "#FFF" },
+  periodBtnActive: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  periodBtnTxt:    { fontSize: 12, color: Colors.textSecondary, fontWeight: "600" },
+  periodBtnTxtActive: { color: "#FFF" },
 
-  content: { padding: 14, paddingTop: 0, gap: 8 },
-
-  summaryCard: {
-    backgroundColor: Colors.surface, borderRadius: 18, padding: 18,
-    borderWidth: 1, borderColor: Colors.border, alignItems: "center",
+  /* ─ تاريخ مخصص ─ */
+  dateRow: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 8,
+    paddingHorizontal: 14, paddingBottom: 10,
   },
-  summaryTitle: { fontSize: 13, color: Colors.textSecondary, marginBottom: 4 },
-  summaryTotal: { fontSize: 34, fontWeight: "800", color: Colors.success, marginBottom: 14 },
-  summaryRow:   { flexDirection: "row-reverse", width: "100%" },
-  summaryItem:  { flex: 1, alignItems: "center", gap: 4 },
-  summaryItemLabel: { fontSize: 12, color: Colors.textMuted },
-  summaryItemValue: { fontSize: 15, fontWeight: "700" },
-  summaryDivider:   { width: 1, backgroundColor: Colors.border },
+  dateField: { flex: 1 },
+  dateLabel: { fontSize: 11, color: Colors.textMuted, textAlign: "right", marginBottom: 4 },
+  dateInput: {
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 7, color: Colors.text,
+    fontSize: 13, backgroundColor: Colors.surface,
+  },
 
-  subFiltersRow: { flexDirection: "row-reverse", gap: 10 },
-  subFilterLabel: { fontSize: 11, color: Colors.textMuted, textAlign: "right", marginBottom: 6 },
-  subFilterBtns:  { flexDirection: "row-reverse", gap: 4 },
+  content: { padding: 14, paddingTop: 0, gap: 10 },
+
+  /* ─ ملخص ─ */
+  summaryCard: {
+    backgroundColor: Colors.surface, borderRadius: 18, padding: 16,
+    borderWidth: 1, borderColor: Colors.border, gap: 10,
+  },
+  summaryLabel: { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
+  summaryTotal: { fontSize: 32, fontWeight: "800", color: Colors.success, textAlign: "center" },
+
+  summaryGrid: { flexDirection: "row-reverse", gap: 10 },
+  summaryCell: {
+    flex: 1, borderRadius: 12, borderWidth: 1, padding: 10, gap: 5,
+  },
+  summaryCellHdr: { flexDirection: "row-reverse", alignItems: "center", gap: 5, marginBottom: 4 },
+  summaryCellTitle: { fontSize: 12, fontWeight: "700" },
+  summaryCellRow: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  summaryCellKey: { fontSize: 11, color: Colors.textMuted },
+  summaryCellVal: { fontSize: 12, fontWeight: "700", color: Colors.text },
+
+  /* ─ فلاتر ─ */
+  filtersRow: {
+    flexDirection: "row-reverse", backgroundColor: Colors.surface,
+    borderRadius: 14, borderWidth: 1, borderColor: Colors.border,
+    padding: 12, gap: 8, alignItems: "flex-start",
+  },
+  filterGroup:     { flex: 1 },
+  filterGroupLabel:{ fontSize: 11, color: Colors.textMuted, textAlign: "right", marginBottom: 6 },
+  filterGroupBtns: { flexDirection: "row-reverse", flexWrap: "wrap", gap: 4 },
+  filtersDivider:  { width: 1, backgroundColor: Colors.border, marginVertical: 4, alignSelf: "stretch" },
   subBtn: {
     paddingHorizontal: 8, paddingVertical: 5, borderRadius: 7,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
   },
-  subBtnActive: { backgroundColor: Colors.primary + "22", borderColor: Colors.primary },
-  subBtnTxt:    { fontSize: 10, color: Colors.textSecondary, fontWeight: "600" },
+  subBtnActive:    { backgroundColor: Colors.primary + "22", borderColor: Colors.primary },
+  subBtnTxt:       { fontSize: 11, color: Colors.textSecondary, fontWeight: "600" },
   subBtnTxtActive: { color: Colors.primary },
 
   listHeader: { fontSize: 13, color: Colors.textMuted, textAlign: "right" },
@@ -545,13 +643,8 @@ const st = StyleSheet.create({
   txFooter: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
   txDate:   { fontSize: 11, color: Colors.textMuted },
   txTags:   { flexDirection: "row-reverse", gap: 6 },
-  txTag: {
-    flexDirection: "row-reverse", alignItems: "center", gap: 3,
-    paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6,
-  },
+  txTag:    { flexDirection: "row-reverse", alignItems: "center", gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
   txTagTxt: { fontSize: 10, fontWeight: "600" },
-
-  /* أزرار إجراءات داخل البطاقة */
   actionsRow: {
     flexDirection: "row-reverse", gap: 8,
     borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10,
@@ -562,7 +655,7 @@ const st = StyleSheet.create({
   },
   actionBtnTxt: { fontSize: 11, fontWeight: "700" },
 
-  /* Overlay / Modal */
+  /* ─ Overlay / Modal ─ */
   overlay: {
     flex: 1, backgroundColor: "rgba(0,0,0,0.65)",
     justifyContent: "center", alignItems: "center", padding: 24,
@@ -574,43 +667,47 @@ const st = StyleSheet.create({
   alertIcon:    { width: 68, height: 68, borderRadius: 34, justifyContent: "center", alignItems: "center" },
   alertTitle:   { fontSize: 17, fontWeight: "800", color: Colors.text, textAlign: "center" },
   alertMsg:     { fontSize: 13, color: Colors.textSecondary, textAlign: "center", lineHeight: 20 },
-  alertBtn:     { paddingVertical: 13, paddingHorizontal: 20, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  alertBtnTxt:  { color: "#fff", fontWeight: "700", fontSize: 14 },
   confirmRow:   { flexDirection: "row-reverse", gap: 10, width: "100%" },
+  alertBtn:     { flex: 1, borderRadius: 12, paddingVertical: 13, alignItems: "center" },
+  alertBtnTxt:  { color: "#fff", fontSize: 14, fontWeight: "700" },
 
-  /* Sheet (slide up) */
-  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
+  sheetOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
   sheet: {
     backgroundColor: Colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, maxHeight: "92%",
+    padding: 20, maxHeight: "90%", gap: 14,
   },
-  sheetHdr: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center", marginBottom: 20 },
-  sheetTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
+  sheetHdr: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" },
+  sheetTitle: { fontSize: 17, fontWeight: "800", color: Colors.text },
 
   drRow: {
     flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center",
-    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: Colors.border + "60",
+    paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: Colors.border,
   },
   drKey: { fontSize: 13, color: Colors.textMuted },
-  drVal: { fontSize: 14, fontWeight: "600", color: Colors.text, textAlign: "right", flex: 1, paddingRight: 8 },
+  drVal: { fontSize: 14, color: Colors.text, fontWeight: "600", textAlign: "left", flex: 1, marginRight: 12 },
 
-  lbl: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary, textAlign: "right", marginBottom: 8 },
+  lbl: { fontSize: 13, color: Colors.textSecondary, textAlign: "right" },
   inp: {
-    backgroundColor: Colors.background, borderRadius: 12, padding: 13,
-    color: Colors.text, fontSize: 15, borderWidth: 1, borderColor: Colors.border,
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 10,
+    paddingHorizontal: 14, paddingVertical: 10,
+    color: Colors.text, fontSize: 14, backgroundColor: Colors.background,
   },
-  segRow:        { flexDirection: "row-reverse", gap: 8 },
-  segBtn:        { flex: 1, paddingVertical: 11, flexDirection: "row-reverse", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 10, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.background },
-  segBtnActive:  { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
-  segBtnTxt:     { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
+  segRow: { flexDirection: "row-reverse", gap: 8 },
+  segBtn: {
+    flex: 1, flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 5, paddingVertical: 9, borderRadius: 9,
+    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
+  },
+  segBtnActive:    { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
+  segBtnTxt:       { fontSize: 13, color: Colors.textSecondary, fontWeight: "600" },
   segBtnTxtActive: { color: Colors.primary },
 
   warnBox: {
-    flexDirection: "row-reverse", gap: 6, alignItems: "flex-start",
-    backgroundColor: Colors.warning + "15", borderRadius: 10, padding: 12, marginTop: 14,
+    flexDirection: "row-reverse", gap: 6, alignItems: "center",
+    backgroundColor: Colors.warning + "15", borderRadius: 8, padding: 10,
   },
-  warnTxt: { fontSize: 12, color: Colors.warning, textAlign: "right", flex: 1, lineHeight: 18 },
+  warnTxt: { fontSize: 12, color: Colors.warning, flex: 1, textAlign: "right" },
 
-  primaryBtn:    { borderRadius: 14, padding: 15, alignItems: "center", marginTop: 16 },
-  primaryBtnTxt: { color: "#fff", fontWeight: "800", fontSize: 15 },
+  primaryBtn: { borderRadius: 12, paddingVertical: 14, alignItems: "center", marginTop: 6 },
+  primaryBtnTxt: { color: "#fff", fontSize: 15, fontWeight: "800" },
 });
