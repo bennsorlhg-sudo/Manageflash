@@ -221,6 +221,26 @@ router.delete("/transactions/:id", requireAuth, async (req, res) => {
         }
       }
 
+      /* ── عهدة نقد من المالك: نعكس الصندوق ونحذف سجل العهدة المرتبط ── */
+      if (tx.type === "custody_in") {
+        await dbTx.execute(
+          sql`UPDATE cash_box SET balance = balance - ${amt}, updated_at = NOW() WHERE id = 1`
+        );
+        if ((tx.referenceId ?? "").startsWith("CUSTODY-CASH")) {
+          await dbTx.execute(sql`
+            DELETE FROM custody_records WHERE id = (
+              SELECT id FROM custody_records
+              WHERE type = 'cash'
+                AND from_role = 'owner'
+                AND amount::numeric = ${amt}
+                AND created_at >= ${tx.createdAt}::timestamptz - interval '60 seconds'
+                AND created_at <= ${tx.createdAt}::timestamptz + interval '60 seconds'
+              ORDER BY created_at LIMIT 1
+            )
+          `);
+        }
+      }
+
       await dbTx.delete(financialTransactionsTable)
         .where(eq(financialTransactionsTable.id, id));
     });
