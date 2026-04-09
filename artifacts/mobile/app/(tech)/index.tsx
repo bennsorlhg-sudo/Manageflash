@@ -72,7 +72,7 @@ interface InstallGroup {
 /* ─────────────── المكوّن الرئيسي ─────────────── */
 export default function TechEngineerScreen() {
   const insets  = useSafeAreaInsets();
-  const { user, token } = useAuth();
+  const { user, token, logout } = useAuth();
 
   type Section = "new" | "inprogress";
   const [section,     setSection]     = useState<Section>("new");
@@ -96,6 +96,9 @@ export default function TechEngineerScreen() {
   /* مودال تأكيد إلغاء التنفيذ */
   const [cancelConfirm, setCancelConfirm] = useState<Ticket | null>(null);
   const [cancelling,    setCancelling]    = useState(false);
+
+  /* مودال تأكيد تسجيل الخروج */
+  const [logoutConfirm, setLogoutConfirm] = useState(false);
 
   /* toast */
   const [toast, setToast] = useState("");
@@ -388,7 +391,9 @@ export default function TechEngineerScreen() {
           <Text style={s.headerName}>{user?.name ?? "المهندس الفني"}</Text>
           <Text style={s.headerSub}>المهندس الفني</Text>
         </View>
-        <View style={[s.onlineDot, { backgroundColor: Colors.success }]} />
+        <TouchableOpacity style={s.logoutBtn} onPress={() => setLogoutConfirm(true)} activeOpacity={0.75}>
+          <Ionicons name="log-out-outline" size={20} color={Colors.error} />
+        </TouchableOpacity>
       </View>
 
       {/* ══ ملخص سريع ══ */}
@@ -597,6 +602,37 @@ export default function TechEngineerScreen() {
           <Text style={s.toastText}>{toast}</Text>
         </View>
       )}
+
+      {/* ══ مودال تأكيد تسجيل الخروج ══ */}
+      <Modal visible={logoutConfirm} transparent animationType="fade">
+        <View style={s.overlay}>
+          <View style={[s.modalBox, { paddingTop: 24 }]}>
+            <View style={{ width: 62, height: 62, borderRadius: 31,
+              backgroundColor: Colors.error + "18", justifyContent: "center", alignItems: "center", marginBottom: 6 }}>
+              <Ionicons name="log-out-outline" size={36} color={Colors.error} />
+            </View>
+            <Text style={[s.modalTitle, { color: Colors.text }]}>تسجيل الخروج؟</Text>
+            <Text style={{ color: Colors.textSecondary, textAlign: "center", fontSize: 13, lineHeight: 20, marginBottom: 4 }}>
+              هل تريد الخروج والعودة لصفحة تسجيل الدخول؟
+            </Text>
+            <View style={{ flexDirection: "row-reverse", gap: 10, width: "100%", marginTop: 8 }}>
+              <TouchableOpacity
+                style={[s.confirmBtn, { backgroundColor: Colors.error, flex: 1 }]}
+                onPress={() => { setLogoutConfirm(false); logout(); }}
+              >
+                <Ionicons name="log-out-outline" size={16} color="#fff" />
+                <Text style={s.confirmBtnText}>نعم، خروج</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.backBtn, { flex: 1, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, marginTop: 0 }]}
+                onPress={() => setLogoutConfirm(false)}
+              >
+                <Text style={s.backBtnText}>إلغاء</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ══ مودال تأكيد إلغاء التنفيذ ══ */}
       <Modal visible={!!cancelConfirm} transparent animationType="fade">
@@ -1197,6 +1233,7 @@ const s = StyleSheet.create({
   headerName:  { fontSize: 17, fontWeight: "bold", color: Colors.text, textAlign: "center" },
   headerSub:   { fontSize: 12, color: Colors.textMuted, textAlign: "center" },
   onlineDot:   { width: 10, height: 10, borderRadius: 5 },
+  logoutBtn:   { padding: 6, borderRadius: 8, backgroundColor: Colors.error + "15" },
 
   /* ملخص سريع */
   summaryRow: { flexDirection: "row-reverse", paddingHorizontal: 14, paddingVertical: 10, gap: 10 },
