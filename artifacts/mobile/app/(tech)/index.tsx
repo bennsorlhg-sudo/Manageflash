@@ -93,6 +93,10 @@ export default function TechEngineerScreen() {
   /* مودال صورة الموقع */
   const [viewImageUrl, setViewImageUrl] = useState<string | null>(null);
 
+  /* مودال تأكيد إلغاء التنفيذ */
+  const [cancelConfirm, setCancelConfirm] = useState<Ticket | null>(null);
+  const [cancelling,    setCancelling]    = useState(false);
+
   /* toast */
   const [toast, setToast] = useState("");
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -206,6 +210,46 @@ export default function TechEngineerScreen() {
       }
     }
     finally { setSaving(null); }
+  };
+
+  /* ─── إلغاء التنفيذ (إعادة للجديدة) ─── */
+  const cancelTicket = async () => {
+    const t = cancelConfirm;
+    if (!t) return;
+    setCancelling(true);
+    try {
+      /* تحديد الحالة التي ترجع إليها التذكرة */
+      const backStatus =
+        t.source === "repair"                          ? "new" :
+        t.source === "install" && t.isRelayPoint       ? "new" : "preparing";
+
+      const endpoint =
+        t.source === "repair"
+          ? `/tickets/repair/${t.sourceId}`
+          : `/tickets/installation/${t.sourceId}`;
+
+      await apiPatch(endpoint, token, {
+        status:         backStatus,
+        assignedToName: null,
+      });
+
+      /* تحديث الحالة المحلية */
+      if (t.source === "repair") {
+        setRepairs(prev => prev.map(r =>
+          r.id === t.sourceId ? { ...r, status: backStatus, assignedToName: null } : r
+        ));
+      } else {
+        setAllInstalls(prev => prev.map(r =>
+          r.id === t.sourceId ? { ...r, status: backStatus, assignedToName: null } : r
+        ));
+      }
+
+      setCancelConfirm(null);
+      setSection("new");
+      showToast("تم إلغاء التنفيذ — أُعيدت للجديدة");
+    } catch {
+      showToast("فشل إلغاء التنفيذ");
+    } finally { setCancelling(false); }
   };
 
   /* ─── فتح مودال الإتمام ─── */
@@ -437,6 +481,7 @@ export default function TechEngineerScreen() {
                     saving={saving === ticket.id}
                     onStart={() => startTicket(ticket)}
                     onComplete={() => openComplete(ticket)}
+                    onCancel={() => setCancelConfirm(ticket)}
                     onCopy={copyPhone}
                     onOpenMap={openMap}
                     onCopyMap={copyMapUrl}
@@ -450,6 +495,7 @@ export default function TechEngineerScreen() {
                     saving={saving === ticket.id}
                     onStart={() => startTicket(ticket)}
                     onComplete={() => openComplete(ticket)}
+                    onCancel={() => setCancelConfirm(ticket)}
                     onCopy={copyPhone}
                     onOpenMap={openMap}
                     onCopyMap={copyMapUrl}
@@ -552,6 +598,53 @@ export default function TechEngineerScreen() {
         </View>
       )}
 
+      {/* ══ مودال تأكيد إلغاء التنفيذ ══ */}
+      <Modal visible={!!cancelConfirm} transparent animationType="fade">
+        <View style={s.overlay}>
+          <View style={[s.modalBox, { paddingTop: 24 }]}>
+            <View style={{ width: 62, height: 62, borderRadius: 31, backgroundColor: Colors.error + "20",
+              justifyContent: "center", alignItems: "center", marginBottom: 6 }}>
+              <Ionicons name="arrow-undo-circle" size={38} color={Colors.error} />
+            </View>
+            <Text style={[s.modalTitle, { color: Colors.text }]}>إلغاء التنفيذ؟</Text>
+            <Text style={{ color: Colors.textSecondary, textAlign: "center", fontSize: 13, lineHeight: 20, marginBottom: 4 }}>
+              سيتم إعادة التذكرة{"\n"}
+              <Text style={{ fontWeight: "700", color: Colors.text }}>
+                {cancelConfirm
+                  ? (cancelConfirm.source === "repair"
+                      ? `إصلاح #${cancelConfirm.sourceId}`
+                      : `تركيب #${cancelConfirm.sourceId}`)
+                  : ""}
+              </Text>
+              {"\n"}إلى قسم الجديدة لكي يستلمها مهندس آخر
+            </Text>
+
+            <View style={{ flexDirection: "row-reverse", gap: 10, width: "100%", marginTop: 8 }}>
+              <TouchableOpacity
+                style={[s.confirmBtn, { backgroundColor: Colors.error, flex: 1 }]}
+                onPress={cancelTicket}
+                disabled={cancelling}
+              >
+                {cancelling
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <>
+                      <Ionicons name="arrow-undo" size={16} color="#fff" />
+                      <Text style={s.confirmBtnText}>نعم، إلغاء التنفيذ</Text>
+                    </>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[s.backBtn, { flex: 1, borderWidth: 1, borderColor: Colors.border, borderRadius: 12, marginTop: 0 }]}
+                onPress={() => setCancelConfirm(null)}
+                disabled={cancelling}
+              >
+                <Text style={s.backBtnText}>لا، تراجع</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* ══ مودال عرض صورة الموقع ══ */}
       <Modal visible={!!viewImageUrl} transparent animationType="fade" onRequestClose={() => setViewImageUrl(null)}>
         <View style={imgModal.overlay}>
@@ -581,12 +674,13 @@ export default function TechEngineerScreen() {
 /* ════════════════════════════════════════════════
    بطاقة الإصلاح
 ════════════════════════════════════════════════ */
-function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap, onViewImage }: {
+function RepairCard({ ticket, section, saving, onStart, onComplete, onCancel, onCopy, onOpenMap, onCopyMap, onViewImage }: {
   ticket: Ticket;
   section: "new" | "inprogress";
   saving: boolean;
   onStart: () => void;
   onComplete: () => void;
+  onCancel?: () => void;
   onCopy: (p: string) => void;
   onOpenMap: (url: string) => void;
   onCopyMap: (url: string) => void;
@@ -699,6 +793,14 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOp
           <ActionBtn label="صورة" icon="image" color="#9C27B0" onPress={() => onViewImage(ticket.contractImageUrl!)} flex={1} />
         )}
       </View>
+
+      {/* زر إلغاء التنفيذ — للتبويب الجاري فقط */}
+      {section === "inprogress" && onCancel && (
+        <TouchableOpacity style={c.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
+          <Ionicons name="arrow-undo" size={14} color={Colors.error} />
+          <Text style={c.cancelBtnTxt}>إلغاء التنفيذ — إعادة للجديدة</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -706,12 +808,13 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCopy, onOp
 /* ════════════════════════════════════════════════
    بطاقة التركيب
 ════════════════════════════════════════════════ */
-function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onOpenMap, onCopyMap, onViewImage }: {
+function InstallCard({ ticket, section, saving, onStart, onComplete, onCancel, onCopy, onOpenMap, onCopyMap, onViewImage }: {
   ticket: Ticket;
   section: "new" | "inprogress";
   saving: boolean;
   onStart: () => void;
   onComplete: () => void;
+  onCancel?: () => void;
   onCopy: (p: string) => void;
   onOpenMap: (url: string) => void;
   onCopyMap: (url: string) => void;
@@ -895,6 +998,14 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCopy, onO
           <ActionBtn label="صورة الموقع" icon="image" color="#9C27B0" onPress={() => onViewImage(ticket.contractImageUrl!)} flex={hasMap ? 1 : 2} />
         )}
       </View>
+
+      {/* زر إلغاء التنفيذ — للتبويب الجاري فقط */}
+      {section === "inprogress" && onCancel && (
+        <TouchableOpacity style={c.cancelBtn} onPress={onCancel} activeOpacity={0.8}>
+          <Ionicons name="arrow-undo" size={14} color={Colors.error} />
+          <Text style={c.cancelBtnTxt}>إلغاء التنفيذ — إعادة للجديدة</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -1227,6 +1338,15 @@ const c = StyleSheet.create({
   },
 
   btnRow: { flexDirection: "row-reverse", gap: 8, marginTop: 4 },
+
+  /* زر إلغاء التنفيذ */
+  cancelBtn: {
+    flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
+    gap: 6, marginTop: 4, paddingVertical: 9, borderRadius: 10,
+    borderWidth: 1, borderColor: Colors.error + "50",
+    backgroundColor: Colors.error + "0D",
+  },
+  cancelBtnTxt: { fontSize: 12, fontWeight: "700", color: Colors.error },
 });
 
 /* SummaryPill */
