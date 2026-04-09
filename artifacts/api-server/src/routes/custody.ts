@@ -76,14 +76,22 @@ router.post("/custody/receive", requireAuth, async (req, res) => {
         }).returning();
         records.push(cashRec);
 
-        /*
-         * تحديث cash_box للتوافق مع الجداول القديمة.
-         * ملاحظة: cashBalance في ملخص المالية يُحسَب من custody_records مباشرة
-         * (cashFromAgents) لذا لا يتم إنشاء financial_transaction لتجنّب الحساب المزدوج.
-         */
+        /* تحديث cash_box */
         await tx.execute(
           sql`UPDATE cash_box SET balance = balance + ${cash}, updated_at = NOW() WHERE id = 1`
         );
+
+        /* ─── تسجيل في كشف المبيعات باسم المندوب ─── */
+        await tx.insert(financialTransactionsTable).values({
+          type:        "sale",
+          category:    "hotspot",
+          amount:      String(cash),
+          description: `مبيعات المندوب: ${agent}`,
+          role:        "tech_engineer",
+          personName:  agent,
+          referenceId: `CUSTODY-RECV-${Date.now()}`,
+          paymentType: "cash",
+        });
       }
 
       /* ─── استلام كروت مرتجعة ─── */
@@ -327,6 +335,19 @@ router.delete("/custody/:id", requireAuth, async (req, res) => {
         await tx.execute(
           sql`UPDATE cash_box SET balance = balance - ${amount}, updated_at = NOW() WHERE id = 1`
         );
+        /* عكس تسجيل كشف المبيعات المرتبط */
+        await tx.execute(sql`
+          DELETE FROM financial_transactions
+          WHERE id = (
+            SELECT id FROM financial_transactions
+            WHERE type = 'sale' AND person_name = ${record.to_person_name}
+              AND amount::numeric = ${amount}
+              AND reference_id LIKE 'CUSTODY-RECV-%'
+              AND created_at >= ${record.created_at}::timestamptz - interval '30 seconds'
+              AND created_at <= ${record.created_at}::timestamptz + interval '30 seconds'
+            ORDER BY created_at LIMIT 1
+          )
+        `);
       }
       /* نوع cards لا يؤثر على cash_box */
       await tx.execute(sql`DELETE FROM custody_records WHERE id = ${recordId}`);
