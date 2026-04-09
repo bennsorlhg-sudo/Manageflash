@@ -180,6 +180,21 @@ router.delete("/transactions/:id", requireAuth, async (req, res) => {
           await dbTx.execute(
             sql`UPDATE cash_box SET balance = balance - ${amt}, updated_at = NOW() WHERE id = 1`
           );
+          /* استلام نقد من مندوب: نحذف أيضاً سجل العهدة المرتبط */
+          if ((tx.referenceId ?? "").startsWith("CUSTODY-RECV")) {
+            await dbTx.execute(sql`
+              DELETE FROM custody_records WHERE id = (
+                SELECT id FROM custody_records
+                WHERE type = 'cash'
+                  AND from_role = 'tech_engineer'
+                  AND amount::numeric = ${amt}
+                  AND to_person_name = ${tx.personName ?? ""}
+                  AND created_at >= ${tx.createdAt}::timestamptz - interval '60 seconds'
+                  AND created_at <= ${tx.createdAt}::timestamptz + interval '60 seconds'
+                ORDER BY created_at LIMIT 1
+              )
+            `);
+          }
         } else if (tx.paymentType === "loan") {
           /* سلفة: نحذف سجل السلف المرتبط (مطابقة بالاسم والمبلغ والوقت) */
           await dbTx.execute(sql`
@@ -479,7 +494,7 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
 router.get("/transactions", requireAuth, async (req, res) => {
   try {
     const { type, from, to, limit: limitStr = "50", ops } = req.query as any;
-    const limit = Math.min(parseInt(limitStr), 200);
+    const limit = Math.min(parseInt(limitStr), 1000);
 
     let conditions: any[] = [];
     if (ops === "1") {
