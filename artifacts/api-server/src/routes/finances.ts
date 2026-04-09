@@ -118,6 +118,7 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
         category:    financialTransactionsTable.category,
         paymentType: financialTransactionsTable.paymentType,
         amount:      financialTransactionsTable.amount,
+        referenceId: financialTransactionsTable.referenceId,
       }).from(financialTransactionsTable),
     ]);
 
@@ -130,9 +131,12 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
     const cashFromAgents = custodyRows
       .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager" && r.type === "cash")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-    /* مبيعات نقدية + تحصيل سلف (كلاهما يزيد الصندوق) */
+    /* مبيعات نقدية + تحصيل سلف (كلاهما يزيد الصندوق)
+     * استثناء: سجلات CUSTODY-RECV محسوبة بالفعل ضمن cashFromAgents */
     const cashSales = txRows
-      .filter(r => r.type === "sale" && (r.paymentType === "cash" || r.paymentType === "collect"))
+      .filter(r => r.type === "sale"
+        && (r.paymentType === "cash" || r.paymentType === "collect")
+        && !String(r.referenceId ?? "").startsWith("CUSTODY-RECV"))
       .reduce((s, r) => s + parseFloat(r.amount), 0);
     /* مصروفات نقدية */
     const cashExpenses = txRows
@@ -186,9 +190,11 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
     const cardsReturnedFromAgents = custodyRows
       .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-    /* مبيعات الكروت (هوتسبوت) — تُنقَص من رصيد الكروت لأن الكرت خرج */
+    /* مبيعات الكروت (هوتسبوت) — تُنقَص من رصيد الكروت لأن الكرت خرج
+     * استثناء: سجلات CUSTODY-RECV هي نقد مُستلَم وليست بيع كروت فعلي */
     const cardSalesAmount = txRows
-      .filter(r => r.type === "sale" && r.category === "hotspot")
+      .filter(r => r.type === "sale" && r.category === "hotspot"
+        && !String(r.referenceId ?? "").startsWith("CUSTODY-RECV"))
       .reduce((s, r) => s + parseFloat(r.amount), 0);
 
     /*
