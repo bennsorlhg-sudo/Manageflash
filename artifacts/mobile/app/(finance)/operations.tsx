@@ -43,15 +43,22 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: "custom", label: "تحديد"  },
 ];
 
-const CHIPS = [
-  { key: "all",          label: "الكل",         icon: "apps"                    as const },
-  { key: "sale_hot",     label: "هوتسبوت",      icon: "wifi"                    as const },
-  { key: "sale_bb",      label: "برودباند",     icon: "globe"                   as const },
-  { key: "expense",      label: "صرف",          icon: "arrow-up-circle"         as const },
-  { key: "collect",      label: "تحصيل سلفة",  icon: "checkmark-circle"        as const },
-  { key: "loan_payment", label: "سداد دين",     icon: "return-down-forward-outline" as const },
-  { key: "custody_out",  label: "تسليم عهدة",  icon: "send"                    as const },
-  { key: "custody_in",   label: "استلام عهدة", icon: "arrow-down-circle"       as const },
+/* كل العمليات الـ 13 + الكل — مع الألوان والأيقونات */
+const OP_CHIPS = [
+  { key: "all",              label: "الكل",             icon: "apps"                         as const, color: Colors.primary   },
+  { key: "hot_cash",         label: "هوتسبوت نقد",      icon: "wifi"                         as const, color: "#43A047"        },
+  { key: "hot_loan",         label: "هوتسبوت سلفة",     icon: "wifi-outline"                 as const, color: Colors.warning   },
+  { key: "bb_cash",          label: "برودباند نقد",     icon: "globe"                        as const, color: "#00BCD4"        },
+  { key: "bb_loan",          label: "برودباند سلفة",    icon: "globe-outline"                as const, color: "#FF9800"        },
+  { key: "exp_cash",         label: "صرف نقدي",         icon: "arrow-up-circle"              as const, color: Colors.error     },
+  { key: "exp_debt",         label: "صرف دين",          icon: "receipt"                      as const, color: "#FF7043"        },
+  { key: "collect",          label: "تحصيل سلفة",       icon: "checkmark-circle"             as const, color: "#29B6F6"        },
+  { key: "loan_payment",     label: "سداد دين",         icon: "return-down-forward-outline"  as const, color: "#9C27B0"        },
+  { key: "custody_out",      label: "تسليم عهدة",       icon: "send"                         as const, color: "#673AB7"        },
+  { key: "recv_cash_agent",  label: "استلام نقد مندوب", icon: "arrow-down-circle"            as const, color: "#4CAF50"        },
+  { key: "recv_cards_agent", label: "كروت مرتجعة",      icon: "card-outline"                 as const, color: Colors.info      },
+  { key: "recv_cash_owner",  label: "نقد من المالك",    icon: "briefcase"                    as const, color: Colors.primary   },
+  { key: "recv_cards_owner", label: "كروت من المالك",   icon: "briefcase-outline"            as const, color: "#5C6BC0"        },
 ];
 
 /* ══════════════════════════════════════════════════════════
@@ -70,7 +77,7 @@ function getOpMeta(item: any): OpMeta {
         label: `تسليم كروت ← ${item.toPersonName ?? "مندوب"}`,
         icon: "send",
         color: "#673AB7",
-        tag: "custody_out",
+        tag: "custody_out",  /* تسليم عهدة */
         effects: [
           { label: "عهدة المندوبين",  dir: "up",   amount: amt },
           { label: "إجمالي الكروت",   dir: "down", amount: amt },
@@ -86,7 +93,7 @@ function getOpMeta(item: any): OpMeta {
         label: `استلام كروت ← ${item.toPersonName ?? "مندوب"}`,
         icon: "arrow-down-circle",
         color: Colors.info,
-        tag: "custody_in",
+        tag: "recv_cards_agent",
         effects: [
           { label: "إجمالي الكروت",   dir: "up",   amount: amt },
           { label: "العهدة الرئيسية", dir: "up",   amount: amt },
@@ -100,9 +107,9 @@ function getOpMeta(item: any): OpMeta {
     if (from === "owner") {
       return {
         label: "كروت من المالك",
-        icon: "briefcase",
-        color: Colors.primary,
-        tag: "custody_in",
+        icon: "briefcase-outline",
+        color: "#5C6BC0",
+        tag: "recv_cards_owner",
         effects: [
           { label: "إجمالي الكروت",   dir: "up", amount: amt },
           { label: "العهدة الرئيسية", dir: "up", amount: amt },
@@ -130,8 +137,8 @@ function getOpMeta(item: any): OpMeta {
     return {
       label: `استلام نقد ← ${who || "مندوب"}`,
       icon: "arrow-down-circle",
-      color: "#43A047",
-      tag: "custody_in",
+      color: "#4CAF50",
+      tag: "recv_cash_agent",
       effects: [
         { label: "الصندوق النقدي",   dir: "up",   amount: amt },
         { label: "العهدة الرئيسية",  dir: "up",   amount: amt },
@@ -147,8 +154,8 @@ function getOpMeta(item: any): OpMeta {
     return {
       label: `بيع ${isHot ? "هوتسبوت" : "برودباند"} — نقد`,
       icon: "cart",
-      color: Colors.success,
-      tag: isHot ? "sale_hot" : "sale_bb",
+      color: isHot ? "#43A047" : "#00BCD4",
+      tag: isHot ? "hot_cash" : "bb_cash",
       effects: isHot
         ? [
             { label: "الصندوق النقدي", dir: "up",   amount: amt },
@@ -168,8 +175,8 @@ function getOpMeta(item: any): OpMeta {
     return {
       label: `بيع ${isHot ? "هوتسبوت" : "برودباند"} — سلفة`,
       icon: "cart-outline",
-      color: Colors.warning,
-      tag: isHot ? "sale_hot" : "sale_bb",
+      color: isHot ? Colors.warning : "#FF9800",
+      tag: isHot ? "hot_loan" : "bb_loan",
       effects: isHot
         ? [
             { label: "سلف العملاء",   dir: "up",   amount: amt },
@@ -204,7 +211,7 @@ function getOpMeta(item: any): OpMeta {
       label: "صرفية نقدية",
       icon: "arrow-up-circle",
       color: Colors.error,
-      tag: "expense",
+      tag: "exp_cash",
       effects: [
         { label: "الصندوق النقدي",  dir: "down", amount: amt },
         { label: "العهدة الرئيسية", dir: "down", amount: amt },
@@ -219,7 +226,7 @@ function getOpMeta(item: any): OpMeta {
       label: `صرفية بدين ← ${who}`,
       icon: "receipt",
       color: "#FF7043",
-      tag: "expense",
+      tag: "exp_debt",
       effects: [
         { label: "ديون الشركة", dir: "up", amount: amt },
       ],
@@ -249,7 +256,7 @@ function getOpMeta(item: any): OpMeta {
       label: "عهدة نقد من المالك",
       icon: "briefcase",
       color: Colors.primary,
-      tag: "custody_in",
+      tag: "recv_cash_owner",
       effects: [
         { label: "الصندوق النقدي",  dir: "up", amount: amt },
         { label: "العهدة الرئيسية", dir: "up", amount: amt },
@@ -642,15 +649,24 @@ export default function OperationsScreen() {
     return true;
   }, [period, fromDate, toDate]);
 
+  /* ─── عناصر الفترة المحددة ─── */
+  const periodItems = useMemo(() => allItems.filter(inPeriod), [allItems, inPeriod]);
+
+  /* ─── عدد كل نوع في الفترة ─── */
+  const chipCounts = useMemo(() => {
+    const counts: Record<string, number> = { all: periodItems.length };
+    periodItems.forEach(item => {
+      const t = getOpMeta(item).tag;
+      counts[t] = (counts[t] ?? 0) + 1;
+    });
+    return counts;
+  }, [periodItems]);
+
   /* ─── قائمة مُعالَجة ─── */
   const displayed = useMemo(() => {
-    return allItems
-      .filter(inPeriod)
-      .filter(item => {
-        if (chip === "all") return true;
-        return getOpMeta(item).tag === chip;
-      });
-  }, [allItems, inPeriod, chip]);
+    if (chip === "all") return periodItems;
+    return periodItems.filter(item => getOpMeta(item).tag === chip);
+  }, [periodItems, chip]);
 
   /* ─── حذف ─── */
   const handleDelete = async () => {
@@ -728,28 +744,48 @@ export default function OperationsScreen() {
         </View>
       )}
 
-      {/* ─── Chips نوع العملية ─── */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={s.chipsRow} style={{ flexGrow: 0 }}>
-        {CHIPS.map(c => (
-          <TouchableOpacity
-            key={c.key}
-            style={[s.chip, chip === c.key && s.chipOn]}
-            onPress={() => setChip(c.key)}
-          >
-            <Ionicons name={c.icon} size={12} color={chip === c.key ? "#fff" : Colors.textSecondary} />
-            <Text style={[s.chipTxt, chip === c.key && s.chipTxtOn]}>{c.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* ─── القائمة ─── */}
+      {/* ─── القائمة + شبكة الفلاتر ─── */}
       <ScrollView
         contentContainerStyle={[s.list, { paddingBottom: pb }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} />}
       >
+        {/* شبكة مربعات الفلاتر */}
+        <View style={s.gridWrap}>
+          {OP_CHIPS.map(c => {
+            const active  = chip === c.key;
+            const cnt     = chipCounts[c.key] ?? 0;
+            return (
+              <TouchableOpacity
+                key={c.key}
+                style={[s.gridBox, active && { backgroundColor: c.color, borderColor: c.color }]}
+                onPress={() => setChip(c.key)}
+                activeOpacity={0.75}
+              >
+                <View style={[s.gridIconWrap, { backgroundColor: active ? "rgba(255,255,255,0.2)" : c.color + "20" }]}>
+                  <Ionicons name={c.icon} size={17} color={active ? "#fff" : c.color} />
+                </View>
+                <Text style={[s.gridLabel, active && { color: "#fff" }]} numberOfLines={2}>{c.label}</Text>
+                {cnt > 0 && (
+                  <View style={[s.gridBadge, { backgroundColor: active ? "rgba(255,255,255,0.25)" : c.color + "25" }]}>
+                    <Text style={[s.gridBadgeTxt, { color: active ? "#fff" : c.color }]}>{cnt}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* فاصل */}
+        <View style={s.divider}>
+          <Text style={s.dividerTxt}>
+            {chip === "all"
+              ? `جميع العمليات (${displayed.length})`
+              : `${OP_CHIPS.find(c => c.key === chip)?.label} (${displayed.length})`}
+          </Text>
+        </View>
+
         {displayed.length === 0 ? (
           <View style={s.empty}>
             <Ionicons name="reader-outline" size={50} color={Colors.textMuted} />
@@ -881,16 +917,37 @@ const s = StyleSheet.create({
   dateInp:  { borderWidth: 1, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6,
     color: Colors.text, fontSize: 12, backgroundColor: Colors.surface },
 
-  /* chips */
-  chipsRow: { flexDirection: "row-reverse", gap: 6, paddingHorizontal: 12, paddingBottom: 8 },
-  chip:     {
-    flexDirection: "row-reverse", alignItems: "center", gap: 4,
-    paddingHorizontal: 11, paddingVertical: 6, borderRadius: 20,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface,
+  /* شبكة مربعات الفلاتر */
+  gridWrap: {
+    flexDirection: "row-reverse", flexWrap: "wrap",
+    gap: 8, marginBottom: 4,
   },
-  chipOn:    { backgroundColor: Colors.primary, borderColor: Colors.primary },
-  chipTxt:   { fontSize: 11, color: Colors.textSecondary, fontWeight: "600" },
-  chipTxtOn: { color: "#fff" },
+  gridBox: {
+    width: "31%",
+    alignItems: "center", gap: 5,
+    paddingVertical: 10, paddingHorizontal: 6,
+    borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  gridIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    justifyContent: "center", alignItems: "center",
+  },
+  gridLabel: {
+    fontSize: 10, fontWeight: "700", color: Colors.textSecondary,
+    textAlign: "center", lineHeight: 14,
+  },
+  gridBadge: {
+    paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10,
+  },
+  gridBadgeTxt: { fontSize: 10, fontWeight: "800" },
+
+  /* فاصل العنوان */
+  divider: {
+    borderTopWidth: 1, borderTopColor: Colors.border,
+    paddingTop: 10, marginBottom: 4, alignItems: "center",
+  },
+  dividerTxt: { fontSize: 12, color: Colors.textMuted, fontWeight: "600" },
 
   /* list */
   list: { padding: 12, gap: 10 },
