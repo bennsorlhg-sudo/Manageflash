@@ -239,7 +239,25 @@ router.put("/transactions/:id", requireAuth, async (req, res) => {
       if (tx.type === "sale") {
         const diff = newAmt - oldAmt;
 
-        if (oldPt === "cash" && newPt === "cash") {
+        if (oldPt === "collect" && newPt === "collect") {
+          /* تحصيل سلفة: عكّس الفرق على الصندوق وعدّل paidAmount للدين */
+          const refMatch = (tx.referenceId ?? "").match(/^COLLECT-DEBT-(\d+)-/);
+          const debtId   = refMatch ? parseInt(refMatch[1]) : null;
+          if (debtId && Math.abs(diff) > 0.001) {
+            await dbTx.execute(
+              sql`UPDATE cash_box SET balance = balance + ${diff}, updated_at = NOW() WHERE id = 1`
+            );
+            /* احسب paidAmount الجديد ثم حدّث */
+            const [debtRow] = await dbTx.select().from(debtsTable).where(eq(debtsTable.id, debtId)).limit(1);
+            if (debtRow) {
+              const newPaid   = Math.max(0, parseFloat(debtRow.paidAmount) + diff);
+              const newStatus = newPaid >= parseFloat(debtRow.amount) ? "paid" : newPaid > 0 ? "partial" : "pending";
+              await dbTx.update(debtsTable)
+                .set({ paidAmount: String(newPaid), status: newStatus as any, updatedAt: new Date() })
+                .where(eq(debtsTable.id, debtId));
+            }
+          }
+        } else if (oldPt === "cash" && newPt === "cash") {
           /* نقد → نقد: عدّل الفرق على الصندوق */
           if (Math.abs(diff) > 0.001) {
             await dbTx.execute(
@@ -305,7 +323,25 @@ router.put("/transactions/:id", requireAuth, async (req, res) => {
 
       /* ══ مصروفات ══ */
       if (tx.type === "expense") {
-        if (oldPt === "cash" && newPt === "cash") {
+        if (oldPt === "loan_payment" && newPt === "loan_payment") {
+          /* سداد دين: عكّس الفرق على الصندوق وعدّل paidAmount للقرض */
+          const refMatch = (tx.referenceId ?? "").match(/^PAY-LOAN-(\d+)-/);
+          const loanId   = refMatch ? parseInt(refMatch[1]) : null;
+          const diff     = newAmt - oldAmt;
+          if (loanId && Math.abs(diff) > 0.001) {
+            await dbTx.execute(
+              sql`UPDATE cash_box SET balance = balance - ${diff}, updated_at = NOW() WHERE id = 1`
+            );
+            const [loanRow] = await dbTx.select().from(loansTable).where(eq(loansTable.id, loanId)).limit(1);
+            if (loanRow) {
+              const newPaid   = Math.max(0, parseFloat(loanRow.paidAmount) + diff);
+              const newStatus = newPaid >= parseFloat(loanRow.amount) ? "paid" : newPaid > 0 ? "partial" : "pending";
+              await dbTx.update(loansTable)
+                .set({ paidAmount: String(newPaid), status: newStatus as any, updatedAt: new Date() })
+                .where(eq(loansTable.id, loanId));
+            }
+          }
+        } else if (oldPt === "cash" && newPt === "cash") {
           const diff = newAmt - oldAmt;
           if (Math.abs(diff) > 0.001) {
             await dbTx.execute(
@@ -442,11 +478,18 @@ router.post("/transactions/collect", requireAuth, async (req, res) => {
 
 router.get("/transactions", requireAuth, async (req, res) => {
   try {
-    const { type, from, to, limit: limitStr = "50" } = req.query as any;
+    const { type, from, to, limit: limitStr = "50", ops } = req.query as any;
     const limit = Math.min(parseInt(limitStr), 200);
 
     let conditions: any[] = [];
-    if (type) conditions.push(eq(financialTransactionsTable.type, type));
+    if (ops === "1") {
+      /* عمليات التحصيل والسداد فقط */
+      conditions.push(
+        sql`${financialTransactionsTable.paymentType} IN ('collect', 'loan_payment')`
+      );
+    } else {
+      if (type) conditions.push(eq(financialTransactionsTable.type, type));
+    }
     if (from) conditions.push(gte(financialTransactionsTable.createdAt, new Date(from)));
     if (to) conditions.push(lte(financialTransactionsTable.createdAt, new Date(to)));
 

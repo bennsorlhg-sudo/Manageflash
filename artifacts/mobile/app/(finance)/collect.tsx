@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from "react";
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  TextInput, Platform, Modal, ActivityIndicator, RefreshControl,
+  Platform, Modal, ActivityIndicator, RefreshControl, TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,16 +9,16 @@ import { useFocusEffect } from "expo-router";
 import { Colors } from "@/constants/colors";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
-import { apiGet, apiPost, formatCurrency } from "@/utils/api";
+import { apiGet, apiPost, apiPut, formatCurrency, formatDate } from "@/utils/api";
 
-type Mode = "collect" | "pay";
+type Tab = "collect" | "pay" | "ops";
 
 const ENTITY_LABELS: Record<string, { label: string; color: string }> = {
-  hotspot:     { label: "هوتسبوت",   color: Colors.info    },
-  broadband:   { label: "برودباند",  color: Colors.primary },
-  sales_point: { label: "نقطة بيع",  color: Colors.warning },
-  supplier:    { label: "مورّد",     color: "#9b59b6"       },
-  other:       { label: "أخرى",      color: Colors.textMuted },
+  hotspot:     { label: "هوتسبوت",  color: Colors.info    },
+  broadband:   { label: "برودباند", color: Colors.primary },
+  sales_point: { label: "نقطة بيع", color: Colors.warning },
+  supplier:    { label: "مورّد",    color: "#9b59b6"       },
+  other:       { label: "أخرى",     color: Colors.textMuted },
 };
 
 function EntityBadge({ type }: { type?: string | null }) {
@@ -63,70 +63,117 @@ export default function CollectScreen() {
   const router    = useRouter();
   const { token } = useAuth();
 
-  const [mode,       setMode]       = useState<Mode>("collect");
-  const [search,     setSearch]     = useState("");
+  const [tab,        setTab]        = useState<Tab>("collect");
   const [debts,      setDebts]      = useState<any[]>([]);
   const [loans,      setLoans]      = useState<any[]>([]);
+  const [ops,        setOps]        = useState<any[]>([]);
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  /* ─── حالة نافذة التحصيل / السداد ─── */
   const [selected,   setSelected]   = useState<any>(null);
   const [amtInput,   setAmtInput]   = useState("");
   const [notesInput, setNotesInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [alert, setAlert] = useState({ visible: false, title: "", message: "", color: Colors.success });
 
+  /* ─── حالة نافذة تعديل العملية ─── */
+  const [editOp,    setEditOp]    = useState<any>(null);
+  const [editAmt,   setEditAmt]   = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
+  const [alert, setAlert] = useState({ visible: false, title: "", message: "", color: Colors.success });
   const showAlert = (title: string, message: string, color = Colors.success) =>
     setAlert({ visible: true, title, message, color });
 
-  const fetchData = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     try {
-      const [d, l] = await Promise.all([apiGet("/debts", token), apiGet("/loans", token)]);
+      const [d, l, o] = await Promise.all([
+        apiGet("/debts",              token),
+        apiGet("/loans",              token),
+        apiGet("/transactions?ops=1&limit=200", token),
+      ]);
       setDebts(Array.isArray(d) ? d : []);
       setLoans(Array.isArray(l) ? l : []);
+      setOps(Array.isArray(o) ? o : []);
     } catch {} finally {
       setLoading(false); setRefreshing(false);
     }
   }, [token]);
 
-  useFocusEffect(useCallback(() => { fetchData(); }, [fetchData]));
+  useFocusEffect(useCallback(() => { fetchAll(); }, [fetchAll]));
 
-  /* القائمة الحالية حسب الوضع */
-  const rawList = mode === "collect" ? debts : loans;
-  const list = rawList
-    .map((item: any) => ({
-      ...item,
-      remaining: Math.max(0, parseFloat(item.amount ?? "0") - parseFloat(item.paidAmount ?? "0")),
+  /* ─── قوائم مُعالَجة ─── */
+  const debtList = debts
+    .map((d: any) => ({
+      ...d,
+      remaining: Math.max(0, parseFloat(d.amount ?? "0") - parseFloat(d.paidAmount ?? "0")),
     }))
-    .filter((item: any) => item.remaining > 0.01 && (item.personName ?? "").includes(search))
+    .filter((d: any) => d.remaining > 0.01)
     .sort((a: any, b: any) => b.remaining - a.remaining);
 
+  const loanList = loans
+    .map((l: any) => ({
+      ...l,
+      remaining: Math.max(0, parseFloat(l.amount ?? "0") - parseFloat(l.paidAmount ?? "0")),
+    }))
+    .filter((l: any) => l.remaining > 0.01)
+    .sort((a: any, b: any) => b.remaining - a.remaining);
+
+  /* ─── الإجماليات ─── */
+  const totalDebtsOwed = debtList.reduce((s: number, d: any) => s + d.remaining, 0);
+  const totalLoansOwed = loanList.reduce((s: number, l: any) => s + l.remaining, 0);
+
+  /* ─── تحصيل / سداد ─── */
   const handleSubmit = async () => {
     const amt = parseFloat(amtInput.replace(/[^0-9.]/g, ""));
     if (!amt || amt <= 0) return showAlert("خطأ", "أدخل مبلغاً صحيحاً", Colors.error);
     if (amt > selected.remaining + 0.01) return showAlert("خطأ", "المبلغ أكبر من المتبقي", Colors.error);
-
     setSubmitting(true);
     try {
       await apiPost("/transactions/collect", token, {
-        sourceType: mode === "collect" ? "debt" : "loan",
+        sourceType: tab === "collect" ? "debt" : "loan",
         sourceId:   selected.id,
         amount:     amt,
         notes:      notesInput.trim() || undefined,
       });
-      await fetchData();
-      const personLabel = selected.personName;
-      const amtLabel    = formatCurrency(amt);
-      const msg = mode === "collect"
-        ? `تم تحصيل ${amtLabel} من ${personLabel}\n↑ يزيد الصندوق النقدي`
-        : `تم سداد ${amtLabel} لـ ${personLabel}\n↓ ينقص من الصندوق النقدي`;
+      await fetchAll();
+      const label = formatCurrency(amt);
+      const msg = tab === "collect"
+        ? `تم تحصيل ${label} من ${selected.personName}\n↑ يزيد الصندوق النقدي`
+        : `تم سداد ${label} لـ ${selected.personName}\n↓ ينقص من الصندوق النقدي`;
       setSelected(null); setAmtInput(""); setNotesInput("");
-      showAlert(mode === "collect" ? "تم التحصيل ✓" : "تم السداد ✓", msg);
+      showAlert(tab === "collect" ? "تم التحصيل ✓" : "تم السداد ✓", msg);
     } catch (e: any) {
       showAlert("خطأ", e?.message ?? "فشلت العملية", Colors.error);
     } finally { setSubmitting(false); }
   };
 
-  const modeColor = mode === "collect" ? Colors.success : Colors.error;
+  /* ─── تعديل عملية ─── */
+  const openEdit = (op: any) => {
+    setEditOp(op);
+    setEditAmt(String(parseFloat(op.amount ?? "0")));
+    setEditNotes(op.description ?? "");
+  };
+
+  const handleEdit = async () => {
+    const amt = parseFloat(editAmt.replace(/[^0-9.]/g, ""));
+    if (!amt || amt <= 0) return showAlert("خطأ", "أدخل مبلغاً صحيحاً", Colors.error);
+    setEditSaving(true);
+    try {
+      await apiPut(`/transactions/${editOp.id}`, token, {
+        amount:      amt,
+        description: editNotes.trim() || undefined,
+      });
+      await fetchAll();
+      setEditOp(null);
+      showAlert("تم التعديل ✓", `تم تحديث العملية وانعكس الفرق على الحسابات المرتبطة`);
+    } catch (e: any) {
+      showAlert("خطأ", e?.message ?? "فشل التعديل", Colors.error);
+    } finally { setEditSaving(false); }
+  };
+
+  const modeColor = tab === "collect" ? Colors.success : Colors.error;
 
   if (loading) {
     return (
@@ -135,6 +182,12 @@ export default function CollectScreen() {
       </View>
     );
   }
+
+  const TABS: { key: Tab; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
+    { key: "collect", label: "تحصيل سلفة", icon: "arrow-down-circle", color: Colors.success },
+    { key: "pay",     label: "سداد دين",   icon: "arrow-up-circle",   color: Colors.error   },
+    { key: "ops",     label: "العمليات",   icon: "list-outline",       color: "#9b59b6"       },
+  ];
 
   return (
     <View style={[s.container, { paddingTop: Platform.OS === "web" ? 20 : insets.top }]}>
@@ -148,132 +201,245 @@ export default function CollectScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {/* ─── اختيار الوضع ─── */}
-      <View style={s.modeRow}>
-        {([
-          { key: "collect", label: "تحصيل سلفة",  icon: "arrow-down-circle"  as const, color: Colors.success, sub: "عملاء يدينون لنا" },
-          { key: "pay",     label: "سداد دين",     icon: "arrow-up-circle"    as const, color: Colors.error,   sub: "نحن ندين لجهات"  },
-        ] as const).map(m => (
+      {/* ─── التبويبات ─── */}
+      <View style={s.tabRow}>
+        {TABS.map(t => (
           <TouchableOpacity
-            key={m.key}
-            style={[s.modeCard, mode === m.key && { borderColor: m.color, backgroundColor: m.color + "12" }]}
-            onPress={() => { setMode(m.key); setSearch(""); setSelected(null); }}
+            key={t.key}
+            style={[s.tabBtn, tab === t.key && { borderBottomColor: t.color, borderBottomWidth: 2.5 }]}
+            onPress={() => { setTab(t.key); setSelected(null); }}
           >
-            <Ionicons name={m.icon} size={28} color={mode === m.key ? m.color : Colors.textMuted} />
-            <Text style={[s.modeLabel, mode === m.key && { color: m.color }]}>{m.label}</Text>
-            <Text style={s.modeSub}>{m.sub}</Text>
-            {mode === m.key && (
-              <View style={[s.modeCheck, { backgroundColor: m.color }]}>
-                <Ionicons name="checkmark" size={11} color="#fff" />
-              </View>
-            )}
+            <Ionicons name={t.icon} size={16} color={tab === t.key ? t.color : Colors.textMuted} />
+            <Text style={[s.tabLabel, { color: tab === t.key ? t.color : Colors.textMuted }]}>
+              {t.label}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* ─── بحث ─── */}
-      <View style={s.searchWrap}>
-        <TextInput
-          style={s.searchInput} placeholder="بحث بالاسم..."
-          placeholderTextColor={Colors.textMuted}
-          value={search} onChangeText={setSearch} textAlign="right"
-        />
-        <Ionicons name="search" size={18} color={Colors.textMuted} style={{ marginLeft: 8 }} />
-      </View>
-
-      {/* ─── القائمة ─── */}
-      <ScrollView
-        contentContainerStyle={s.content}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} tintColor={Colors.primary} />}
-      >
-        {list.length === 0 ? (
-          <View style={s.empty}>
-            <Ionicons name="checkmark-done-circle-outline" size={56} color={Colors.textMuted} />
-            <Text style={s.emptyTxt}>لا توجد سجلات مفتوحة</Text>
-            <Text style={s.emptySub}>
-              {mode === "collect" ? "جميع السلف مسددة" : "جميع الديون مسددة"}
-            </Text>
-          </View>
-        ) : list.map((item: any) => {
-          const pct     = Math.min((parseFloat(item.paidAmount ?? "0") / parseFloat(item.amount ?? "1")) * 100, 100);
-          const isSelected = selected?.id === item.id;
-          return (
-            <View key={item.id} style={[s.card, isSelected && { borderColor: modeColor, borderWidth: 1.5 }]}>
-              {/* الصف الأعلى: الاسم + النوع */}
-              <View style={s.cardTop}>
-                <EntityBadge type={item.entityType} />
-                <Text style={s.personName} numberOfLines={1}>{item.personName}</Text>
-              </View>
-
-              {/* الإحصائيات */}
-              <View style={s.statsRow}>
-                <View style={s.stat}>
-                  <Text style={s.statVal}>{formatCurrency(parseFloat(item.amount ?? "0"))}</Text>
-                  <Text style={s.statKey}>الإجمالي</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.stat}>
-                  <Text style={s.statVal}>{formatCurrency(parseFloat(item.paidAmount ?? "0"))}</Text>
-                  <Text style={s.statKey}>المسدد</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.stat}>
-                  <Text style={[s.statVal, { color: modeColor, fontWeight: "800" }]}>
-                    {formatCurrency(item.remaining)}
-                  </Text>
-                  <Text style={s.statKey}>المتبقي</Text>
-                </View>
-              </View>
-
-              {/* شريط التقدم */}
-              <View style={s.progressBg}>
-                <View style={[s.progressFill, { width: `${pct}%` as any, backgroundColor: modeColor }]} />
-              </View>
-
-              {/* ملاحظة إن وجدت */}
-              {!!item.notes && (
-                <Text style={s.noteText} numberOfLines={1}>{item.notes}</Text>
-              )}
-
-              {/* زر الإجراء */}
-              <TouchableOpacity
-                style={[s.actionBtn, { backgroundColor: modeColor }]}
-                onPress={() => { setSelected(item); setAmtInput(""); setNotesInput(""); }}
-              >
-                <Ionicons name={mode === "collect" ? "arrow-down" : "arrow-up"} size={16} color="#fff" />
-                <Text style={s.actionBtnTxt}>
-                  {mode === "collect" ? "تحصيل سلفة" : "سداد دين"}
-                </Text>
-              </TouchableOpacity>
+      {/* ═══════════════════════════════════
+          تبويب: تحصيل سلفة
+      ═══════════════════════════════════ */}
+      {tab === "collect" && (
+        <ScrollView
+          contentContainerStyle={s.content}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={Colors.primary} />}
+        >
+          {/* إجمالي السلف */}
+          <View style={[s.totalCard, { borderColor: Colors.success + "60", backgroundColor: Colors.success + "0E" }]}>
+            <View style={s.totalCardLeft}>
+              <Ionicons name="trending-up" size={28} color={Colors.success} />
             </View>
-          );
-        })}
-        <View style={{ height: 60 }} />
-      </ScrollView>
+            <View style={s.totalCardRight}>
+              <Text style={s.totalCardLabel}>إجمالي السلف المستحقة لنا</Text>
+              <Text style={[s.totalCardAmount, { color: Colors.success }]}>
+                {formatCurrency(totalDebtsOwed)}
+              </Text>
+              <Text style={s.totalCardSub}>{debtList.length} سلفة مفتوحة</Text>
+            </View>
+          </View>
 
-      {/* ══════════════════════ Modal التحصيل / السداد ══════════════════════ */}
+          <Text style={s.sectionTitle}>كشف السلف</Text>
+
+          {debtList.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons name="checkmark-done-circle-outline" size={56} color={Colors.textMuted} />
+              <Text style={s.emptyTxt}>جميع السلف مسددة</Text>
+            </View>
+          ) : debtList.map((item: any) => {
+            const pct = Math.min((parseFloat(item.paidAmount ?? "0") / parseFloat(item.amount ?? "1")) * 100, 100);
+            const isSelected = selected?.id === item.id && tab === "collect";
+            return (
+              <View key={item.id} style={[s.card, isSelected && { borderColor: Colors.success, borderWidth: 1.5 }]}>
+                <View style={s.cardTop}>
+                  <EntityBadge type={item.entityType} />
+                  <Text style={s.personName} numberOfLines={1}>{item.personName}</Text>
+                </View>
+                <View style={s.statsRow}>
+                  <View style={s.stat}>
+                    <Text style={s.statVal}>{formatCurrency(parseFloat(item.amount ?? "0"))}</Text>
+                    <Text style={s.statKey}>الإجمالي</Text>
+                  </View>
+                  <View style={s.statDivider} />
+                  <View style={s.stat}>
+                    <Text style={s.statVal}>{formatCurrency(parseFloat(item.paidAmount ?? "0"))}</Text>
+                    <Text style={s.statKey}>المسدد</Text>
+                  </View>
+                  <View style={s.statDivider} />
+                  <View style={s.stat}>
+                    <Text style={[s.statVal, { color: Colors.success, fontWeight: "800" }]}>
+                      {formatCurrency(item.remaining)}
+                    </Text>
+                    <Text style={s.statKey}>المتبقي</Text>
+                  </View>
+                </View>
+                <View style={s.progressBg}>
+                  <View style={[s.progressFill, { width: `${pct}%` as any, backgroundColor: Colors.success }]} />
+                </View>
+                {!!item.notes && <Text style={s.noteText} numberOfLines={1}>{item.notes}</Text>}
+                <TouchableOpacity
+                  style={[s.actionBtn, { backgroundColor: Colors.success }]}
+                  onPress={() => { setSelected(item); setAmtInput(""); setNotesInput(""); }}
+                >
+                  <Ionicons name="arrow-down" size={16} color="#fff" />
+                  <Text style={s.actionBtnTxt}>تحصيل سلفة</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      )}
+
+      {/* ═══════════════════════════════════
+          تبويب: سداد دين
+      ═══════════════════════════════════ */}
+      {tab === "pay" && (
+        <ScrollView
+          contentContainerStyle={s.content}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={Colors.primary} />}
+        >
+          {/* إجمالي الديون */}
+          <View style={[s.totalCard, { borderColor: Colors.error + "60", backgroundColor: Colors.error + "0E" }]}>
+            <View style={s.totalCardLeft}>
+              <Ionicons name="trending-down" size={28} color={Colors.error} />
+            </View>
+            <View style={s.totalCardRight}>
+              <Text style={s.totalCardLabel}>إجمالي الديون المستحقة علينا</Text>
+              <Text style={[s.totalCardAmount, { color: Colors.error }]}>
+                {formatCurrency(totalLoansOwed)}
+              </Text>
+              <Text style={s.totalCardSub}>{loanList.length} دين مفتوح</Text>
+            </View>
+          </View>
+
+          <Text style={s.sectionTitle}>كشف الديون</Text>
+
+          {loanList.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons name="checkmark-done-circle-outline" size={56} color={Colors.textMuted} />
+              <Text style={s.emptyTxt}>جميع الديون مسددة</Text>
+            </View>
+          ) : loanList.map((item: any) => {
+            const pct = Math.min((parseFloat(item.paidAmount ?? "0") / parseFloat(item.amount ?? "1")) * 100, 100);
+            const isSelected = selected?.id === item.id && tab === "pay";
+            return (
+              <View key={item.id} style={[s.card, isSelected && { borderColor: Colors.error, borderWidth: 1.5 }]}>
+                <View style={s.cardTop}>
+                  <EntityBadge type={item.entityType} />
+                  <Text style={s.personName} numberOfLines={1}>{item.personName}</Text>
+                </View>
+                <View style={s.statsRow}>
+                  <View style={s.stat}>
+                    <Text style={s.statVal}>{formatCurrency(parseFloat(item.amount ?? "0"))}</Text>
+                    <Text style={s.statKey}>الإجمالي</Text>
+                  </View>
+                  <View style={s.statDivider} />
+                  <View style={s.stat}>
+                    <Text style={s.statVal}>{formatCurrency(parseFloat(item.paidAmount ?? "0"))}</Text>
+                    <Text style={s.statKey}>المسدد</Text>
+                  </View>
+                  <View style={s.statDivider} />
+                  <View style={s.stat}>
+                    <Text style={[s.statVal, { color: Colors.error, fontWeight: "800" }]}>
+                      {formatCurrency(item.remaining)}
+                    </Text>
+                    <Text style={s.statKey}>المتبقي</Text>
+                  </View>
+                </View>
+                <View style={s.progressBg}>
+                  <View style={[s.progressFill, { width: `${pct}%` as any, backgroundColor: Colors.error }]} />
+                </View>
+                {!!item.notes && <Text style={s.noteText} numberOfLines={1}>{item.notes}</Text>}
+                <TouchableOpacity
+                  style={[s.actionBtn, { backgroundColor: Colors.error }]}
+                  onPress={() => { setSelected(item); setAmtInput(""); setNotesInput(""); }}
+                >
+                  <Ionicons name="arrow-up" size={16} color="#fff" />
+                  <Text style={s.actionBtnTxt}>سداد دين</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      )}
+
+      {/* ═══════════════════════════════════
+          تبويب: العمليات
+      ═══════════════════════════════════ */}
+      {tab === "ops" && (
+        <ScrollView
+          contentContainerStyle={s.content}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} tintColor={Colors.primary} />}
+        >
+          {ops.length === 0 ? (
+            <View style={s.empty}>
+              <Ionicons name="receipt-outline" size={56} color={Colors.textMuted} />
+              <Text style={s.emptyTxt}>لا توجد عمليات</Text>
+            </View>
+          ) : ops.map((op: any) => {
+            const isCollect = op.paymentType === "collect";
+            const opColor   = isCollect ? Colors.success : Colors.error;
+            const opLabel   = isCollect ? "تحصيل سلفة" : "سداد دين";
+            const opIcon: keyof typeof Ionicons.glyphMap = isCollect ? "arrow-down-circle" : "arrow-up-circle";
+            return (
+              <View key={op.id} style={s.opCard}>
+                {/* السطر الأعلى: أيقونة النوع + الاسم + المبلغ */}
+                <View style={s.opTop}>
+                  <Text style={[s.opAmount, { color: opColor }]}>
+                    {isCollect ? "+" : "−"}{formatCurrency(parseFloat(op.amount ?? "0"))}
+                  </Text>
+                  <View style={[s.opBadge, { backgroundColor: opColor + "18" }]}>
+                    <Ionicons name={opIcon} size={13} color={opColor} />
+                    <Text style={[s.opBadgeTxt, { color: opColor }]}>{opLabel}</Text>
+                  </View>
+                  <Text style={s.opName} numberOfLines={1}>{op.personName ?? "—"}</Text>
+                </View>
+
+                {/* الوصف والتاريخ */}
+                {!!op.description && (
+                  <Text style={s.opDesc} numberOfLines={2}>{op.description}</Text>
+                )}
+                <Text style={s.opDate}>{formatDate(op.createdAt)}</Text>
+
+                {/* زر التعديل */}
+                <TouchableOpacity
+                  style={s.editBtn}
+                  onPress={() => openEdit(op)}
+                >
+                  <Ionicons name="create-outline" size={15} color={Colors.primary} />
+                  <Text style={s.editBtnTxt}>تعديل</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+          <View style={{ height: 60 }} />
+        </ScrollView>
+      )}
+
+      {/* ══════════ Modal التحصيل / السداد ══════════ */}
       <Modal visible={!!selected} transparent animationType="slide">
         <View style={s.modalOverlay}>
           <View style={s.modalBox}>
-
-            {/* العنوان */}
             <View style={[s.modalHeader, { backgroundColor: modeColor + "18" }]}>
               <Ionicons
-                name={mode === "collect" ? "arrow-down-circle" : "arrow-up-circle"}
+                name={tab === "collect" ? "arrow-down-circle" : "arrow-up-circle"}
                 size={22} color={modeColor}
               />
               <Text style={[s.modalTitle, { color: modeColor }]}>
-                {mode === "collect" ? "تحصيل سلفة" : "سداد دين"}
+                {tab === "collect" ? "تحصيل سلفة" : "سداد دين"}
               </Text>
             </View>
 
-            {/* اسم الجهة + النوع */}
             <View style={s.modalPersonRow}>
               {selected && <EntityBadge type={selected.entityType} />}
               <Text style={s.modalPerson} numberOfLines={1}>{selected?.personName}</Text>
             </View>
 
-            {/* ملخص: إجمالي / مسدد / متبقي */}
             <View style={s.modalSummary}>
               <View style={s.summaryItem}>
                 <Text style={s.summaryVal}>
@@ -297,7 +463,6 @@ export default function CollectScreen() {
               </View>
             </View>
 
-            {/* حقل المبلغ */}
             <Text style={s.inputLabel}>المبلغ المدفوع (ر.س)</Text>
             <TextInput
               style={[s.modalInput, { borderColor: modeColor + "60" }]}
@@ -308,29 +473,26 @@ export default function CollectScreen() {
               keyboardType="decimal-pad" textAlign="right" autoFocus
             />
 
-            {/* حقل الملاحظات */}
             <Text style={s.inputLabel}>ملاحظات (اختياري)</Text>
             <TextInput
               style={[s.modalInput, { minHeight: 56 }]}
               value={notesInput}
               onChangeText={setNotesInput}
-              placeholder="أي ملاحظات على العملية..."
+              placeholder="أي ملاحظات..."
               placeholderTextColor={Colors.textMuted}
               textAlign="right" multiline
             />
 
-            {/* الأثر على الصندوق */}
             <View style={[s.effectBox, { backgroundColor: modeColor + "12" }]}>
               <Ionicons
-                name={mode === "collect" ? "add-circle" : "remove-circle"}
+                name={tab === "collect" ? "add-circle" : "remove-circle"}
                 size={14} color={modeColor}
               />
               <Text style={[s.effectTxt, { color: modeColor }]}>
-                {mode === "collect" ? "يزيد الصندوق النقدي" : "ينقص من الصندوق النقدي"}
+                {tab === "collect" ? "يزيد الصندوق النقدي" : "ينقص من الصندوق النقدي"}
               </Text>
             </View>
 
-            {/* الأزرار */}
             <View style={s.modalBtns}>
               <TouchableOpacity
                 style={[s.confirmBtn, { backgroundColor: modeColor },
@@ -348,7 +510,71 @@ export default function CollectScreen() {
                 <Text style={s.cancelBtnTxt}>إلغاء</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
 
+      {/* ══════════ Modal تعديل العملية ══════════ */}
+      <Modal visible={!!editOp} transparent animationType="slide">
+        <View style={s.modalOverlay}>
+          <View style={s.modalBox}>
+            <View style={[s.modalHeader, { backgroundColor: "#9b59b618" }]}>
+              <Ionicons name="create-outline" size={22} color="#9b59b6" />
+              <Text style={[s.modalTitle, { color: "#9b59b6" }]}>تعديل العملية</Text>
+            </View>
+
+            {editOp && (
+              <View style={[s.opBadge, { backgroundColor: (editOp.paymentType === "collect" ? Colors.success : Colors.error) + "18", alignSelf: "flex-end" }]}>
+                <Text style={[s.opBadgeTxt, { color: editOp.paymentType === "collect" ? Colors.success : Colors.error }]}>
+                  {editOp.paymentType === "collect" ? "تحصيل سلفة" : "سداد دين"} — {editOp.personName}
+                </Text>
+              </View>
+            )}
+
+            <Text style={s.inputLabel}>المبلغ الجديد (ر.س)</Text>
+            <TextInput
+              style={[s.modalInput, { borderColor: "#9b59b660" }]}
+              value={editAmt}
+              onChangeText={v => setEditAmt(v.replace(/[^0-9.]/g, ""))}
+              placeholder="0.00"
+              placeholderTextColor={Colors.textMuted}
+              keyboardType="decimal-pad" textAlign="right" autoFocus
+            />
+
+            <Text style={s.inputLabel}>الوصف / الملاحظات</Text>
+            <TextInput
+              style={[s.modalInput, { minHeight: 56 }]}
+              value={editNotes}
+              onChangeText={setEditNotes}
+              placeholder="وصف العملية..."
+              placeholderTextColor={Colors.textMuted}
+              textAlign="right" multiline
+            />
+
+            <View style={[s.effectBox, { backgroundColor: "#9b59b612" }]}>
+              <Ionicons name="information-circle" size={14} color="#9b59b6" />
+              <Text style={[s.effectTxt, { color: "#9b59b6" }]}>
+                الفرق ينعكس تلقائياً على الصندوق والسلفة / الدين المرتبط
+              </Text>
+            </View>
+
+            <View style={s.modalBtns}>
+              <TouchableOpacity
+                style={[s.confirmBtn, { backgroundColor: "#9b59b6" },
+                  (editSaving || !editAmt) && { opacity: 0.5 }]}
+                onPress={handleEdit} disabled={editSaving || !editAmt}
+              >
+                {editSaving
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={s.confirmBtnTxt}>حفظ التعديل</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={s.cancelBtn}
+                onPress={() => setEditOp(null)}
+              >
+                <Text style={s.cancelBtnTxt}>إلغاء</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -372,31 +598,44 @@ const s = StyleSheet.create({
   },
   headerTitle: { fontSize: 20, fontWeight: "bold", color: Colors.text },
 
-  modeRow: { flexDirection: "row-reverse", gap: 10, paddingHorizontal: 16, paddingVertical: 12 },
-  modeCard: {
-    flex: 1, borderRadius: 14, borderWidth: 1.5, borderColor: Colors.border,
-    backgroundColor: Colors.surface, padding: 14, alignItems: "center", gap: 4,
+  /* ─ تبويبات ─ */
+  tabRow: {
+    flexDirection: "row-reverse",
+    borderBottomWidth: 1, borderBottomColor: Colors.border,
+    backgroundColor: Colors.surface,
   },
-  modeLabel: { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  modeSub:   { fontSize: 10, color: Colors.textMuted },
-  modeCheck: {
-    position: "absolute", top: 8, left: 8, width: 18, height: 18,
-    borderRadius: 9, justifyContent: "center", alignItems: "center",
+  tabBtn: {
+    flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 5, paddingVertical: 12,
+    borderBottomWidth: 2, borderBottomColor: "transparent",
+  },
+  tabLabel: { fontSize: 12, fontWeight: "700" },
+
+  /* ─ بطاقة الإجمالي ─ */
+  totalCard: {
+    flexDirection: "row-reverse", alignItems: "center",
+    borderRadius: 16, borderWidth: 1,
+    padding: 16, marginBottom: 16, gap: 14,
+  },
+  totalCardLeft: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: "#ffffff18",
+    justifyContent: "center", alignItems: "center",
+  },
+  totalCardRight: { flex: 1, gap: 3 },
+  totalCardLabel:  { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
+  totalCardAmount: { fontSize: 24, fontWeight: "900", textAlign: "right" },
+  totalCardSub:    { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+
+  sectionTitle: {
+    fontSize: 14, fontWeight: "700", color: Colors.textSecondary,
+    textAlign: "right", marginBottom: 10,
   },
 
-  searchWrap: {
-    flexDirection: "row", alignItems: "center",
-    marginHorizontal: 16, marginBottom: 8,
-    backgroundColor: Colors.surface, borderRadius: 10,
-    paddingHorizontal: 12, borderWidth: 1, borderColor: Colors.border, height: 44,
-  },
-  searchInput: { flex: 1, color: Colors.text, fontSize: 14 },
-
-  content: { paddingHorizontal: 16, paddingTop: 4 },
+  content: { paddingHorizontal: 16, paddingTop: 16 },
 
   empty: { alignItems: "center", paddingTop: 80, gap: 10 },
   emptyTxt: { fontSize: 16, color: Colors.textSecondary, fontWeight: "600" },
-  emptySub:  { fontSize: 13, color: Colors.textMuted },
 
   card: {
     backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
@@ -422,6 +661,29 @@ const s = StyleSheet.create({
   },
   actionBtnTxt: { color: "#fff", fontSize: 14, fontWeight: "700" },
 
+  /* ─ بطاقة العملية ─ */
+  opCard: {
+    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
+    marginBottom: 10, borderWidth: 1, borderColor: Colors.border, gap: 6,
+  },
+  opTop: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+  opName: { flex: 1, fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right" },
+  opAmount: { fontSize: 16, fontWeight: "800" },
+  opBadge: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3,
+  },
+  opBadgeTxt: { fontSize: 11, fontWeight: "700" },
+  opDesc: { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
+  opDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+  editBtn: {
+    flexDirection: "row-reverse", alignItems: "center", gap: 5,
+    alignSelf: "flex-end",
+    backgroundColor: Colors.primary + "15",
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7,
+  },
+  editBtnTxt: { fontSize: 13, fontWeight: "600", color: Colors.primary },
+
   /* ── Modal ── */
   modalOverlay: { flex: 1, backgroundColor: "#00000080", justifyContent: "flex-end" },
   modalBox: {
@@ -432,9 +694,9 @@ const s = StyleSheet.create({
     flexDirection: "row-reverse", alignItems: "center", gap: 8,
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
   },
-  modalTitle:     { fontSize: 16, fontWeight: "800" },
+  modalTitle: { fontSize: 16, fontWeight: "800" },
   modalPersonRow: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
-  modalPerson:    { flex: 1, fontSize: 15, fontWeight: "700", color: Colors.text, textAlign: "right" },
+  modalPerson: { flex: 1, fontSize: 15, fontWeight: "700", color: Colors.text, textAlign: "right" },
 
   modalSummary: {
     flexDirection: "row-reverse", justifyContent: "space-between",
@@ -454,12 +716,12 @@ const s = StyleSheet.create({
   },
 
   effectBox: { flexDirection: "row-reverse", alignItems: "center", gap: 6, borderRadius: 8, padding: 10 },
-  effectTxt: { fontSize: 12, fontWeight: "600" },
+  effectTxt: { fontSize: 12, fontWeight: "600", flex: 1, textAlign: "right" },
 
   modalBtns:  { flexDirection: "row-reverse", gap: 10 },
   confirmBtn: { flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   confirmBtnTxt: { color: "#fff", fontSize: 15, fontWeight: "800" },
-  cancelBtn:  {
+  cancelBtn: {
     flex: 1, borderRadius: 12, paddingVertical: 14, alignItems: "center",
     backgroundColor: Colors.border,
   },
