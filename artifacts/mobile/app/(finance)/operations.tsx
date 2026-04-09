@@ -668,6 +668,12 @@ export default function OperationsScreen() {
     return periodItems.filter(item => getOpMeta(item).tag === chip);
   }, [periodItems, chip]);
 
+  /* ─── إجمالي المبلغ للنوع المحدد ─── */
+  const chipTotal = useMemo(() => {
+    if (chip === "all") return 0;
+    return displayed.reduce((sum, item) => sum + parseFloat(item.amount ?? "0"), 0);
+  }, [displayed, chip]);
+
   /* ─── حذف ─── */
   const handleDelete = async () => {
     if (!deleteItem) return;
@@ -777,12 +783,33 @@ export default function OperationsScreen() {
           })}
         </View>
 
+        {/* بطاقة الإجمالي — تظهر فقط عند تحديد نوع معين */}
+        {chip !== "all" && (() => {
+          const activeChip = OP_CHIPS.find(c => c.key === chip)!;
+          return (
+            <View style={[s.totalCard, { borderColor: activeChip.color + "50", backgroundColor: activeChip.color + "0D" }]}>
+              <View style={s.totalCardTop}>
+                <View style={[s.totalIconWrap, { backgroundColor: activeChip.color + "20" }]}>
+                  <Ionicons name={activeChip.icon} size={20} color={activeChip.color} />
+                </View>
+                <Text style={[s.totalTitle, { color: activeChip.color }]}>{activeChip.label}</Text>
+                <View style={[s.totalCountBadge, { backgroundColor: activeChip.color + "20" }]}>
+                  <Text style={[s.totalCountTxt, { color: activeChip.color }]}>{displayed.length} عملية</Text>
+                </View>
+              </View>
+              <View style={s.totalDivider} />
+              <Text style={s.totalLbl}>إجمالي المبالغ</Text>
+              <Text style={[s.totalAmt, { color: activeChip.color }]}>{formatCurrency(chipTotal)}</Text>
+            </View>
+          );
+        })()}
+
         {/* فاصل */}
         <View style={s.divider}>
           <Text style={s.dividerTxt}>
             {chip === "all"
               ? `جميع العمليات (${displayed.length})`
-              : `${OP_CHIPS.find(c => c.key === chip)?.label} (${displayed.length})`}
+              : `تفاصيل ${OP_CHIPS.find(c => c.key === chip)?.label}`}
           </Text>
         </View>
 
@@ -941,6 +968,28 @@ const s = StyleSheet.create({
     paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10,
   },
   gridBadgeTxt: { fontSize: 10, fontWeight: "800" },
+
+  /* بطاقة الإجمالي */
+  totalCard: {
+    borderRadius: 16, borderWidth: 1.5,
+    padding: 16, gap: 4, alignItems: "center",
+  },
+  totalCardTop: {
+    flexDirection: "row-reverse", alignItems: "center",
+    gap: 8, width: "100%",
+  },
+  totalIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    justifyContent: "center", alignItems: "center",
+  },
+  totalTitle: { fontSize: 15, fontWeight: "800", flex: 1, textAlign: "right" },
+  totalCountBadge: {
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10,
+  },
+  totalCountTxt: { fontSize: 11, fontWeight: "700" },
+  totalDivider: { height: 1, backgroundColor: Colors.border, width: "100%", marginVertical: 8 },
+  totalLbl: { fontSize: 12, color: Colors.textMuted, textAlign: "center" },
+  totalAmt: { fontSize: 30, fontWeight: "800", textAlign: "center", letterSpacing: 0.5 },
 
   /* فاصل العنوان */
   divider: {
