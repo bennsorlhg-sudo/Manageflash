@@ -138,7 +138,10 @@ function getOpMeta(item: any): OpMeta {
       icon: "cart",
       color: Colors.success,
       tag: isHot ? "sale_hot" : "sale_bb",
-      effects: [{ label: "الصندوق النقدي", dir: "up", amount: amt }],
+      effects: [
+        { label: "الصندوق النقدي", dir: "up",   amount: amt },
+        { label: "إجمالي الكروت",  dir: "down", amount: amt },
+      ],
       canEdit: true,
     };
   }
@@ -151,7 +154,10 @@ function getOpMeta(item: any): OpMeta {
       icon: "cart-outline",
       color: Colors.warning,
       tag: isHot ? "sale_hot" : "sale_bb",
-      effects: [{ label: "سلف العملاء", dir: "up", amount: amt }],
+      effects: [
+        { label: "سلف العملاء",   dir: "up",   amount: amt },
+        { label: "إجمالي الكروت", dir: "down", amount: amt },
+      ],
       canEdit: true,
     };
   }
