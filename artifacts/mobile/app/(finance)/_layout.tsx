@@ -1,11 +1,12 @@
 import { Stack } from "expo-router";
 import React from "react";
-import { Colors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 import { View, ActivityIndicator } from "react-native";
 
 export default function FinanceLayout() {
   const { isLoading, isAuthorized } = useRoleGuard("finance_manager");
+  const Colors = useColors();
 
   if (isLoading || !isAuthorized) {
     return (

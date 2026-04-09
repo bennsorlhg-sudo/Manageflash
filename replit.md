@@ -245,9 +245,28 @@ Expo React Native mobile app with Arabic RTL layout.
 - `app/(supervisor)/` — Stack layout: dashboard, repair-ticket, installation-tickets, purchase-request, database, tasks, engineer-management, subscription-delivery, finance-audit, profile
 - `app/(tech)/` — Stack layout: home (tasks with New/In Progress/Completed tabs, call/copy buttons), profile
 - `context/AuthContext.tsx` — Auth state with AsyncStorage persistence
-- `constants/colors.ts` — Color theme + status/role color maps
+- `context/ThemeContext.tsx` — Light/Dark theme system: `useColors()` returns current ThemeColors; `useTheme()` returns `{ isDark, colors, toggleTheme }`; persists via AsyncStorage key `flash_net_theme`; only Owner can toggle theme
+- `constants/colors.ts` — Exports `DarkColors`, `LightColors`, `ThemeColors` type, `Colors` (alias for DarkColors); static `Colors` export still used by module-level constants; themed screens use `useColors()` hook
 - `components/StatusBadge.tsx` — Network point status badge
 - `components/RoleBadge.tsx` — User role badge
+
+### Theme System Pattern
+Themed screens use this pattern:
+```tsx
+import { useColors } from "@/context/ThemeContext";
+import type { ThemeColors } from "@/constants/colors";
+function makeScreenStyles(C: ThemeColors) { return StyleSheet.create({ container: { backgroundColor: C.background }, ... }); }
+export default function MyScreen() {
+  const Colors = useColors();
+  const styles = useMemo(() => makeScreenStyles(Colors), [Colors]);
+  ...
+}
+```
+Sub-components defined outside the parent also use `const Colors = useColors(); const styles = useMemo(...)`.
+
+**Fully themed screens**: login, owner/index, tech/index (+ sub-components RepairCard/InstallCard/SummaryPill/RelaySubCard), finance/index, supervisor/index
+
+**Remaining screens** (use static `import { Colors }` — dark-only for now): all sub-screens in finance/, supervisor/, owner/ folders
 
 ### `artifacts/mockup-sandbox` (`@workspace/mockup-sandbox`)
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Platform, ActivityIndicator, RefreshControl, Modal, TextInput,
@@ -6,12 +6,14 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import { Colors } from "@/constants/colors";
+import { Colors as StaticColors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
+import { useTheme } from "@/context/ThemeContext";
 import { useAuth } from "@/context/AuthContext";
 import { apiGet, apiPost, apiPatch, apiDelete, formatCurrency, formatDate, DENOMINATIONS, CARD_PRICES } from "@/utils/api";
 
 /* ─────────────────────────────────────────────────────
-   بطاقة KPI — نفس تصميم المسؤول المالي
+   بطاقة KPI
 ───────────────────────────────────────────────────── */
 function KPICard({
   title, value, icon, color, subtitle,
@@ -19,6 +21,8 @@ function KPICard({
   title: string; value: number;
   icon: keyof typeof Ionicons.glyphMap; color: string; subtitle?: string;
 }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
   return (
     <View style={[styles.kpiCard, { borderColor: color + "40" }]}>
       <View style={styles.kpiTop}>
@@ -39,6 +43,8 @@ function KPICard({
 function AlertModal({ visible, title, message, color, onClose }: {
   visible: boolean; title: string; message: string; color: string; onClose: () => void;
 }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.alertOverlay}>
@@ -66,6 +72,8 @@ function AlertModal({ visible, title, message, color, onClose }: {
 function ActionBtn({ label, icon, onPress, color }: {
   label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void; color: string;
 }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
   return (
     <TouchableOpacity style={[styles.actionBtn, { borderColor: color + "40" }]} onPress={onPress} activeOpacity={0.8}>
       <View style={[styles.actionIcon, { backgroundColor: color + "18" }]}>
@@ -83,6 +91,9 @@ export default function OwnerDashboard() {
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
   const router = useRouter();
+  const Colors = useColors();
+  const { isDark, toggleTheme } = useTheme();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -151,6 +162,18 @@ export default function OwnerDashboard() {
           <Ionicons name="person-circle-outline" size={28} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>لوحة المالك — {user?.name}</Text>
+        {/* زر تبديل الوضع الليلي / النهاري */}
+        <TouchableOpacity
+          onPress={toggleTheme}
+          activeOpacity={0.75}
+          style={styles.themeBtn}
+        >
+          <Ionicons
+            name={isDark ? "sunny" : "moon"}
+            size={22}
+            color={isDark ? "#F9A825" : "#5C6BC0"}
+          />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -162,7 +185,7 @@ export default function OwnerDashboard() {
       >
 
         {/* ══════════════════════════════════════════════
-            6 بطاقات KPI — نفس المسؤول المالي
+            6 بطاقات KPI
         ══════════════════════════════════════════════ */}
         <View style={styles.kpiGrid}>
           <View style={styles.kpiRow}>
@@ -180,7 +203,7 @@ export default function OwnerDashboard() {
         </View>
 
         {/* ══════════════════════════════════════════════
-            التقارير والمتابعة
+            المتابعة
         ══════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionDot, { backgroundColor: Colors.success }]} />
@@ -211,7 +234,7 @@ export default function OwnerDashboard() {
         </View>
 
         {/* ══════════════════════════════════════════════
-            إجراءات
+            الإجراءات
         ══════════════════════════════════════════════ */}
         <View style={styles.sectionHeader}>
           <View style={[styles.sectionDot, { backgroundColor: Colors.warning }]} />
@@ -307,22 +330,24 @@ export default function OwnerDashboard() {
 }
 
 /* ═══════════════════════════════════════════════════
-   Modal إضافة عهدة — مُصلح بالكامل
+   Modal إضافة عهدة
 ═══════════════════════════════════════════════════ */
 function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }: {
   visible: boolean; token: string | null;
   onClose: () => void; onSuccess: () => Promise<void>;
   onError: (msg: string) => void; insets: any;
 }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
+
   const [type,         setType]         = useState<"cash" | "cards">("cash");
-  const [amount,       setAmount]       = useState("");        /* نقد */
-  const [denomination, setDenomination] = useState(1000);     /* فئة الكرت */
-  const [cardCount,    setCardCount]    = useState("");        /* عدد الكروت */
-  const [cardsAmount,  setCardsAmount]  = useState("");        /* مبلغ الكروت (يدوي أو تلقائي) */
+  const [amount,       setAmount]       = useState("");
+  const [denomination, setDenomination] = useState(1000);
+  const [cardCount,    setCardCount]    = useState("");
+  const [cardsAmount,  setCardsAmount]  = useState("");
   const [notes,        setNotes]        = useState("");
   const [saving,       setSaving]       = useState(false);
 
-  /* ─── حساب تلقائي عند تغيير الفئة أو العدد ─── */
   const autoCalc = (count: string, denom: number) => {
     const n = parseInt(count || "0");
     if (n > 0) {
@@ -353,7 +378,6 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
       } catch (e: any) {
         onError(e?.message ?? "فشل إضافة العهدة");
       } finally { setSaving(false); }
-
     } else {
       const parsedAmt = parseFloat(cardsAmount.replace(/[^0-9.]/g, ""));
       if (!parsedAmt || parsedAmt <= 0) return onError("أدخل مبلغاً أو عدداً صحيحاً للكروت");
@@ -380,7 +404,6 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
           </View>
           <ScrollView showsVerticalScrollIndicator={false}>
 
-            {/* ── نوع العهدة ── */}
             <Text style={styles.fieldLabel}>نوع العهدة</Text>
             <View style={styles.segRow}>
               {([["cards", "كروت"], ["cash", "نقد"]] as const).map(([v, l]) => (
@@ -399,7 +422,6 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
               ))}
             </View>
 
-            {/* ══════ نقد ══════ */}
             {type === "cash" && (
               <>
                 <Text style={[styles.fieldLabel, { marginTop: 16 }]}>المبلغ (ر.س)</Text>
@@ -415,10 +437,8 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
               </>
             )}
 
-            {/* ══════ كروت ══════ */}
             {type === "cards" && (
               <>
-                {/* الفئة */}
                 <Text style={[styles.fieldLabel, { marginTop: 16 }]}>الفئة</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={{ flexDirection: "row-reverse", gap: 8 }}>
@@ -437,7 +457,6 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
                   </View>
                 </ScrollView>
 
-                {/* العدد */}
                 <Text style={[styles.fieldLabel, { marginTop: 16 }]}>العدد</Text>
                 <TextInput
                   style={styles.fieldInput}
@@ -449,7 +468,6 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
                   placeholderTextColor={Colors.textMuted}
                 />
 
-                {/* المبلغ — يدوي أو تلقائي */}
                 <View style={styles.amountLabelRow}>
                   <Text style={styles.amountHint}>
                     {cardCount && parseInt(cardCount) > 0 ? "محسوب تلقائياً — يمكن التعديل" : "أدخل المبلغ يدوياً"}
@@ -468,7 +486,6 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
               </>
             )}
 
-            {/* ملاحظات */}
             <Text style={[styles.fieldLabel, { marginTop: 16 }]}>ملاحظات (اختياري)</Text>
             <TextInput
               style={[styles.fieldInput, { height: 70 }]}
@@ -500,10 +517,10 @@ function AddCustodyModal({ visible, token, onClose, onSuccess, onError, insets }
 /* ═══════════════════════════════════════════════════
    بطاقة مهمة عند المالك
 ═══════════════════════════════════════════════════ */
-const ROLE_COLOR: Record<string, string> = {
-  finance_manager: Colors.success,
-  supervisor:      Colors.info,
-  tech_engineer:   Colors.warning,
+const ROLE_COLOR_MAP: Record<string, string> = {
+  finance_manager: StaticColors.success,
+  supervisor:      StaticColors.info,
+  tech_engineer:   StaticColors.warning,
 };
 const ROLE_LABEL: Record<string, string> = {
   finance_manager: "مسؤول مالي",
@@ -514,7 +531,9 @@ const ROLE_LABEL: Record<string, string> = {
 function OwnerTaskCard({ task, onDone, onDelete }: {
   task: any; onDone: () => void; onDelete: () => void;
 }) {
-  const color = ROLE_COLOR[task.targetRole] ?? Colors.primary;
+  const Colors = useColors();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
+  const color = ROLE_COLOR_MAP[task.targetRole] ?? Colors.primary;
   return (
     <View style={[styles.taskCard, { borderColor: color + "40" }]}>
       <View style={styles.taskTop}>
@@ -548,10 +567,13 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
   visible: boolean; token: string | null;
   onClose: () => void; onSuccess: () => void; onError: (msg: string) => void;
 }) {
-  const [members,       setMembers]       = useState<{ id: number; name: string; role: string }[]>([]);
-  const [selectedId,    setSelectedId]    = useState<number | null>(null);
-  const [description,   setDescription]   = useState("");
-  const [saving,        setSaving]        = useState(false);
+  const Colors = useColors();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
+
+  const [members,     setMembers]     = useState<{ id: number; name: string; role: string }[]>([]);
+  const [selectedId,  setSelectedId]  = useState<number | null>(null);
+  const [description, setDescription] = useState("");
+  const [saving,      setSaving]      = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -603,7 +625,7 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 4 }}>
             <View style={{ flexDirection: "row-reverse", gap: 8, paddingBottom: 4 }}>
               {members.map(m => {
-                const color = ROLE_COLOR[m.role] ?? Colors.primary;
+                const color = ROLE_COLOR_MAP[m.role] ?? Colors.primary;
                 const active = selectedId === m.id;
                 return (
                   <TouchableOpacity
@@ -652,160 +674,170 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
 }
 
 /* ═══════════════════════════════════════════════════
-   Styles
+   Styles Factory
 ═══════════════════════════════════════════════════ */
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  center:    { justifyContent: "center", alignItems: "center" },
+import type { ThemeColors } from "@/constants/colors";
 
-  header: {
-    flexDirection: "row-reverse",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  headerTitle: { fontSize: 18, fontWeight: "bold", color: Colors.text },
-  content: { padding: 14, gap: 14 },
+function makeStyles(C: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: C.background },
+    center:    { justifyContent: "center", alignItems: "center" },
 
-  /* KPI */
-  kpiGrid: { gap: 10 },
-  kpiRow:  { flexDirection: "row-reverse", gap: 10 },
-  kpiCard: {
-    flex: 1, backgroundColor: Colors.surface,
-    borderRadius: 14, borderWidth: 1.5,
-    padding: 14, gap: 6, alignItems: "flex-end",
-  },
-  kpiTop: { flexDirection: "row-reverse", alignItems: "center", gap: 8, width: "100%" },
-  kpiIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  kpiTitle: { flex: 1, fontSize: 12, fontWeight: "600", color: Colors.textSecondary, textAlign: "right" },
-  kpiValue: { fontSize: 18, fontWeight: "800", textAlign: "right" },
-  kpiSub:   { fontSize: 10, color: Colors.textMuted, textAlign: "right" },
+    header: {
+      flexDirection: "row-reverse",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: C.border,
+    },
+    headerTitle: { fontSize: 18, fontWeight: "bold", color: C.text },
+    themeBtn: {
+      width: 38, height: 38, borderRadius: 12,
+      alignItems: "center", justifyContent: "center",
+      backgroundColor: C.surfaceElevated,
+      borderWidth: 1, borderColor: C.border,
+    },
+    content: { padding: 14, gap: 14 },
 
-  /* Section */
-  sectionHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
-  sectionDot:    { width: 4, height: 18, borderRadius: 2 },
-  sectionTitle:  { fontSize: 15, fontWeight: "700", color: Colors.text },
+    /* KPI */
+    kpiGrid: { gap: 10 },
+    kpiRow:  { flexDirection: "row-reverse", gap: 10 },
+    kpiCard: {
+      flex: 1, backgroundColor: C.surface,
+      borderRadius: 14, borderWidth: 1.5,
+      padding: 14, gap: 6, alignItems: "flex-end",
+    },
+    kpiTop:   { flexDirection: "row-reverse", alignItems: "center", gap: 8, width: "100%" },
+    kpiIcon:  { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+    kpiTitle: { flex: 1, fontSize: 12, fontWeight: "600", color: C.textSecondary, textAlign: "right" },
+    kpiValue: { fontSize: 18, fontWeight: "800", textAlign: "right" },
+    kpiSub:   { fontSize: 10, color: C.textMuted, textAlign: "right" },
 
-  /* Actions */
-  actionsBlock: { gap: 10 },
-  actionRow:    { flexDirection: "row-reverse", gap: 10 },
-  actionBtn: {
-    flex: 1, backgroundColor: Colors.surface,
-    borderRadius: 14, borderWidth: 1,
-    paddingVertical: 14, alignItems: "center", gap: 8,
-  },
-  actionIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  actionLabel: { fontSize: 12, fontWeight: "700", color: Colors.text, textAlign: "center" },
+    /* Section */
+    sectionHeader: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+    sectionDot:    { width: 4, height: 18, borderRadius: 2 },
+    sectionTitle:  { fontSize: 15, fontWeight: "700", color: C.text },
 
-  /* Modal */
-  modalOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "flex-end",
-  },
-  modalContent: {
-    backgroundColor: Colors.surface,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: 24, maxHeight: "90%",
-  },
-  modalHeader: {
-    flexDirection: "row-reverse", justifyContent: "space-between",
-    alignItems: "center", marginBottom: 20,
-  },
-  modalTitle: { fontSize: 18, fontWeight: "800", color: Colors.text },
+    /* Actions */
+    actionsBlock: { gap: 10 },
+    actionRow:    { flexDirection: "row-reverse", gap: 10 },
+    actionBtn: {
+      flex: 1, backgroundColor: C.surface,
+      borderRadius: 14, borderWidth: 1,
+      paddingVertical: 14, alignItems: "center", gap: 8,
+    },
+    actionIcon:  { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+    actionLabel: { fontSize: 12, fontWeight: "700", color: C.text, textAlign: "center" },
 
-  fieldLabel: { fontSize: 13, fontWeight: "600", color: Colors.textSecondary, textAlign: "right", marginBottom: 8 },
-  fieldInput: {
-    backgroundColor: Colors.background, borderRadius: 12, padding: 13,
-    color: Colors.text, fontSize: 15, borderWidth: 1, borderColor: Colors.border,
-  },
+    /* Modal */
+    modalOverlay: {
+      flex: 1, backgroundColor: C.overlay,
+      justifyContent: "flex-end",
+    },
+    modalContent: {
+      backgroundColor: C.surface,
+      borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      padding: 24, maxHeight: "90%",
+    },
+    modalHeader: {
+      flexDirection: "row-reverse", justifyContent: "space-between",
+      alignItems: "center", marginBottom: 20,
+    },
+    modalTitle: { fontSize: 18, fontWeight: "800", color: C.text },
 
-  segRow: { flexDirection: "row-reverse", gap: 8 },
-  segBtn: {
-    flex: 1, paddingVertical: 11, flexDirection: "row-reverse",
-    alignItems: "center", justifyContent: "center", gap: 6,
-    borderRadius: 10, borderWidth: 1.5,
-    borderColor: Colors.border, backgroundColor: Colors.background,
-  },
-  segBtnActive:    { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
-  segBtnTxt:       { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  segBtnTxtActive: { color: Colors.primary },
+    fieldLabel: { fontSize: 13, fontWeight: "600", color: C.textSecondary, textAlign: "right", marginBottom: 8 },
+    fieldInput: {
+      backgroundColor: C.inputBackground, borderRadius: 12, padding: 13,
+      color: C.text, fontSize: 15, borderWidth: 1, borderColor: C.inputBorder,
+    },
 
-  denomBtn: {
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
-    borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background,
-    alignItems: "center", gap: 2,
-  },
-  denomBtnActive:    { borderColor: Colors.primary, backgroundColor: Colors.primary + "18" },
-  denomBtnTxt:       { fontSize: 13, fontWeight: "700", color: Colors.textSecondary },
-  denomBtnTxtActive: { color: Colors.primary },
-  denomPrice:        { fontSize: 10, color: Colors.textMuted },
-  denomPriceActive:  { color: Colors.primary },
+    segRow: { flexDirection: "row-reverse", gap: 8 },
+    segBtn: {
+      flex: 1, paddingVertical: 11, flexDirection: "row-reverse",
+      alignItems: "center", justifyContent: "center", gap: 6,
+      borderRadius: 10, borderWidth: 1.5,
+      borderColor: C.border, backgroundColor: C.inputBackground,
+    },
+    segBtnActive:    { borderColor: C.primary, backgroundColor: C.primary + "18" },
+    segBtnTxt:       { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+    segBtnTxtActive: { color: C.primary },
 
-  amountLabelRow: {
-    flexDirection: "row-reverse", justifyContent: "space-between",
-    alignItems: "center", marginTop: 16,
-  },
-  amountHint: { fontSize: 11, color: Colors.textMuted, fontStyle: "italic" },
+    denomBtn: {
+      paddingHorizontal: 14, paddingVertical: 10, borderRadius: 10,
+      borderWidth: 1, borderColor: C.border, backgroundColor: C.inputBackground,
+      alignItems: "center", gap: 2,
+    },
+    denomBtnActive:    { borderColor: C.primary, backgroundColor: C.primary + "18" },
+    denomBtnTxt:       { fontSize: 13, fontWeight: "700", color: C.textSecondary },
+    denomBtnTxtActive: { color: C.primary },
+    denomPrice:        { fontSize: 10, color: C.textMuted },
+    denomPriceActive:  { color: C.primary },
 
-  saveBtn: {
-    backgroundColor: Colors.primary, borderRadius: 14,
-    padding: 15, alignItems: "center", marginTop: 20,
-  },
-  saveBtnTxt: { color: "#fff", fontWeight: "800", fontSize: 15 },
+    amountLabelRow: {
+      flexDirection: "row-reverse", justifyContent: "space-between",
+      alignItems: "center", marginTop: 16,
+    },
+    amountHint: { fontSize: 11, color: C.textMuted, fontStyle: "italic" },
 
-  /* Task cards */
-  emptyTasks: { alignItems: "center", paddingVertical: 20, gap: 8 },
-  emptyTasksTxt: { fontSize: 14, color: Colors.textMuted },
-  taskCard: {
-    backgroundColor: Colors.surface, borderRadius: 14, borderWidth: 1.5,
-    padding: 14, gap: 8,
-  },
-  taskTop: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
-  taskRoleBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  taskRoleTxt: { fontSize: 12, fontWeight: "700" },
-  taskPersonName: { fontSize: 13, fontWeight: "700", color: Colors.text },
-  taskDesc: { fontSize: 14, color: Colors.text, textAlign: "right", lineHeight: 20 },
-  taskDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
-  taskActions: { flexDirection: "row-reverse", gap: 8, marginTop: 4 },
-  taskDoneBtn: {
-    flex: 1, flexDirection: "row-reverse", alignItems: "center",
-    justifyContent: "center", gap: 6, paddingVertical: 9,
-    borderRadius: 10, borderWidth: 1,
-  },
-  taskDeleteBtn: {
-    flexDirection: "row-reverse", alignItems: "center",
-    justifyContent: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 9,
-    borderRadius: 10, borderWidth: 1, borderColor: Colors.error + "50",
-    backgroundColor: Colors.error + "10",
-  },
-  taskBtnTxt: { fontSize: 13, fontWeight: "700" },
+    saveBtn: {
+      backgroundColor: C.primary, borderRadius: 14,
+      padding: 15, alignItems: "center", marginTop: 20,
+    },
+    saveBtnTxt: { color: "#fff", fontWeight: "800", fontSize: 15 },
 
-  /* Member selection */
-  memberBtn: {
-    flexDirection: "row-reverse", alignItems: "center", gap: 8,
-    paddingHorizontal: 12, paddingVertical: 10,
-    borderRadius: 12, borderWidth: 1.5, borderColor: Colors.border,
-    backgroundColor: Colors.background,
-  },
-  memberIcon: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  memberName: { fontSize: 13, fontWeight: "700", color: Colors.text, textAlign: "right" },
-  memberRole: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
+    /* Task cards */
+    emptyTasks:    { alignItems: "center", paddingVertical: 20, gap: 8 },
+    emptyTasksTxt: { fontSize: 14, color: C.textMuted },
+    taskCard: {
+      backgroundColor: C.surface, borderRadius: 14, borderWidth: 1.5,
+      padding: 14, gap: 8,
+    },
+    taskTop:        { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
+    taskRoleBadge:  { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
+    taskRoleTxt:    { fontSize: 12, fontWeight: "700" },
+    taskPersonName: { fontSize: 13, fontWeight: "700", color: C.text },
+    taskDesc:       { fontSize: 14, color: C.text, textAlign: "right", lineHeight: 20 },
+    taskDate:       { fontSize: 11, color: C.textMuted, textAlign: "right" },
+    taskActions:    { flexDirection: "row-reverse", gap: 8, marginTop: 4 },
+    taskDoneBtn: {
+      flex: 1, flexDirection: "row-reverse", alignItems: "center",
+      justifyContent: "center", gap: 6, paddingVertical: 9,
+      borderRadius: 10, borderWidth: 1,
+    },
+    taskDeleteBtn: {
+      flexDirection: "row-reverse", alignItems: "center",
+      justifyContent: "center", gap: 4, paddingHorizontal: 14, paddingVertical: 9,
+      borderRadius: 10, borderWidth: 1, borderColor: C.error + "50",
+      backgroundColor: C.error + "10",
+    },
+    taskBtnTxt: { fontSize: 13, fontWeight: "700" },
 
-  /* Alert */
-  alertOverlay: {
-    flex: 1, backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center", alignItems: "center", padding: 24,
-  },
-  alertBox: {
-    backgroundColor: Colors.surface, borderRadius: 20, padding: 28,
-    width: "100%", maxWidth: 340, alignItems: "center", gap: 12,
-  },
-  alertIconWrap: { width: 68, height: 68, borderRadius: 34, justifyContent: "center", alignItems: "center" },
-  alertTitle:    { fontSize: 17, fontWeight: "800", color: Colors.text, textAlign: "center" },
-  alertMsg:      { fontSize: 13, color: Colors.textSecondary, textAlign: "center" },
-  alertBtn:      { paddingVertical: 13, paddingHorizontal: 32, borderRadius: 12 },
-  alertBtnTxt:   { color: "#fff", fontWeight: "700", fontSize: 15 },
-});
+    /* Member selection */
+    memberBtn: {
+      flexDirection: "row-reverse", alignItems: "center", gap: 8,
+      paddingHorizontal: 12, paddingVertical: 10,
+      borderRadius: 12, borderWidth: 1.5, borderColor: C.border,
+      backgroundColor: C.inputBackground,
+    },
+    memberIcon: { width: 30, height: 30, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+    memberName: { fontSize: 13, fontWeight: "700", color: C.text, textAlign: "right" },
+    memberRole: { fontSize: 11, color: C.textMuted, textAlign: "right" },
+
+    /* Alert */
+    alertOverlay: {
+      flex: 1, backgroundColor: C.overlay,
+      justifyContent: "center", alignItems: "center", padding: 24,
+    },
+    alertBox: {
+      backgroundColor: C.surface, borderRadius: 20, padding: 28,
+      width: "100%", maxWidth: 340, alignItems: "center", gap: 12,
+    },
+    alertIconWrap: { width: 68, height: 68, borderRadius: 34, justifyContent: "center", alignItems: "center" },
+    alertTitle:    { fontSize: 17, fontWeight: "800", color: C.text, textAlign: "center" },
+    alertMsg:      { fontSize: 13, color: C.textSecondary, textAlign: "center" },
+    alertBtn:      { paddingVertical: 13, paddingHorizontal: 32, borderRadius: 12 },
+    alertBtnTxt:   { color: "#fff", fontWeight: "700", fontSize: 15 },
+  });
+}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Linking, Modal, TextInput, ActivityIndicator,
@@ -10,6 +10,8 @@ import * as Clipboard from "expo-clipboard";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "@/context/AuthContext";
 import { Colors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
+import type { ThemeColors } from "@/constants/colors";
 import { apiGet, apiPatch, apiPost } from "@/utils/api";
 
 /* ─────────────── ثوابت ─────────────── */
@@ -73,6 +75,9 @@ interface InstallGroup {
 export default function TechEngineerScreen() {
   const insets  = useSafeAreaInsets();
   const { user, token, logout } = useAuth();
+  const Colors = useColors();
+  const s = useMemo(() => makeTechStyles(Colors), [Colors]);
+  const imgModal = useMemo(() => makeImgModalStyles(Colors), [Colors]);
 
   type Section = "new" | "inprogress";
   const [section,     setSection]     = useState<Section>("new");
@@ -722,6 +727,8 @@ function RepairCard({ ticket, section, saving, onStart, onComplete, onCancel, on
   onCopyMap: (url: string) => void;
   onViewImage: (url: string) => void;
 }) {
+  const Colors = useColors();
+  const c = useMemo(() => makeCardStyles(Colors), [Colors]);
   const isExternal = ticket.serviceType === "hotspot_external";
   const typeInfo   = REPAIR_TYPE[ticket.serviceType] ?? { label: `إصلاح ${ticket.serviceType}`, color: Colors.error };
   const hasPhone   = !!ticket.clientPhone && !isExternal;
@@ -856,6 +863,8 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCancel, o
   onCopyMap: (url: string) => void;
   onViewImage: (url: string) => void;
 }) {
+  const Colors = useColors();
+  const c = useMemo(() => makeCardStyles(Colors), [Colors]);
   const typeLabel   = INSTALL_TYPE[ticket.serviceType] ?? `تركيب ${ticket.serviceType}`;
   const hasPhone    = !!ticket.clientPhone;
   const hasMap      = !!ticket.locationUrl;
@@ -1052,6 +1061,8 @@ function InstallCard({ ticket, section, saving, onStart, onComplete, onCancel, o
 function SummaryPill({ label, count, color, active, onPress }: {
   label: string; count: number; color: string; active: boolean; onPress: () => void;
 }) {
+  const Colors = useColors();
+  const sp = useMemo(() => makePillStyles(Colors), [Colors]);
   return (
     <TouchableOpacity
       style={[sp.pill, active && { backgroundColor: color + "22", borderColor: color }]}
@@ -1154,6 +1165,8 @@ function RelaySubCard({ ticket, saving, onStart, onCopy, onOpenMap, onCopyMap, o
   onCopyMap:  (url: string) => void;
   onViewImage:(url: string) => void;
 }) {
+  const Colors = useColors();
+  const rs = useMemo(() => makeRelayStyles(Colors), [Colors]);
   const hasMap   = !!ticket.locationUrl;
   const hasPhone = !!ticket.clientPhone;
   const hasImage = !!ticket.contractImageUrl;
@@ -1216,8 +1229,8 @@ function RelaySubCard({ ticket, saving, onStart, onCopy, onOpenMap, onCopyMap, o
 /* ════════════════════════════════════════════════
    الأنماط
 ════════════════════════════════════════════════ */
-const s = StyleSheet.create({
-  container:  { flex: 1, backgroundColor: Colors.background },
+function makeTechStyles(C: ThemeColors) { return StyleSheet.create({
+  container:  { flex: 1, backgroundColor: C.background },
 
   /* رأس الصفحة */
   header: {
@@ -1226,14 +1239,14 @@ const s = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: C.border,
     gap: 10,
   },
   refreshBtn:  { padding: 6 },
-  headerName:  { fontSize: 17, fontWeight: "bold", color: Colors.text, textAlign: "center" },
-  headerSub:   { fontSize: 12, color: Colors.textMuted, textAlign: "center" },
+  headerName:  { fontSize: 17, fontWeight: "bold", color: C.text, textAlign: "center" },
+  headerSub:   { fontSize: 12, color: C.textMuted, textAlign: "center" },
   onlineDot:   { width: 10, height: 10, borderRadius: 5 },
-  logoutBtn:   { padding: 6, borderRadius: 8, backgroundColor: Colors.error + "15" },
+  logoutBtn:   { padding: 6, borderRadius: 8, backgroundColor: C.error + "15" },
 
   /* ملخص سريع */
   summaryRow: { flexDirection: "row-reverse", paddingHorizontal: 14, paddingVertical: 10, gap: 10 },
@@ -1247,14 +1260,14 @@ const s = StyleSheet.create({
     borderLeftWidth: 4,
     marginHorizontal: 14,
     borderRadius: 4,
-    backgroundColor: Colors.surface,
+    backgroundColor: C.surface,
     marginBottom: 8,
     gap: 8,
   },
   sectionTitle: { fontSize: 15, fontWeight: "bold", flex: 1, textAlign: "right" },
   sectionCount: {
-    fontSize: 12, color: Colors.textMuted,
-    backgroundColor: Colors.surfaceElevated,
+    fontSize: 12, color: C.textMuted,
+    backgroundColor: C.surfaceElevated,
     paddingHorizontal: 8, paddingVertical: 2,
     borderRadius: 8,
   },
@@ -1331,45 +1344,45 @@ const s = StyleSheet.create({
     shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
   },
   toastText: { color: "#fff", fontSize: 14, fontWeight: "600" },
-});
+}); }
 
 /* بطاقة */
-const c = StyleSheet.create({
+function makeCardStyles(C: ThemeColors) { return StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface,
+    backgroundColor: C.surface,
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: C.border,
     borderLeftWidth: 4,
-    borderLeftColor: Colors.error,
+    borderLeftColor: C.error,
     marginBottom: 12,
     padding: 14,
     gap: 8,
   },
   cardHead: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
-  cardNum: { fontSize: 13, fontWeight: "bold", color: Colors.textMuted },
-  serviceNum: { fontSize: 14, fontWeight: "bold", color: Colors.primary },
+  cardNum: { fontSize: 13, fontWeight: "bold", color: C.textMuted },
+  serviceNum: { fontSize: 14, fontWeight: "bold", color: C.primary },
   typeBadge: { flex: 1, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
   typeBadgeText: { fontSize: 12, fontWeight: "bold", textAlign: "center" },
   statusDot: { width: 10, height: 10, borderRadius: 5 },
-  divider: { height: 1, backgroundColor: Colors.border },
+  divider: { height: 1, backgroundColor: C.border },
 
   row: { flexDirection: "row-reverse", alignItems: "center", gap: 8 },
-  rowText: { fontSize: 14, color: Colors.text, flex: 1, textAlign: "right" },
+  rowText: { fontSize: 14, color: C.text, flex: 1, textAlign: "right" },
 
   problemBox: {
-    backgroundColor: Colors.surfaceElevated,
+    backgroundColor: C.surfaceElevated,
     borderRadius: 10, padding: 10, gap: 4,
   },
-  problemLabel: { fontSize: 12, color: Colors.textMuted, textAlign: "right", fontWeight: "600" },
-  problemText: { fontSize: 13, color: Colors.text, textAlign: "right" },
+  problemLabel: { fontSize: 12, color: C.textMuted, textAlign: "right", fontWeight: "600" },
+  problemText: { fontSize: 13, color: C.text, textAlign: "right" },
 
   notesBox: { flexDirection: "row-reverse", alignItems: "flex-start", gap: 6 },
-  notesText: { fontSize: 12, color: Colors.textSecondary, flex: 1, textAlign: "right", fontStyle: "italic" },
+  notesText: { fontSize: 12, color: C.textSecondary, flex: 1, textAlign: "right", fontStyle: "italic" },
 
   mapIconBtn: {
     width: 30, height: 30, borderRadius: 8,
-    backgroundColor: Colors.surfaceElevated,
+    backgroundColor: C.surfaceElevated,
     alignItems: "center", justifyContent: "center",
     marginRight: 2,
   },
@@ -1380,14 +1393,14 @@ const c = StyleSheet.create({
   cancelBtn: {
     flexDirection: "row-reverse", alignItems: "center", justifyContent: "center",
     gap: 6, marginTop: 4, paddingVertical: 9, borderRadius: 10,
-    borderWidth: 1, borderColor: Colors.error + "50",
-    backgroundColor: Colors.error + "0D",
+    borderWidth: 1, borderColor: C.error + "50",
+    backgroundColor: C.error + "0D",
   },
-  cancelBtnTxt: { fontSize: 12, fontWeight: "700", color: Colors.error },
-});
+  cancelBtnTxt: { fontSize: 12, fontWeight: "700", color: C.error },
+}); }
 
 /* SummaryPill */
-const sp = StyleSheet.create({
+function makePillStyles(C: ThemeColors) { return StyleSheet.create({
   pill: {
     flex: 1,
     flexDirection: "row-reverse",
@@ -1397,13 +1410,13 @@ const sp = StyleSheet.create({
     paddingVertical: 14,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: Colors.border,
-    backgroundColor: Colors.surface,
+    borderColor: C.border,
+    backgroundColor: C.surface,
   },
   badge: { minWidth: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
   badgeNum: { fontSize: 16, fontWeight: "bold", color: "#fff" },
-  label: { fontSize: 14, color: Colors.textSecondary, fontWeight: "600" },
-});
+  label: { fontSize: 14, color: C.textSecondary, fontWeight: "600" },
+}); }
 
 /* ActionBtn */
 const ab = StyleSheet.create({
@@ -1509,7 +1522,7 @@ const tg = StyleSheet.create({
 });
 
 /* RelaySubCard */
-const rs = StyleSheet.create({
+function makeRelayStyles(C: ThemeColors) { return StyleSheet.create({
   card: {
     backgroundColor: "#9C27B010",
     borderRadius: 12,
@@ -1533,25 +1546,25 @@ const rs = StyleSheet.create({
     flexDirection: "row-reverse",
     alignItems: "center",
     gap: 3,
-    backgroundColor: Colors.primary + "18",
+    backgroundColor: C.primary + "18",
     borderRadius: 8,
     paddingHorizontal: 7,
     paddingVertical: 3,
   },
-  assignedText: { fontSize: 11, color: Colors.primary },
+  assignedText: { fontSize: 11, color: C.primary },
   row: { flexDirection: "row-reverse", alignItems: "center", gap: 6 },
-  rowText: { fontSize: 13, color: Colors.text, flex: 1, textAlign: "right" },
-  notes: { fontSize: 12, color: Colors.textSecondary, textAlign: "right", fontStyle: "italic" },
+  rowText: { fontSize: 13, color: C.text, flex: 1, textAlign: "right" },
+  notes: { fontSize: 12, color: C.textSecondary, textAlign: "right", fontStyle: "italic" },
   btnRow: { flexDirection: "row-reverse", gap: 6, marginTop: 2 },
-});
+}); }
 
 /* مودال صورة الموقع */
-const imgModal = StyleSheet.create({
+function makeImgModalStyles(C: ThemeColors) { return StyleSheet.create({
   overlay: { flex: 1, backgroundColor: "#000000CC", justifyContent: "center", alignItems: "center" },
   closeArea: { width: "100%", height: "100%", justifyContent: "center", alignItems: "center" },
   card: {
     width: "90%",
-    backgroundColor: Colors.surface,
+    backgroundColor: C.surface,
     borderRadius: 18,
     overflow: "hidden",
   },
@@ -1562,8 +1575,8 @@ const imgModal = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: C.border,
   },
-  title: { fontSize: 15, fontWeight: "bold", color: Colors.text },
+  title: { fontSize: 15, fontWeight: "bold", color: C.text },
   image: { width: "100%", height: 300 },
-});
+}); }

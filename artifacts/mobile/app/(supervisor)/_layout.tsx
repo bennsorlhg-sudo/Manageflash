@@ -1,11 +1,12 @@
 import { Stack } from "expo-router";
 import React from "react";
 import { View, ActivityIndicator } from "react-native";
-import { Colors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 
 export default function SupervisorLayout() {
   const { isLoading, isAuthorized } = useRoleGuard("supervisor");
+  const Colors = useColors();
 
   if (isLoading || !isAuthorized) {
     return (

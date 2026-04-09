@@ -3,11 +3,12 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import React from "react";
 import { Platform, StyleSheet, View, ActivityIndicator } from "react-native";
-import { Colors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
 import { useRoleGuard } from "@/hooks/useRoleGuard";
 
 export default function OwnerTabLayout() {
   const { isLoading, isAuthorized } = useRoleGuard("owner");
+  const Colors = useColors();
 
   if (isLoading || !isAuthorized) {
     return (
@@ -19,7 +20,6 @@ export default function OwnerTabLayout() {
 
   const isIOS = Platform.OS === "ios";
   const isWeb = Platform.OS === "web";
-  const isAndroid = Platform.OS === "android";
 
   const tabBarStyle = isWeb
     ? {
@@ -94,22 +94,10 @@ export default function OwnerTabLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="person-circle-outline" size={26} color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="report"
-        options={{ href: null, headerShown: false }}
-      />
-      <Tabs.Screen
-        name="sales"
-        options={{ href: null, headerShown: false }}
-      />
-      <Tabs.Screen
-        name="expenses"
-        options={{ href: null, headerShown: false }}
-      />
-      <Tabs.Screen
-        name="custody-log"
-        options={{ href: null, headerShown: false }}
-      />
+      <Tabs.Screen name="report"      options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="sales"       options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="expenses"    options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="custody-log" options={{ href: null, headerShown: false }} />
     </Tabs>
   );
 }

@@ -1,4 +1,8 @@
-export const Colors = {
+/* ═══════════════════════════════════════════════
+   Flash Net — Color System (Dark + Light themes)
+═══════════════════════════════════════════════ */
+
+export const DarkColors = {
   primary: "#1E88E5",
   primaryDark: "#1565C0",
   primaryLight: "#64B5F6",
@@ -53,6 +57,66 @@ export const Colors = {
   overlay: "rgba(0, 0, 0, 0.7)",
 };
 
+export const LightColors = {
+  primary: "#1565C0",
+  primaryDark: "#0D47A1",
+  primaryLight: "#42A5F5",
+  background: "#EEF2F8",
+  surface: "#FFFFFF",
+  surfaceElevated: "#F5F8FD",
+  border: "#D0DFF0",
+  text: "#0A1628",
+  textSecondary: "#3A5A7A",
+  textMuted: "#7A9CBB",
+
+  status: {
+    active: "#1565C0",
+    active_incomplete: "#E65100",
+    ready: "#2E7D32",
+    empty: "#C62828",
+    stopped: "#546E7A",
+  },
+
+  statusLight: {
+    active: "rgba(21, 101, 192, 0.12)",
+    active_incomplete: "rgba(230, 81, 0, 0.12)",
+    ready: "rgba(46, 125, 50, 0.12)",
+    empty: "rgba(198, 40, 40, 0.12)",
+    stopped: "rgba(84, 110, 122, 0.12)",
+  },
+
+  roles: {
+    owner: "#6A1B9A",
+    finance_manager: "#1565C0",
+    supervisor: "#2E7D32",
+    tech_engineer: "#E65100",
+  },
+
+  success: "#2E7D32",
+  warning: "#E65100",
+  error: "#C62828",
+  info: "#1565C0",
+
+  tabBar: "#FFFFFF",
+  tabBarBorder: "#D0DFF0",
+  tabActive: "#1565C0",
+  tabInactive: "#7A9CBB",
+
+  inputBackground: "#F5F8FD",
+  inputBorder: "#C5D8ED",
+  inputFocusBorder: "#1565C0",
+
+  card: "#FFFFFF",
+  cardBorder: "#D0DFF0",
+  divider: "#D0DFF0",
+  overlay: "rgba(10, 22, 40, 0.5)",
+};
+
+export type ThemeColors = typeof DarkColors;
+
+export const Colors = DarkColors;
+export default Colors;
+
 export type PointStatus = "active" | "active_incomplete" | "ready" | "empty" | "stopped";
 export type UserRole = "owner" | "finance_manager" | "supervisor" | "tech_engineer";
 
@@ -70,5 +134,3 @@ export const STATUS_LABELS: Record<PointStatus, string> = {
   empty: "فارغ",
   stopped: "متوقف",
 };
-
-export default Colors;

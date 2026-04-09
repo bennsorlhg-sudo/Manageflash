@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Platform, ActivityIndicator, RefreshControl,
@@ -7,12 +7,15 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "@/context/AuthContext";
-import { Colors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
+import type { ThemeColors } from "@/constants/colors";
 import { apiGet, formatCurrency } from "@/utils/api";
 
 const ROLE_COLOR = "#00BCD4";
 
 export default function SupervisorDashboard() {
+  const Colors = useColors();
+  const styles = useMemo(() => makeSupervisorStyles(Colors), [Colors]);
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
   const router = useRouter();
@@ -247,10 +250,12 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   rejected:    { label: "مرفوض",      color: "#F44336" },
   new:         { label: "جديد",       color: "#9C27B0" },
   preparing:   { label: "تجهيز",      color: "#FF9800" },
-  archived:    { label: "مؤرشف",     color: Colors.textSecondary },
+  archived:    { label: "مؤرشف",     color: "#8B9CB3" },
 };
 
 function StatusPill({ status }: { status?: string }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeSupervisorStyles(Colors), [Colors]);
   const info = STATUS_MAP[status ?? ""] ?? { label: status ?? "", color: Colors.textSecondary };
   return (
     <View style={[styles.pill, { backgroundColor: info.color + "22" }]}>
@@ -262,6 +267,8 @@ function StatusPill({ status }: { status?: string }) {
 function KpiCard({
   label, value, icon, color, onPress,
 }: { label: string; value: number; icon: string; color: string; onPress: () => void }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeSupervisorStyles(Colors), [Colors]);
   return (
     <TouchableOpacity style={[styles.kpiCard, { borderColor: color + "44" }]} onPress={onPress}>
       <View style={[styles.kpiIconCircle, { backgroundColor: color + "22" }]}>
@@ -274,12 +281,16 @@ function KpiCard({
 }
 
 function SectionHeader({ title }: { title: string }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeSupervisorStyles(Colors), [Colors]);
   return <Text style={styles.sectionTitle}>{title}</Text>;
 }
 
 function ActionBtn({
   label, icon, color, onPress,
 }: { label: string; icon: string; color: string; onPress: () => void }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeSupervisorStyles(Colors), [Colors]);
   return (
     <TouchableOpacity style={styles.actionBtn} onPress={onPress}>
       <View style={[styles.actionCircle, { borderColor: color + "44" }]}>
@@ -296,6 +307,8 @@ function ListSection({
   title: string; badge?: number; badgeColor?: string;
   empty: string; children?: React.ReactNode; onMore?: () => void;
 }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeSupervisorStyles(Colors), [Colors]);
   const hasItems = React.Children.count(children) > 0;
   return (
     <View style={styles.listSection}>
@@ -322,6 +335,8 @@ function ListSection({
 }
 
 function ListCard({ children, onPress }: { children: React.ReactNode; onPress?: () => void }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeSupervisorStyles(Colors), [Colors]);
   return (
     <TouchableOpacity style={styles.listCard} onPress={onPress}>
       {children}
@@ -332,126 +347,128 @@ function ListCard({ children, onPress }: { children: React.ReactNode; onPress?: 
 /* ──────────────────────────────────────────
    Styles
 ────────────────────────────────────────── */
-const styles = StyleSheet.create({
-  container:    { flex: 1, backgroundColor: Colors.background },
-  scrollContent: { padding: 20 },
+function makeSupervisorStyles(C: ThemeColors) {
+  return StyleSheet.create({
+    container:    { flex: 1, backgroundColor: C.background },
+    scrollContent: { padding: 20 },
 
-  header: {
-    flexDirection: "row-reverse",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 20,
-  },
-  welcomeText: { fontSize: 18, fontWeight: "bold", color: Colors.text, textAlign: "right" },
+    header: {
+      flexDirection: "row-reverse",
+      justifyContent: "space-between",
+      alignItems: "flex-start",
+      marginBottom: 20,
+    },
+    welcomeText: { fontSize: 18, fontWeight: "bold", color: C.text, textAlign: "right" },
 
-  subscriptionPill: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    gap: 4,
-    marginTop: 6,
-    backgroundColor: "#00BCD422",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderWidth: 1,
-    borderColor: "#00BCD444",
-  },
-  subscriptionPillText: {
-    fontSize: 12,
-    color: "#00BCD4",
-    fontWeight: "600",
-  },
+    subscriptionPill: {
+      flexDirection: "row-reverse",
+      alignItems: "center",
+      gap: 4,
+      marginTop: 6,
+      backgroundColor: "#00BCD422",
+      borderRadius: 20,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderWidth: 1,
+      borderColor: "#00BCD444",
+    },
+    subscriptionPillText: {
+      fontSize: 12,
+      color: "#00BCD4",
+      fontWeight: "600",
+    },
 
-  kpiRow: {
-    flexDirection: "row-reverse",
-    gap: 12,
-    marginBottom: 12,
-  },
-  kpiCard: {
-    flex: 1,
-    backgroundColor: Colors.surface,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: "center",
-    gap: 6,
-    borderWidth: 1,
-  },
-  kpiIconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  kpiValue: { fontSize: 24, fontWeight: "bold" },
-  kpiLabel: { fontSize: 12, color: Colors.textSecondary, textAlign: "center" },
+    kpiRow: {
+      flexDirection: "row-reverse",
+      gap: 12,
+      marginBottom: 12,
+    },
+    kpiCard: {
+      flex: 1,
+      backgroundColor: C.surface,
+      borderRadius: 14,
+      padding: 14,
+      alignItems: "center",
+      gap: 6,
+      borderWidth: 1,
+    },
+    kpiIconCircle: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    kpiValue: { fontSize: 24, fontWeight: "bold" },
+    kpiLabel: { fontSize: 12, color: C.textSecondary, textAlign: "center" },
 
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "bold",
-    color: Colors.text,
-    textAlign: "right",
-    marginTop: 8,
-    marginBottom: 10,
-  },
-  buttonRow: {
-    flexDirection: "row-reverse",
-    gap: 12,
-    marginBottom: 18,
-    flexWrap: "wrap",
-  },
-  actionBtn:    { alignItems: "center", width: 76 },
-  actionCircle: {
-    width: 54, height: 54, borderRadius: 27,
-    backgroundColor: Colors.surface,
-    justifyContent: "center", alignItems: "center",
-    marginBottom: 6, borderWidth: 1,
-  },
-  actionLabel:  { fontSize: 10, color: Colors.textSecondary, textAlign: "center" },
+    sectionTitle: {
+      fontSize: 15,
+      fontWeight: "bold",
+      color: C.text,
+      textAlign: "right",
+      marginTop: 8,
+      marginBottom: 10,
+    },
+    buttonRow: {
+      flexDirection: "row-reverse",
+      gap: 12,
+      marginBottom: 18,
+      flexWrap: "wrap",
+    },
+    actionBtn:    { alignItems: "center", width: 76 },
+    actionCircle: {
+      width: 54, height: 54, borderRadius: 27,
+      backgroundColor: C.surface,
+      justifyContent: "center", alignItems: "center",
+      marginBottom: 6, borderWidth: 1,
+    },
+    actionLabel:  { fontSize: 10, color: C.textSecondary, textAlign: "center" },
 
-  listSection:  { marginBottom: 16 },
-  listSectionHeader: {
-    flexDirection: "row-reverse",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  listSectionTitle: { fontSize: 15, fontWeight: "bold", color: Colors.text },
-  moreText:     { fontSize: 12, color: ROLE_COLOR },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  badgeText:    { fontSize: 12, fontWeight: "bold" },
+    listSection:  { marginBottom: 16 },
+    listSectionHeader: {
+      flexDirection: "row-reverse",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 10,
+    },
+    listSectionTitle: { fontSize: 15, fontWeight: "bold", color: C.text },
+    moreText:     { fontSize: 12, color: ROLE_COLOR },
+    badge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 10,
+    },
+    badgeText:    { fontSize: 12, fontWeight: "bold" },
 
-  listCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  cardRow: {
-    flexDirection: "row-reverse",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  cardTitle: { fontSize: 14, fontWeight: "bold", color: Colors.text, textAlign: "right", flex: 1, marginLeft: 8 },
-  cardSub:   { fontSize: 12, color: Colors.textSecondary, textAlign: "right" },
+    listCard: {
+      backgroundColor: C.surface,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 8,
+      borderWidth: 1,
+      borderColor: C.border,
+    },
+    cardRow: {
+      flexDirection: "row-reverse",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 4,
+    },
+    cardTitle: { fontSize: 14, fontWeight: "bold", color: C.text, textAlign: "right", flex: 1, marginLeft: 8 },
+    cardSub:   { fontSize: 12, color: C.textSecondary, textAlign: "right" },
 
-  emptyBox: {
-    backgroundColor: Colors.surface,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  emptyText: { fontSize: 13, color: Colors.textSecondary },
+    emptyBox: {
+      backgroundColor: C.surface,
+      borderRadius: 12,
+      padding: 16,
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: C.border,
+    },
+    emptyText: { fontSize: 13, color: C.textSecondary },
 
-  pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  pillText: { fontSize: 11, fontWeight: "600" },
-});
+    pill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+    pillText: { fontSize: 11, fontWeight: "600" },
+  });
+}

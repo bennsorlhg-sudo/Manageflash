@@ -17,7 +17,7 @@ import { setBaseUrl } from "@workspace/api-client-react";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { Colors } from "@/constants/colors";
+import { ThemeProvider, useColors } from "@/context/ThemeContext";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
 I18nManager.allowRTL(true);
@@ -31,6 +31,7 @@ const queryClient = new QueryClient();
 
 function RootLayoutNav() {
   const { user, isLoading } = useAuth();
+  const Colors = useColors();
 
   if (isLoading) return <LoadingScreen message="جاري التحميل..." />;
 
@@ -73,9 +74,11 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
-              <AuthProvider>
-                <RootLayoutNav />
-              </AuthProvider>
+              <ThemeProvider>
+                <AuthProvider>
+                  <RootLayoutNav />
+                </AuthProvider>
+              </ThemeProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>

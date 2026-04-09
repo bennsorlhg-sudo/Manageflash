@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   View, Text, StyleSheet, ScrollView, Platform,
   TouchableOpacity, ActivityIndicator, RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Colors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
+import type { ThemeColors } from "@/constants/colors";
 import { useAuth } from "@/context/AuthContext";
 import { useRouter, useFocusEffect } from "expo-router";
 import { apiGet, apiPatch, formatCurrency, formatDate } from "@/utils/api";
@@ -19,6 +20,8 @@ function KPICard({
   title: string; value: number; icon: keyof typeof Ionicons.glyphMap;
   color: string; subtitle?: string;
 }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeFinanceStyles(Colors), [Colors]);
   return (
     <View style={[styles.kpiCard, { borderColor: color + "40" }]}>
       <View style={styles.kpiTop}>
@@ -39,6 +42,8 @@ function KPICard({
 function ActionBtn({ label, icon, onPress, color }: {
   label: string; icon: keyof typeof Ionicons.glyphMap; onPress: () => void; color: string;
 }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeFinanceStyles(Colors), [Colors]);
   return (
     <TouchableOpacity style={[styles.actionBtn, { borderColor: color + "40" }]} onPress={onPress} activeOpacity={0.7}>
       <View style={[styles.actionIcon, { backgroundColor: color + "18" }]}>
@@ -53,6 +58,8 @@ function ActionBtn({ label, icon, onPress, color }: {
    عنوان قسم
 ───────────────────────────────────────── */
 function SectionHeader({ title, count, color }: { title: string; count?: number; color?: string }) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeFinanceStyles(Colors), [Colors]);
   const c = color ?? Colors.primary;
   return (
     <View style={styles.sectionHeader}>
@@ -75,6 +82,8 @@ const PRIORITY_LABEL: Record<string, { label: string; color: string }> = {
 };
 
 export default function FinanceDashboard() {
+  const Colors = useColors();
+  const styles = useMemo(() => makeFinanceStyles(Colors), [Colors]);
   const insets = useSafeAreaInsets();
   const { user, token } = useAuth();
   const router = useRouter();
@@ -288,93 +297,95 @@ export default function FinanceDashboard() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    flexDirection: "row-reverse", justifyContent: "space-between",
-    alignItems: "center", paddingHorizontal: 20, paddingVertical: 16,
-    borderBottomWidth: 1, borderBottomColor: Colors.border,
-  },
-  headerTitle: { fontSize: 17, fontWeight: "bold", color: Colors.text },
-  content: { padding: 14 },
+function makeFinanceStyles(C: ThemeColors) {
+  return StyleSheet.create({
+    container: { flex: 1, backgroundColor: C.background },
+    header: {
+      flexDirection: "row-reverse", justifyContent: "space-between",
+      alignItems: "center", paddingHorizontal: 20, paddingVertical: 16,
+      borderBottomWidth: 1, borderBottomColor: C.border,
+    },
+    headerTitle: { fontSize: 17, fontWeight: "bold", color: C.text },
+    content: { padding: 14 },
 
-  /* ─── KPI Grid ─── */
-  kpiGrid: { gap: 10, marginBottom: 20 },
-  kpiRow: { flexDirection: "row-reverse", gap: 10 },
-  kpiCard: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: 16,
-    padding: 14, borderWidth: 1.5, minHeight: 100,
-  },
-  kpiTop: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginBottom: 10 },
-  kpiIcon: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  kpiTitle: { flex: 1, fontSize: 12, color: Colors.textSecondary, fontWeight: "600", textAlign: "right" },
-  kpiValue: { fontSize: 20, fontWeight: "800", textAlign: "right" },
-  kpiSub: { fontSize: 10, color: Colors.textMuted, textAlign: "right", marginTop: 3 },
+    /* ─── KPI Grid ─── */
+    kpiGrid: { gap: 10, marginBottom: 20 },
+    kpiRow: { flexDirection: "row-reverse", gap: 10 },
+    kpiCard: {
+      flex: 1, backgroundColor: C.surface, borderRadius: 16,
+      padding: 14, borderWidth: 1.5, minHeight: 100,
+    },
+    kpiTop: { flexDirection: "row-reverse", alignItems: "center", gap: 8, marginBottom: 10 },
+    kpiIcon: { width: 34, height: 34, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+    kpiTitle: { flex: 1, fontSize: 12, color: C.textSecondary, fontWeight: "600", textAlign: "right" },
+    kpiValue: { fontSize: 20, fontWeight: "800", textAlign: "right" },
+    kpiSub: { fontSize: 10, color: C.textMuted, textAlign: "right", marginTop: 3 },
 
-  /* ─── Actions ─── */
-  actionsBlock: { gap: 8, marginBottom: 24 },
-  actionRow: { flexDirection: "row-reverse", gap: 8 },
-  actionBtn: {
-    flex: 1, backgroundColor: Colors.surface, borderRadius: 14,
-    paddingVertical: 13, paddingHorizontal: 6, alignItems: "center",
-    justifyContent: "center", gap: 6, borderWidth: 1,
-  },
-  actionIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  actionLabel: { fontSize: 11, color: Colors.text, fontWeight: "600", textAlign: "center" },
+    /* ─── Actions ─── */
+    actionsBlock: { gap: 8, marginBottom: 24 },
+    actionRow: { flexDirection: "row-reverse", gap: 8 },
+    actionBtn: {
+      flex: 1, backgroundColor: C.surface, borderRadius: 14,
+      paddingVertical: 13, paddingHorizontal: 6, alignItems: "center",
+      justifyContent: "center", gap: 6, borderWidth: 1,
+    },
+    actionIcon: { width: 40, height: 40, borderRadius: 10, justifyContent: "center", alignItems: "center" },
+    actionLabel: { fontSize: 11, color: C.text, fontWeight: "600", textAlign: "center" },
 
-  /* ─── Section Header ─── */
-  sectionHeader: {
-    flexDirection: "row-reverse", alignItems: "center",
-    gap: 8, marginBottom: 10, marginTop: 4,
-  },
-  sectionDot: { width: 4, height: 18, borderRadius: 2 },
-  sectionTitle: { flex: 1, fontSize: 15, fontWeight: "bold", color: Colors.text, textAlign: "right" },
-  badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
-  badgeText: { fontSize: 12, fontWeight: "bold" },
+    /* ─── Section Header ─── */
+    sectionHeader: {
+      flexDirection: "row-reverse", alignItems: "center",
+      gap: 8, marginBottom: 10, marginTop: 4,
+    },
+    sectionDot: { width: 4, height: 18, borderRadius: 2 },
+    sectionTitle: { flex: 1, fontSize: 15, fontWeight: "bold", color: C.text, textAlign: "right" },
+    badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+    badgeText: { fontSize: 12, fontWeight: "bold" },
 
-  /* ─── Empty State ─── */
-  emptyCard: {
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 20,
-    alignItems: "center", gap: 8, borderWidth: 1, borderColor: Colors.border,
-    marginBottom: 18,
-  },
-  emptyText: { fontSize: 13, color: Colors.textMuted },
+    /* ─── Empty State ─── */
+    emptyCard: {
+      backgroundColor: C.surface, borderRadius: 14, padding: 20,
+      alignItems: "center", gap: 8, borderWidth: 1, borderColor: C.border,
+      marginBottom: 18,
+    },
+    emptyText: { fontSize: 13, color: C.textMuted },
 
-  /* ─── Task Cards (مهام المالك) ─── */
-  taskCard: {
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: Colors.border, marginBottom: 8,
-    borderRightWidth: 3,
-  },
-  taskTitle: { fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right", marginBottom: 4 },
-  taskDesc: { fontSize: 12, color: Colors.textSecondary, textAlign: "right", lineHeight: 18, marginBottom: 10 },
-  taskFooter: {
-    flexDirection: "row-reverse", justifyContent: "space-between",
-    alignItems: "center", borderTopWidth: 1, borderTopColor: Colors.border, paddingTop: 10,
-  },
-  taskDate: { fontSize: 11, color: Colors.textMuted },
-  doneBtn: {
-    flexDirection: "row-reverse", alignItems: "center", gap: 5,
-    backgroundColor: "#43A047", paddingHorizontal: 14, paddingVertical: 7,
-    borderRadius: 8,
-  },
-  doneBtnText: { fontSize: 12, fontWeight: "bold", color: "#fff" },
+    /* ─── Task Cards (مهام المالك) ─── */
+    taskCard: {
+      backgroundColor: C.surface, borderRadius: 14, padding: 14,
+      borderWidth: 1, borderColor: C.border, marginBottom: 8,
+      borderRightWidth: 3,
+    },
+    taskTitle: { fontSize: 14, fontWeight: "700", color: C.text, textAlign: "right", marginBottom: 4 },
+    taskDesc: { fontSize: 12, color: C.textSecondary, textAlign: "right", lineHeight: 18, marginBottom: 10 },
+    taskFooter: {
+      flexDirection: "row-reverse", justifyContent: "space-between",
+      alignItems: "center", borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10,
+    },
+    taskDate: { fontSize: 11, color: C.textMuted },
+    doneBtn: {
+      flexDirection: "row-reverse", alignItems: "center", gap: 5,
+      backgroundColor: "#43A047", paddingHorizontal: 14, paddingVertical: 7,
+      borderRadius: 8,
+    },
+    doneBtnText: { fontSize: 12, fontWeight: "bold", color: "#fff" },
 
-  /* ─── Purchase Cards (طلبات الشراء) ─── */
-  purchaseCard: {
-    backgroundColor: Colors.surface, borderRadius: 14, padding: 14,
-    borderWidth: 1, borderColor: Colors.border, marginBottom: 8,
-    borderRightWidth: 3,
-  },
-  purchaseTop: {
-    flexDirection: "row-reverse", alignItems: "flex-start",
-    gap: 8, marginBottom: 8,
-  },
-  purchaseTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: Colors.text, textAlign: "right" },
-  priBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexShrink: 0 },
-  priText: { fontSize: 11, fontWeight: "bold" },
-  purchaseMeta: { flexDirection: "row-reverse", alignItems: "center", gap: 5, marginBottom: 4 },
-  purchaseMetaText: { fontSize: 12, color: Colors.textSecondary },
-  purchaseNotes: { fontSize: 12, color: Colors.textMuted, textAlign: "right", lineHeight: 17, marginBottom: 4 },
-  purchaseDate: { fontSize: 11, color: Colors.textMuted, textAlign: "right" },
-});
+    /* ─── Purchase Cards (طلبات الشراء) ─── */
+    purchaseCard: {
+      backgroundColor: C.surface, borderRadius: 14, padding: 14,
+      borderWidth: 1, borderColor: C.border, marginBottom: 8,
+      borderRightWidth: 3,
+    },
+    purchaseTop: {
+      flexDirection: "row-reverse", alignItems: "flex-start",
+      gap: 8, marginBottom: 8,
+    },
+    purchaseTitle: { flex: 1, fontSize: 14, fontWeight: "700", color: C.text, textAlign: "right" },
+    priBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, flexShrink: 0 },
+    priText: { fontSize: 11, fontWeight: "bold" },
+    purchaseMeta: { flexDirection: "row-reverse", alignItems: "center", gap: 5, marginBottom: 4 },
+    purchaseMetaText: { fontSize: 12, color: C.textSecondary },
+    purchaseNotes: { fontSize: 12, color: C.textMuted, textAlign: "right", lineHeight: 17, marginBottom: 4 },
+    purchaseDate: { fontSize: 11, color: C.textMuted, textAlign: "right" },
+  });
+}

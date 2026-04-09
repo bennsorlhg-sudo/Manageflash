@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -17,7 +17,8 @@ import { useRouter } from "expo-router";
 import * as Haptics from "expo-haptics";
 import Constants from "expo-constants";
 import { useAuth } from "@/context/AuthContext";
-import { Colors } from "@/constants/colors";
+import { useColors } from "@/context/ThemeContext";
+import type { ThemeColors } from "@/constants/colors";
 import type { UserRole } from "@/context/AuthContext";
 
 function getLoginUrl(): string {
@@ -43,6 +44,8 @@ const ROLE_ROUTES: Record<UserRole, string> = {
 };
 
 export default function LoginScreen() {
+  const Colors = useColors();
+  const styles = useMemo(() => makeLoginStyles(Colors), [Colors]);
   const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const router = useRouter();
@@ -113,7 +116,7 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: Colors.background }}
+      style={{ flex: 1, backgroundColor: Colors.background as string }}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
@@ -201,118 +204,120 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    justifyContent: "center",
-    gap: 32,
-  },
-  logoArea: {
-    alignItems: "center",
-    gap: 8,
-  },
-  logoCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 4,
-  },
-  appName: {
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
-    color: Colors.text,
-    letterSpacing: 1,
-  },
-  tagline: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: Colors.textSecondary,
-  },
-  card: {
-    backgroundColor: Colors.surface,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: 24,
-    gap: 16,
-  },
-  cardTitle: {
-    fontSize: 22,
-    fontFamily: "Inter_700Bold",
-    color: Colors.text,
-    textAlign: "right",
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-    color: Colors.textSecondary,
-    textAlign: "right",
-    marginTop: -8,
-  },
-  formGroup: {
-    gap: 6,
-  },
-  label: {
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-    color: Colors.textSecondary,
-    textAlign: "right",
-  },
-  inputWrapper: {
-    flexDirection: "row-reverse",
-    alignItems: "center",
-    backgroundColor: Colors.inputBackground,
-    borderWidth: 1,
-    borderColor: Colors.inputBorder,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-  },
-  inputError: {
-    borderColor: Colors.error,
-  },
-  inputIcon: {
-    padding: 4,
-  },
-  input: {
-    flex: 1,
-    height: 48,
-    color: Colors.text,
-    fontSize: 16,
-    fontFamily: "Inter_400Regular",
-    paddingHorizontal: 8,
-  },
-  errorText: {
-    color: Colors.error,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    textAlign: "right",
-  },
-  loginBtn: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    height: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 8,
-  },
-  loginBtnDisabled: {
-    opacity: 0.6,
-  },
-  loginBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontFamily: "Inter_700Bold",
-  },
-  footerNote: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-  },
-});
+function makeLoginStyles(C: ThemeColors) {
+  return StyleSheet.create({
+    container: {
+      flexGrow: 1,
+      paddingHorizontal: 24,
+      justifyContent: "center",
+      gap: 32,
+    },
+    logoArea: {
+      alignItems: "center",
+      gap: 8,
+    },
+    logoCircle: {
+      width: 80,
+      height: 80,
+      borderRadius: 24,
+      backgroundColor: C.surface,
+      borderWidth: 1,
+      borderColor: C.border,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 4,
+    },
+    appName: {
+      fontSize: 28,
+      fontFamily: "Inter_700Bold",
+      color: C.text,
+      letterSpacing: 1,
+    },
+    tagline: {
+      fontSize: 14,
+      fontFamily: "Inter_400Regular",
+      color: C.textSecondary,
+    },
+    card: {
+      backgroundColor: C.surface,
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: C.border,
+      padding: 24,
+      gap: 16,
+    },
+    cardTitle: {
+      fontSize: 22,
+      fontFamily: "Inter_700Bold",
+      color: C.text,
+      textAlign: "right",
+    },
+    cardSubtitle: {
+      fontSize: 14,
+      fontFamily: "Inter_400Regular",
+      color: C.textSecondary,
+      textAlign: "right",
+      marginTop: -8,
+    },
+    formGroup: {
+      gap: 6,
+    },
+    label: {
+      fontSize: 14,
+      fontFamily: "Inter_500Medium",
+      color: C.textSecondary,
+      textAlign: "right",
+    },
+    inputWrapper: {
+      flexDirection: "row-reverse",
+      alignItems: "center",
+      backgroundColor: C.inputBackground,
+      borderWidth: 1,
+      borderColor: C.inputBorder,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+    },
+    inputError: {
+      borderColor: C.error,
+    },
+    inputIcon: {
+      padding: 4,
+    },
+    input: {
+      flex: 1,
+      height: 48,
+      color: C.text,
+      fontSize: 16,
+      fontFamily: "Inter_400Regular",
+      paddingHorizontal: 8,
+    },
+    errorText: {
+      color: C.error,
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      textAlign: "right",
+    },
+    loginBtn: {
+      backgroundColor: C.primary,
+      borderRadius: 12,
+      height: 50,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 8,
+    },
+    loginBtnDisabled: {
+      opacity: 0.6,
+    },
+    loginBtnText: {
+      color: "#fff",
+      fontSize: 16,
+      fontFamily: "Inter_700Bold",
+    },
+    footerNote: {
+      color: C.textMuted,
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      textAlign: "center",
+    },
+  });
+}
