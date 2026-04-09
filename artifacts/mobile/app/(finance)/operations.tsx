@@ -63,6 +63,8 @@ function getOpMeta(item: any): OpMeta {
   /* ─── custody_records (كروت فقط) ─── */
   if (item._source === "custody") {
     const from = item.fromRole;
+
+    /* 9. تسليم كروت للمندوب: ↑عهدة مندوبين, ↓إجمالي كروت, ↓عهدة رئيسية */
     if (from === "finance_manager") {
       return {
         label: `تسليم كروت ← ${item.toPersonName ?? "مندوب"}`,
@@ -70,12 +72,15 @@ function getOpMeta(item: any): OpMeta {
         color: "#673AB7",
         tag: "custody_out",
         effects: [
-          { label: "إجمالي الكروت",   dir: "down", amount: amt },
           { label: "عهدة المندوبين",  dir: "up",   amount: amt },
+          { label: "إجمالي الكروت",   dir: "down", amount: amt },
+          { label: "العهدة الرئيسية", dir: "down", amount: amt },
         ],
         canEdit: false,
       };
     }
+
+    /* 11. استلام كروت مرتجعة: ↑إجمالي كروت, ↑عهدة رئيسية, ↓عهدة مندوبين */
     if (from === "tech_engineer") {
       return {
         label: `استلام كروت ← ${item.toPersonName ?? "مندوب"}`,
@@ -84,11 +89,14 @@ function getOpMeta(item: any): OpMeta {
         tag: "custody_in",
         effects: [
           { label: "إجمالي الكروت",   dir: "up",   amount: amt },
+          { label: "العهدة الرئيسية", dir: "up",   amount: amt },
           { label: "عهدة المندوبين",  dir: "down", amount: amt },
         ],
         canEdit: false,
       };
     }
+
+    /* 13. كروت من المالك: ↑إجمالي كروت, ↑عهدة رئيسية */
     if (from === "owner") {
       return {
         label: "كروت من المالك",
@@ -96,12 +104,13 @@ function getOpMeta(item: any): OpMeta {
         color: Colors.primary,
         tag: "custody_in",
         effects: [
-          { label: "إجمالي الكروت",  dir: "up",   amount: amt },
-          { label: "العهدة الرئيسية", dir: "down", amount: amt },
+          { label: "إجمالي الكروت",   dir: "up", amount: amt },
+          { label: "العهدة الرئيسية", dir: "up", amount: amt },
         ],
         canEdit: false,
       };
     }
+
     return {
       label: "عهدة كروت", icon: "card", color: Colors.textMuted, tag: "other",
       effects: [], canEdit: false,
@@ -114,8 +123,9 @@ function getOpMeta(item: any): OpMeta {
   const cat  = item.category    ?? "hotspot";
   const ref  = item.referenceId ?? "";
   const who  = item.personName  ?? "";
+  const isHot = cat === "hotspot";
 
-  /* استلام نقد من مندوب */
+  /* 10. استلام نقد من مندوب: ↑صندوق, ↑عهدة رئيسية, ↓عهدة مندوبين */
   if (type === "sale" && pt === "cash" && ref.startsWith("CUSTODY-RECV")) {
     return {
       label: `استلام نقد ← ${who || "مندوب"}`,
@@ -124,45 +134,56 @@ function getOpMeta(item: any): OpMeta {
       tag: "custody_in",
       effects: [
         { label: "الصندوق النقدي",   dir: "up",   amount: amt },
+        { label: "العهدة الرئيسية",  dir: "up",   amount: amt },
         { label: "عهدة المندوبين",   dir: "down", amount: amt },
       ],
       canEdit: true,
     };
   }
 
-  /* بيع نقدي */
+  /* 1. بيع هوتسبوت نقدي: ↑صندوق, ↓كروت
+     3. بيع برودباند نقدي: ↑صندوق, ↑عهدة رئيسية */
   if (type === "sale" && pt === "cash") {
-    const isHot = cat === "hotspot";
     return {
       label: `بيع ${isHot ? "هوتسبوت" : "برودباند"} — نقد`,
       icon: "cart",
       color: Colors.success,
       tag: isHot ? "sale_hot" : "sale_bb",
-      effects: [
-        { label: "الصندوق النقدي", dir: "up",   amount: amt },
-        { label: "إجمالي الكروت",  dir: "down", amount: amt },
-      ],
+      effects: isHot
+        ? [
+            { label: "الصندوق النقدي", dir: "up",   amount: amt },
+            { label: "إجمالي الكروت",  dir: "down", amount: amt },
+          ]
+        : [
+            { label: "الصندوق النقدي", dir: "up", amount: amt },
+            { label: "العهدة الرئيسية",dir: "up", amount: amt },
+          ],
       canEdit: true,
     };
   }
 
-  /* بيع بسلفة */
+  /* 2. بيع هوتسبوت سلفة: ↑سلف, ↓كروت
+     4. بيع برودباند سلفة: ↑سلف, ↑عهدة رئيسية */
   if (type === "sale" && pt === "loan") {
-    const isHot = cat === "hotspot";
     return {
       label: `بيع ${isHot ? "هوتسبوت" : "برودباند"} — سلفة`,
       icon: "cart-outline",
       color: Colors.warning,
       tag: isHot ? "sale_hot" : "sale_bb",
-      effects: [
-        { label: "سلف العملاء",   dir: "up",   amount: amt },
-        { label: "إجمالي الكروت", dir: "down", amount: amt },
-      ],
+      effects: isHot
+        ? [
+            { label: "سلف العملاء",   dir: "up",   amount: amt },
+            { label: "إجمالي الكروت", dir: "down", amount: amt },
+          ]
+        : [
+            { label: "سلف العملاء",    dir: "up", amount: amt },
+            { label: "العهدة الرئيسية",dir: "up", amount: amt },
+          ],
       canEdit: true,
     };
   }
 
-  /* تحصيل سلفة */
+  /* 7. تحصيل سلفة: ↑صندوق, ↓سلف العملاء */
   if (type === "sale" && pt === "collect") {
     return {
       label: `تحصيل سلفة ← ${who}`,
@@ -177,31 +198,36 @@ function getOpMeta(item: any): OpMeta {
     };
   }
 
-  /* صرفية نقدية */
+  /* 5. صرفية نقدية: ↓صندوق, ↓عهدة رئيسية */
   if (type === "expense" && pt === "cash") {
     return {
       label: "صرفية نقدية",
       icon: "arrow-up-circle",
       color: Colors.error,
       tag: "expense",
-      effects: [{ label: "الصندوق النقدي", dir: "down", amount: amt }],
+      effects: [
+        { label: "الصندوق النقدي",  dir: "down", amount: amt },
+        { label: "العهدة الرئيسية", dir: "down", amount: amt },
+      ],
       canEdit: true,
     };
   }
 
-  /* صرفية بدين */
+  /* 6. صرفية بدين: ↑ديون الشركة فقط */
   if (type === "expense" && pt === "debt") {
     return {
       label: `صرفية بدين ← ${who}`,
       icon: "receipt",
       color: "#FF7043",
       tag: "expense",
-      effects: [{ label: "ديون الشركة", dir: "up", amount: amt }],
+      effects: [
+        { label: "ديون الشركة", dir: "up", amount: amt },
+      ],
       canEdit: true,
     };
   }
 
-  /* سداد دين */
+  /* 8. سداد دين: ↓ديون الشركة, ↓صندوق, ↓عهدة رئيسية */
   if (type === "expense" && pt === "loan_payment") {
     return {
       label: `سداد دين ← ${who}`,
@@ -209,14 +235,15 @@ function getOpMeta(item: any): OpMeta {
       color: "#9C27B0",
       tag: "loan_payment",
       effects: [
+        { label: "ديون الشركة",    dir: "down", amount: amt },
         { label: "الصندوق النقدي", dir: "down", amount: amt },
-        { label: "ديون الشركة",   dir: "down", amount: amt },
+        { label: "العهدة الرئيسية",dir: "down", amount: amt },
       ],
       canEdit: true,
     };
   }
 
-  /* عهدة نقد من المالك */
+  /* 12. عهدة نقد من المالك: ↑صندوق, ↑عهدة رئيسية */
   if (type === "custody_in") {
     return {
       label: "عهدة نقد من المالك",
@@ -224,8 +251,8 @@ function getOpMeta(item: any): OpMeta {
       color: Colors.primary,
       tag: "custody_in",
       effects: [
-        { label: "الصندوق النقدي",  dir: "up",   amount: amt },
-        { label: "العهدة الرئيسية", dir: "down", amount: amt },
+        { label: "الصندوق النقدي",  dir: "up", amount: amt },
+        { label: "العهدة الرئيسية", dir: "up", amount: amt },
       ],
       canEdit: true,
     };

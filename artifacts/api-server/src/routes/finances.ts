@@ -155,42 +155,29 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       .filter(l => l.status !== "paid")
       .reduce((s, l) => s + Math.max(0, parseFloat(l.amount) - parseFloat(l.paidAmount ?? "0")), 0);
 
+    /* ─── متغيرات الكروت والعهدة (تُعرَّف أولاً لأن totalCustody يحتاجها) ─── */
+
     /* إجمالي ما سلّمه المالك للمدير المالي (نقد + كروت) */
     const custodyFromOwner = custodyRows
       .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
 
-    /* إجمالي المصروفات المدفوعة (تُنقَص من العهدة) */
-    const totalExpensesPaid = txRows
-      .filter(r => r.type === "expense")
-      .reduce((s, r) => s + parseFloat(r.amount), 0);
-
-    /* مبيعات البرودباند تضاف للعهدة (إيراد جديد يتحمّل مسؤوليته المدير المالي) */
-    const broadbandSalesRevenue = txRows
-      .filter(r => r.type === "sale" && r.category === "broadband")
-      .reduce((s, r) => s + parseFloat(r.amount), 0);
-
-    /*
-     * إجمالي العهدة المتبقية = ما سلّمه المالك + مبيعات برودباند − ما صُرف
-     * - الصرف استنزاف من العهدة
-     * - مبيعات البرودباند إيراد جديد يُضاف للعهدة (المالك يستحقه)
-     * - مبيعات الكروت لا تُغيِّر العهدة (الكرت يتحوّل لنقد أو سلفة ضمن العهدة)
-     */
-    const totalCustody = Math.max(0, custodyFromOwner + broadbandSalesRevenue - totalExpensesPaid);
-
     /* كروت من المالك للمدير المالي */
     const cardsFromOwner = custodyRows
       .filter(r => r.fromRole === "owner" && r.toRole === "finance_manager" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
+
     /* كروت أرسلها المدير المالي للمندوبين */
     const cardsSentToAgents = custodyRows
       .filter(r => r.fromRole === "finance_manager" && r.toRole === "tech_engineer" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-    /* كروت مرتجعة من المندوبين */
+
+    /* كروت مرتجعة من المندوبين للمدير المالي */
     const cardsReturnedFromAgents = custodyRows
       .filter(r => r.fromRole === "tech_engineer" && r.toRole === "finance_manager" && r.type === "cards")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
-    /* مبيعات الكروت (هوتسبوت) — تُنقَص من رصيد الكروت لأن الكرت خرج
+
+    /* مبيعات الكروت (هوتسبوت) — تُنقَص من رصيد الكروت
      * استثناء: سجلات CUSTODY-RECV هي نقد مُستلَم وليست بيع كروت فعلي */
     const cardSalesAmount = txRows
       .filter(r => r.type === "sale" && r.category === "hotspot"
@@ -202,6 +189,33 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
      * = كروت من المالك + مُرتجَعة من المندوبين − أُرسِلت للمندوبين − بِيعَت للعملاء
      */
     const cardsValue = cardsFromOwner + cardsReturnedFromAgents - cardsSentToAgents - cardSalesAmount;
+
+    /* مبيعات البرودباند تضاف للعهدة (إيراد جديد) */
+    const broadbandSalesRevenue = txRows
+      .filter(r => r.type === "sale" && r.category === "broadband")
+      .reduce((s, r) => s + parseFloat(r.amount), 0);
+
+    /*
+     * إجمالي العهدة الرئيسية — معادلة محاسبية شاملة:
+     *
+     *  زاد (+):
+     *    • ما سلّمه المالك (نقد + كروت)
+     *    • مبيعات برودباند (إيراد جديد)
+     *    • نقد مُستلَم من المندوبين (عاد للنظام)
+     *    • كروت مرتجعة من المندوبين
+     *
+     *  نقص (−):
+     *    • المصروفات النقدية الفعلية (cash + loan_payment) — لا تشمل "صرف دين"
+     *    • كروت أُرسلت للمندوبين (خرجت من العهدة الرئيسية)
+     */
+    const totalCustody = Math.max(0,
+      custodyFromOwner          /* ما سلّمه المالك (نقد + كروت)            */
+      + broadbandSalesRevenue   /* مبيعات برودباند                          */
+      + cashFromAgents          /* نقد مُستلَم من المندوبين                 */
+      + cardsReturnedFromAgents /* كروت مرتجعة من المندوبين                */
+      - cashExpenses            /* مصروفات نقدية + سداد ديون (ليس صرف دين) */
+      - cardsSentToAgents       /* كروت أُرسلت للمندوبين                   */
+    );
 
     /* العهد الكلية عند المندوبين (نقد + كروت) */
     const sentToAgents     = custodyRows
