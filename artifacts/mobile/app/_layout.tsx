@@ -20,8 +20,8 @@ import { AuthProvider, useAuth } from "@/context/AuthContext";
 import { ThemeProvider, useColors } from "@/context/ThemeContext";
 import { LoadingScreen } from "@/components/LoadingScreen";
 
-I18nManager.allowRTL(true);
-I18nManager.forceRTL(true);
+I18nManager.allowRTL(false);
+I18nManager.forceRTL(false);
 
 setBaseUrl(`https://${process.env.EXPO_PUBLIC_DOMAIN}`);
 
