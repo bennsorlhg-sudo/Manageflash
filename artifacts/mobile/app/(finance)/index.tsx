@@ -199,7 +199,6 @@ export default function FinanceDashboard() {
           <View style={styles.actionRow}>
             <ActionBtn label="إدارة العهدة" icon="briefcase"      color="#673AB7"        onPress={() => router.push("/(finance)/custody")} />
             <ActionBtn label="نقاط البيع"   icon="location"       color="#009688"        onPress={() => router.push("/(finance)/sales-points")} />
-            <ActionBtn label="السلف والديون" icon="swap-horizontal" color="#E91E63"       onPress={() => router.push("/(finance)/debts-loans")} />
           </View>
           <View style={styles.actionRow}>
             <ActionBtn label="المصاريف"     icon="receipt"        color="#FF5722"        onPress={() => router.push("/(finance)/expenses")} />

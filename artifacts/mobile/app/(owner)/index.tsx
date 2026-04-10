@@ -230,10 +230,6 @@ export default function OwnerDashboard() {
               label="الربح"      icon="trending-up" color={Colors.primary}
               onPress={() => router.push({ pathname: "/(owner)/report", params: { type: "profit" } })}
             />
-            <ActionBtn
-              label="الشبكة"     icon="wifi"        color="#00BCD4"
-              onPress={() => router.push("/(owner)/network")}
-            />
           </View>
         </View>
 
