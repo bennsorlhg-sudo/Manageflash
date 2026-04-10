@@ -4,6 +4,7 @@ import {
   financialTransactionsTable,
   debtsTable,
   loansTable,
+  balanceOverridesTable,
 } from "@workspace/db/schema";
 import { custodyRecordsTable } from "@workspace/db/schema";
 import { sql, sum, eq } from "drizzle-orm";
@@ -95,6 +96,43 @@ router.get("/finances/report", async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: "Failed to fetch financial report", details: String(error) });
+  }
+});
+
+/* ───────────────────────────────────────────────────────────
+   POST /owner/balance
+   يضبط قيمة override واحدة للمالك (upsert)
+   body: { key: "total_custody"|"cash_balance"|"cards_value", value: number }
+─────────────────────────────────────────────────────────── */
+router.post("/owner/balance", requireAuth, async (req, res) => {
+  try {
+    const { key, value } = req.body as { key: string; value: number };
+    const ALLOWED = ["total_custody", "cash_balance", "cards_value"];
+    if (!ALLOWED.includes(key)) return res.status(400).json({ error: "مفتاح غير مسموح" });
+    if (typeof value !== "number" || isNaN(value) || value < 0)
+      return res.status(400).json({ error: "قيمة غير صحيحة" });
+
+    await db
+      .insert(balanceOverridesTable)
+      .values({ key, value: String(value), updatedAt: new Date() })
+      .onConflictDoUpdate({ target: balanceOverridesTable.key, set: { value: String(value), updatedAt: new Date() } });
+
+    res.json({ ok: true, key, value });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حفظ القيمة", details: String(error) });
+  }
+});
+
+/* ───────────────────────────────────────────────────────────
+   DELETE /owner/balance/:key
+   حذف override واحد (يعود للحساب التلقائي)
+─────────────────────────────────────────────────────────── */
+router.delete("/owner/balance/:key", requireAuth, async (req, res) => {
+  try {
+    await db.delete(balanceOverridesTable).where(eq(balanceOverridesTable.key, req.params.key));
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في الحذف", details: String(error) });
   }
 });
 
@@ -231,15 +269,21 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       .filter(r => r.type === "sale")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
 
+    /* ── تجاوزات المالك (تُقدَّم على الحسابات التلقائية) ── */
+    const overrideRows = await db.select().from(balanceOverridesTable);
+    const ov: Record<string, number> = {};
+    for (const row of overrideRows) ov[row.key] = parseFloat(row.value);
+
     res.json({
-      cashBalance,
+      cashBalance:  ov["cash_balance"]  ?? cashBalance,
       totalLoans,
       totalOwed,
-      totalDebts: totalOwed,   /* alias — finance screen يقرأ totalDebts */
-      totalCustody,
-      cardsValue: Math.max(0, cardsValue),
+      totalDebts:   totalOwed,
+      totalCustody: ov["total_custody"] ?? totalCustody,
+      cardsValue:   ov["cards_value"]   ?? Math.max(0, cardsValue),
       agentCustody,
       broadbandSales,
+      _overrides: ov,
     });
   } catch (error) {
     res.status(500).json({ error: "فشل في جلب الملخص المالي", details: String(error) });

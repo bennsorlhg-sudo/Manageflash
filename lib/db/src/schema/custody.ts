@@ -1,4 +1,4 @@
-import { pgTable, serial, text, numeric, integer, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, numeric, integer, timestamp, pgEnum, varchar } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -21,3 +21,10 @@ export const custodyRecordsTable = pgTable("custody_records", {
 export const insertCustodyRecordSchema = createInsertSchema(custodyRecordsTable).omit({ id: true, createdAt: true });
 export type CustodyRecord = typeof custodyRecordsTable.$inferSelect;
 export type InsertCustodyRecord = z.infer<typeof insertCustodyRecordSchema>;
+
+/* ─── جدول تجاوزات الرصيد (للمالك فقط) ─── */
+export const balanceOverridesTable = pgTable("balance_overrides", {
+  key:       varchar("key", { length: 50 }).primaryKey(),
+  value:     numeric("value", { precision: 14, scale: 2 }).notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});

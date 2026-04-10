@@ -110,8 +110,9 @@ export default function OwnerDashboard() {
   const [tasks, setTasks] = useState<any[]>([]);
 
   /* ─── Modals ─── */
-  const [showCustodyModal, setShowCustodyModal] = useState(false);
-  const [showTaskModal,    setShowTaskModal]    = useState(false);
+  const [showCustodyModal,  setShowCustodyModal]  = useState(false);
+  const [showTaskModal,     setShowTaskModal]     = useState(false);
+  const [showBalanceModal,  setShowBalanceModal]  = useState(false);
 
   /* ─── Alert ─── */
   const [alert, setAlert] = useState({ visible: false, title: "", message: "", color: Colors.success });
@@ -256,6 +257,12 @@ export default function OwnerDashboard() {
               onPress={() => router.push("/(owner)/team")}
             />
           </View>
+          <View style={styles.actionRow}>
+            <ActionBtn
+              label="تعديل الأرقام" icon="calculator" color="#009688"
+              onPress={() => setShowBalanceModal(true)}
+            />
+          </View>
         </View>
 
         {/* ══════════════════════════════════════════════
@@ -316,6 +323,22 @@ export default function OwnerDashboard() {
         onSuccess={() => {
           setShowTaskModal(false);
           showAlert("تم ✓", "تم إضافة المهمة بنجاح");
+        }}
+        onError={(msg) => showAlert("خطأ", msg, Colors.error)}
+      />
+
+      {/* ── Modal تعديل الأرقام ── */}
+      <BalanceAdjustModal
+        visible={showBalanceModal}
+        token={token}
+        currentCustody={totalCustody}
+        currentCash={cashBalance}
+        currentCards={cardsValue}
+        onClose={() => setShowBalanceModal(false)}
+        onSuccess={async () => {
+          setShowBalanceModal(false);
+          await fetchData();
+          showAlert("تم ✓", "تم تحديث الأرقام بنجاح");
         }}
         onError={(msg) => showAlert("خطأ", msg, Colors.error)}
       />
@@ -665,6 +688,107 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
             {saving
               ? <ActivityIndicator color="#fff" />
               : <Text style={styles.saveBtnTxt}>إضافة المهمة</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Modal تعديل الأرقام
+═══════════════════════════════════════════════════ */
+function BalanceAdjustModal({ visible, token, currentCustody, currentCash, currentCards, onClose, onSuccess, onError }: {
+  visible: boolean; token: string | null;
+  currentCustody: number; currentCash: number; currentCards: number;
+  onClose: () => void; onSuccess: () => Promise<void>; onError: (msg: string) => void;
+}) {
+  const Colors = useColors();
+  const styles = useMemo(() => makeStyles(Colors), [Colors]);
+
+  const [custody, setCustody] = useState("");
+  const [cash,    setCash]    = useState("");
+  const [cards,   setCards]   = useState("");
+  const [saving,  setSaving]  = useState(false);
+
+  useEffect(() => {
+    if (visible) {
+      setCustody(String(currentCustody));
+      setCash(String(currentCash));
+      setCards(String(currentCards));
+    }
+  }, [visible, currentCustody, currentCash, currentCards]);
+
+  const handleSave = async () => {
+    const parsed = {
+      total_custody: parseFloat(custody.replace(/[^0-9.]/g, "")),
+      cash_balance:  parseFloat(cash.replace(/[^0-9.]/g, "")),
+      cards_value:   parseFloat(cards.replace(/[^0-9.]/g, "")),
+    };
+    for (const v of Object.values(parsed)) {
+      if (isNaN(v) || v < 0) return onError("تأكد من صحة جميع الأرقام المدخلة");
+    }
+    setSaving(true);
+    try {
+      await Promise.all(
+        Object.entries(parsed).map(([key, value]) =>
+          apiPost("/owner/balance", token, { key, value })
+        )
+      );
+      await onSuccess();
+    } catch (e: any) {
+      onError(e?.message ?? "فشل في حفظ الأرقام");
+    } finally { setSaving(false); }
+  };
+
+  const fields: { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; val: string; set: (v: string) => void }[] = [
+    { label: "إجمالي العهدة الرئيسية", icon: "briefcase",   color: Colors.primary,  val: custody, set: setCustody },
+    { label: "الصندوق النقدي",          icon: "wallet",       color: Colors.success,  val: cash,    set: setCash    },
+    { label: "إجمالي الكروت",           icon: "card",         color: Colors.info,     val: cards,   set: setCards   },
+  ];
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>تعديل الأرقام</Text>
+            <TouchableOpacity onPress={onClose}>
+              <Ionicons name="close" size={24} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <Text style={{ color: Colors.textMuted, fontSize: 13, textAlign: "right", marginBottom: 16 }}>
+            أدخل القيمة الصحيحة لكل حقل — سيتم تطبيقها فوراً
+          </Text>
+
+          {fields.map(f => (
+            <View key={f.label} style={{ marginBottom: 14 }}>
+              <View style={{ flexDirection: "row-reverse", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                <Ionicons name={f.icon} size={16} color={f.color} />
+                <Text style={[styles.fieldLabel, { color: f.color, marginBottom: 0 }]}>{f.label}</Text>
+              </View>
+              <TextInput
+                style={[styles.fieldInput, { borderColor: f.color + "60" }]}
+                value={f.val}
+                onChangeText={f.set}
+                keyboardType="numeric"
+                textAlign="right"
+                placeholder="0"
+                placeholderTextColor={Colors.textMuted}
+              />
+            </View>
+          ))}
+
+          <TouchableOpacity
+            style={[styles.saveBtn, { backgroundColor: "#009688" }, saving && { opacity: 0.5 }]}
+            onPress={handleSave}
+            disabled={saving}
+          >
+            {saving
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.saveBtnTxt}>تطبيق الأرقام</Text>
             }
           </TouchableOpacity>
         </View>
