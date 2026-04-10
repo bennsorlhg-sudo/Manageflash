@@ -327,13 +327,13 @@ export default function OwnerDashboard() {
         onError={(msg) => showAlert("خطأ", msg, Colors.error)}
       />
 
-      {/* ── Modal تعديل الأرقام ── */}
+      {/* ── Modal تصحيح الأرقام ── */}
       <BalanceAdjustModal
         visible={showBalanceModal}
         token={token}
-        currentCustody={totalCustody}
         currentCash={cashBalance}
         currentCards={cardsValue}
+        currentLoans={totalLoans}
         onClose={() => setShowBalanceModal(false)}
         onSuccess={async () => {
           setShowBalanceModal(false);
@@ -699,34 +699,37 @@ function AddTaskModal({ visible, token, onClose, onSuccess, onError }: {
 /* ═══════════════════════════════════════════════════
    Modal تعديل الأرقام
 ═══════════════════════════════════════════════════ */
-function BalanceAdjustModal({ visible, token, currentCustody, currentCash, currentCards, onClose, onSuccess, onError }: {
+function BalanceAdjustModal({ visible, token, currentCash, currentCards, currentLoans, onClose, onSuccess, onError }: {
   visible: boolean; token: string | null;
-  currentCustody: number; currentCash: number; currentCards: number;
+  currentCash: number; currentCards: number; currentLoans: number;
   onClose: () => void; onSuccess: () => Promise<void>; onError: (msg: string) => void;
 }) {
   const Colors = useColors();
   const styles = useMemo(() => makeStyles(Colors), [Colors]);
 
-  const [custody, setCustody] = useState("");
-  const [cash,    setCash]    = useState("");
-  const [cards,   setCards]   = useState("");
-  const [saving,  setSaving]  = useState(false);
+  const [cash,   setCash]   = useState("");
+  const [cards,  setCards]  = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (visible) { setCustody(""); setCash(""); setCards(""); }
+    if (visible) { setCash(""); setCards(""); }
   }, [visible]);
+
+  /* ── معاينة العهدة المحسوبة ── */
+  const previewCards = cards.trim() ? (parseFloat(cards.replace(/[^0-9.]/g, "")) || 0) : currentCards;
+  const previewCash  = cash.trim()  ? (parseFloat(cash.replace(/[^0-9.]/g,  "")) || 0) : currentCash;
+  const previewCustody = previewCards + previewCash + currentLoans;
 
   const handleSave = async () => {
     const entries: { key: string; value: number }[] = [];
     const rawMap = [
-      { key: "total_custody", raw: custody },
-      { key: "cash_balance",  raw: cash    },
-      { key: "cards_value",   raw: cards   },
+      { key: "cash_balance", raw: cash  },
+      { key: "cards_value",  raw: cards },
     ];
     for (const { key, raw } of rawMap) {
       if (!raw.trim()) continue;
       const v = parseFloat(raw.replace(/[^0-9.]/g, ""));
-      if (isNaN(v) || v < 0) return onError("تأكد من صحة جميع الأرقام المدخلة");
+      if (isNaN(v) || v < 0) return onError("تأكد من صحة الأرقام المدخلة");
       entries.push({ key, value: v });
     }
     if (entries.length === 0) return onError("لم تقم بتعديل أي حقل");
@@ -739,10 +742,9 @@ function BalanceAdjustModal({ visible, token, currentCustody, currentCash, curre
     } finally { setSaving(false); }
   };
 
-  const fields: { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; val: string; set: (v: string) => void; placeholder: string }[] = [
-    { label: "إجمالي العهدة الرئيسية", icon: "briefcase", color: Colors.primary, val: custody, set: setCustody, placeholder: formatCurrency(currentCustody) },
-    { label: "الصندوق النقدي",          icon: "wallet",    color: Colors.success, val: cash,    set: setCash,    placeholder: formatCurrency(currentCash)    },
-    { label: "إجمالي الكروت",           icon: "card",      color: Colors.info,    val: cards,   set: setCards,   placeholder: formatCurrency(currentCards)   },
+  const fields: { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; val: string; set: (v: string) => void; current: number }[] = [
+    { label: "الكروت الفعلي (بعد الجرد)", icon: "card",   color: Colors.info,    val: cards, set: setCards, current: currentCards },
+    { label: "الصندوق النقدي",              icon: "wallet", color: Colors.success, val: cash,  set: setCash,  current: currentCash  },
   ];
 
   return (
@@ -750,14 +752,15 @@ function BalanceAdjustModal({ visible, token, currentCustody, currentCash, curre
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>تعديل الأرقام</Text>
+            <Text style={styles.modalTitle}>تصحيح الأرقام بعد الجرد</Text>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
-          <Text style={{ color: Colors.textMuted, fontSize: 13, textAlign: "right", marginBottom: 16 }}>
-            اتركِ الحقل فارغاً إذا لم تُرد تغييره — سيبقى يُحسَب تلقائياً
+          <Text style={{ color: Colors.textMuted, fontSize: 12, textAlign: "right", marginBottom: 16, lineHeight: 20 }}>
+            أدخل الأرقام الفعلية بعد الجرد. اتركِ الحقل فارغاً إذا لم يتغير.{"\n"}
+            العهدة = الكروت + الصندوق + السلف (تُحسَب تلقائياً)
           </Text>
 
           {fields.map(f => (
@@ -772,11 +775,33 @@ function BalanceAdjustModal({ visible, token, currentCustody, currentCash, curre
                 onChangeText={f.set}
                 keyboardType="numeric"
                 textAlign="right"
-                placeholder={f.placeholder}
+                placeholder={formatCurrency(f.current)}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
           ))}
+
+          {/* ── معاينة العهدة المحسوبة ── */}
+          <View style={{ backgroundColor: Colors.primary + "12", borderRadius: 12, padding: 14, marginBottom: 18, borderWidth: 1, borderColor: Colors.primary + "30" }}>
+            <Text style={{ color: Colors.textMuted, fontSize: 12, textAlign: "right", marginBottom: 8 }}>معاينة إجمالي العهدة الرئيسية</Text>
+            <View style={{ flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 4 }}>
+              <Text style={{ color: Colors.text, fontSize: 13, textAlign: "right" }}>الكروت</Text>
+              <Text style={{ color: Colors.info, fontSize: 13 }}>{formatCurrency(previewCards)}</Text>
+            </View>
+            <View style={{ flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 4 }}>
+              <Text style={{ color: Colors.text, fontSize: 13, textAlign: "right" }}>الصندوق</Text>
+              <Text style={{ color: Colors.success, fontSize: 13 }}>{formatCurrency(previewCash)}</Text>
+            </View>
+            <View style={{ flexDirection: "row-reverse", justifyContent: "space-between", marginBottom: 8 }}>
+              <Text style={{ color: Colors.text, fontSize: 13, textAlign: "right" }}>السلف</Text>
+              <Text style={{ color: Colors.warning, fontSize: 13 }}>{formatCurrency(currentLoans)}</Text>
+            </View>
+            <View style={{ height: 1, backgroundColor: Colors.primary + "40", marginBottom: 8 }} />
+            <View style={{ flexDirection: "row-reverse", justifyContent: "space-between" }}>
+              <Text style={{ color: Colors.primary, fontSize: 15, fontWeight: "bold", textAlign: "right" }}>إجمالي العهدة</Text>
+              <Text style={{ color: Colors.primary, fontSize: 15, fontWeight: "bold" }}>{formatCurrency(previewCustody)}</Text>
+            </View>
+          </View>
 
           <TouchableOpacity
             style={[styles.saveBtn, { backgroundColor: "#009688" }, saving && { opacity: 0.5 }]}

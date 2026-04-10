@@ -107,7 +107,7 @@ router.get("/finances/report", async (req, res) => {
 router.post("/owner/balance", requireAuth, async (req, res) => {
   try {
     const { key, value } = req.body as { key: string; value: number };
-    const ALLOWED = ["total_custody", "cash_balance", "cards_value"];
+    const ALLOWED = ["cash_balance", "cards_value"];
     if (!ALLOWED.includes(key)) return res.status(400).json({ error: "مفتاح غير مسموح" });
     if (typeof value !== "number" || isNaN(value) || value < 0)
       return res.status(400).json({ error: "قيمة غير صحيحة" });
@@ -269,18 +269,24 @@ router.get("/finances/summary", requireAuth, async (_req, res) => {
       .filter(r => r.type === "sale")
       .reduce((s, r) => s + parseFloat(r.amount), 0);
 
-    /* ── تجاوزات المالك (تُقدَّم على الحسابات التلقائية) ── */
+    /* ── تجاوزات المالك (للكروت والصندوق فقط — العهدة تُحسَب دائماً) ── */
     const overrideRows = await db.select().from(balanceOverridesTable);
     const ov: Record<string, number> = {};
     for (const row of overrideRows) ov[row.key] = parseFloat(row.value);
 
+    const finalCash  = ov["cash_balance"] ?? cashBalance;
+    const finalCards = ov["cards_value"]  ?? Math.max(0, cardsValue);
+
+    /* العهدة الرئيسية = الكروت الفعلي + الصندوق النقدي + السلف */
+    const finalCustody = finalCash + finalCards + totalLoans;
+
     res.json({
-      cashBalance:  ov["cash_balance"]  ?? cashBalance,
+      cashBalance:  finalCash,
       totalLoans,
       totalOwed,
       totalDebts:   totalOwed,
-      totalCustody: ov["total_custody"] ?? totalCustody,
-      cardsValue:   ov["cards_value"]   ?? Math.max(0, cardsValue),
+      totalCustody: finalCustody,
+      cardsValue:   finalCards,
       agentCustody,
       broadbandSales,
       _overrides: ov,
