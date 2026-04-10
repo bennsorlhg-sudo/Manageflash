@@ -713,39 +713,36 @@ function BalanceAdjustModal({ visible, token, currentCustody, currentCash, curre
   const [saving,  setSaving]  = useState(false);
 
   useEffect(() => {
-    if (visible) {
-      setCustody(String(currentCustody));
-      setCash(String(currentCash));
-      setCards(String(currentCards));
-    }
-  }, [visible, currentCustody, currentCash, currentCards]);
+    if (visible) { setCustody(""); setCash(""); setCards(""); }
+  }, [visible]);
 
   const handleSave = async () => {
-    const parsed = {
-      total_custody: parseFloat(custody.replace(/[^0-9.]/g, "")),
-      cash_balance:  parseFloat(cash.replace(/[^0-9.]/g, "")),
-      cards_value:   parseFloat(cards.replace(/[^0-9.]/g, "")),
-    };
-    for (const v of Object.values(parsed)) {
+    const entries: { key: string; value: number }[] = [];
+    const rawMap = [
+      { key: "total_custody", raw: custody },
+      { key: "cash_balance",  raw: cash    },
+      { key: "cards_value",   raw: cards   },
+    ];
+    for (const { key, raw } of rawMap) {
+      if (!raw.trim()) continue;
+      const v = parseFloat(raw.replace(/[^0-9.]/g, ""));
       if (isNaN(v) || v < 0) return onError("تأكد من صحة جميع الأرقام المدخلة");
+      entries.push({ key, value: v });
     }
+    if (entries.length === 0) return onError("لم تقم بتعديل أي حقل");
     setSaving(true);
     try {
-      await Promise.all(
-        Object.entries(parsed).map(([key, value]) =>
-          apiPost("/owner/balance", token, { key, value })
-        )
-      );
+      await Promise.all(entries.map(e => apiPost("/owner/balance", token, e)));
       await onSuccess();
     } catch (e: any) {
       onError(e?.message ?? "فشل في حفظ الأرقام");
     } finally { setSaving(false); }
   };
 
-  const fields: { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; val: string; set: (v: string) => void }[] = [
-    { label: "إجمالي العهدة الرئيسية", icon: "briefcase",   color: Colors.primary,  val: custody, set: setCustody },
-    { label: "الصندوق النقدي",          icon: "wallet",       color: Colors.success,  val: cash,    set: setCash    },
-    { label: "إجمالي الكروت",           icon: "card",         color: Colors.info,     val: cards,   set: setCards   },
+  const fields: { label: string; icon: keyof typeof Ionicons.glyphMap; color: string; val: string; set: (v: string) => void; placeholder: string }[] = [
+    { label: "إجمالي العهدة الرئيسية", icon: "briefcase", color: Colors.primary, val: custody, set: setCustody, placeholder: formatCurrency(currentCustody) },
+    { label: "الصندوق النقدي",          icon: "wallet",    color: Colors.success, val: cash,    set: setCash,    placeholder: formatCurrency(currentCash)    },
+    { label: "إجمالي الكروت",           icon: "card",      color: Colors.info,    val: cards,   set: setCards,   placeholder: formatCurrency(currentCards)   },
   ];
 
   return (
@@ -760,7 +757,7 @@ function BalanceAdjustModal({ visible, token, currentCustody, currentCash, curre
           </View>
 
           <Text style={{ color: Colors.textMuted, fontSize: 13, textAlign: "right", marginBottom: 16 }}>
-            أدخل القيمة الصحيحة لكل حقل — سيتم تطبيقها فوراً
+            اتركِ الحقل فارغاً إذا لم تُرد تغييره — سيبقى يُحسَب تلقائياً
           </Text>
 
           {fields.map(f => (
@@ -775,7 +772,7 @@ function BalanceAdjustModal({ visible, token, currentCustody, currentCash, curre
                 onChangeText={f.set}
                 keyboardType="numeric"
                 textAlign="right"
-                placeholder="0"
+                placeholder={f.placeholder}
                 placeholderTextColor={Colors.textMuted}
               />
             </View>
