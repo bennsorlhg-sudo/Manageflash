@@ -4,10 +4,11 @@ import {
   repairTicketsTable,
   installationTicketsTable,
   purchaseRequestsTable,
+  engineerAchievementsTable,
 } from "@workspace/db/schema";
 import { hotspotPointsTable, broadbandPointsTable } from "@workspace/db/schema";
 import { requireAuth } from "../lib/auth";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { eq, desc, sql, and, gte } from "drizzle-orm";
 
 const router = Router();
 
@@ -522,9 +523,39 @@ router.post("/tickets/installation/:id/archive", requireAuth, async (req, res) =
       }
     }
 
+    /* إنشاء إنجاز للمهندس المُنجز — فقط إذا كانت التذكرة مُسندة لمهندس */
+    if (!t.isRelayPoint && updated.assignedToId && updated.assignedToName) {
+      await db.insert(engineerAchievementsTable).values({
+        engineerId:     updated.assignedToId,
+        engineerName:   updated.assignedToName,
+        ticketId:       updated.id,
+        ticketType:     "installation",
+        serviceNumber:  updated.flashNumber ? String(updated.flashNumber) : null,
+        serviceType:    updated.serviceType ?? null,
+        clientName:     updated.clientName ?? null,
+        archivedById:   req.currentUser!.id,
+        archivedByName: req.currentUser!.name ?? null,
+        archivedAt:     new Date(),
+      });
+    }
+
     res.json(updated);
   } catch (error) {
     res.status(500).json({ error: "فشل في أرشفة التذكرة", details: String(error) });
+  }
+});
+
+/* إعادة فتح تذكرة تركيب مؤرشفة */
+router.post("/tickets/installation/:id/reopen", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [row] = await db.update(installationTicketsTable)
+      .set({ status: "in_progress", archivedAt: null, updatedAt: new Date() } as any)
+      .where(eq(installationTicketsTable.id, id)).returning();
+    if (!row) return res.status(404).json({ error: "التذكرة غير موجودة" });
+    res.json(row);
+  } catch (error) {
+    res.status(500).json({ error: "فشل في إعادة فتح التذكرة", details: String(error) });
   }
 });
 
@@ -595,6 +626,129 @@ router.delete("/purchase-requests/:id", requireAuth, async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: "فشل في حذف طلب الشراء", details: String(error) });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   أرشفة / إعادة فتح تذاكر الإصلاح
+═══════════════════════════════════════════════════════ */
+router.post("/tickets/repair/:id/archive", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const rows = await db.select().from(repairTicketsTable).where(eq(repairTicketsTable.id, id));
+    if (!rows[0]) return res.status(404).json({ error: "التذكرة غير موجودة" });
+    const t = rows[0];
+
+    const [updated] = await db.update(repairTicketsTable).set({
+      status: "archived",
+      archivedAt: new Date(),
+      archivedById: req.currentUser!.id,
+      archivedByName: req.currentUser!.name ?? null,
+      updatedAt: new Date(),
+    }).where(eq(repairTicketsTable.id, id)).returning();
+
+    /* إنشاء إنجاز للمهندس */
+    if (t.assignedToId && t.assignedToName) {
+      await db.insert(engineerAchievementsTable).values({
+        engineerId:     t.assignedToId,
+        engineerName:   t.assignedToName,
+        ticketId:       t.id,
+        ticketType:     "repair",
+        serviceNumber:  t.serviceNumber ?? null,
+        serviceType:    t.serviceType ?? null,
+        clientName:     t.clientName ?? null,
+        archivedById:   req.currentUser!.id,
+        archivedByName: req.currentUser!.name ?? null,
+        archivedAt:     new Date(),
+      });
+    }
+
+    res.json(updated);
+  } catch (error) {
+    res.status(500).json({ error: "فشل في أرشفة تذكرة الإصلاح", details: String(error) });
+  }
+});
+
+router.post("/tickets/repair/:id/reopen", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const [row] = await db.update(repairTicketsTable)
+      .set({ status: "in_progress", archivedAt: null, archivedById: null, archivedByName: null, updatedAt: new Date() })
+      .where(eq(repairTicketsTable.id, id)).returning();
+    if (!row) return res.status(404).json({ error: "التذكرة غير موجودة" });
+    res.json(row);
+  } catch (error) {
+    res.status(500).json({ error: "فشل في إعادة فتح تذكرة الإصلاح", details: String(error) });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   إنجازات المهندسين
+═══════════════════════════════════════════════════════ */
+router.get("/achievements", requireAuth, async (req, res) => {
+  try {
+    const { engineerId, period } = req.query as any;
+    let rows = await db.select().from(engineerAchievementsTable)
+      .orderBy(desc(engineerAchievementsTable.archivedAt));
+
+    if (engineerId) {
+      rows = rows.filter(r => r.engineerId === parseInt(engineerId));
+    }
+    if (period) {
+      const now = new Date();
+      let from: Date | null = null;
+      if (period === "week") {
+        from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      } else if (period === "month") {
+        from = new Date(now.getFullYear(), now.getMonth(), 1);
+      } else if (period === "year") {
+        from = new Date(now.getFullYear(), 0, 1);
+      }
+      if (from) rows = rows.filter(r => new Date(r.archivedAt) >= from!);
+    }
+
+    res.json(rows);
+  } catch (error) {
+    res.status(500).json({ error: "فشل في جلب الإنجازات", details: String(error) });
+  }
+});
+
+router.get("/achievements/summary", requireAuth, async (req, res) => {
+  try {
+    const { period } = req.query as any;
+    let rows = await db.select().from(engineerAchievementsTable);
+
+    if (period) {
+      const now = new Date();
+      let from: Date | null = null;
+      if (period === "week")  from = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      else if (period === "month") from = new Date(now.getFullYear(), now.getMonth(), 1);
+      else if (period === "year")  from = new Date(now.getFullYear(), 0, 1);
+      if (from) rows = rows.filter(r => new Date(r.archivedAt) >= from!);
+    }
+
+    const map: Record<string, { engineerId: number | null; engineerName: string; total: number; repairs: number; installations: number }> = {};
+    for (const r of rows) {
+      const key = r.engineerName;
+      if (!map[key]) map[key] = { engineerId: r.engineerId, engineerName: r.engineerName, total: 0, repairs: 0, installations: 0 };
+      map[key].total++;
+      if (r.ticketType === "repair") map[key].repairs++;
+      else map[key].installations++;
+    }
+
+    res.json(Object.values(map).sort((a, b) => b.total - a.total));
+  } catch (error) {
+    res.status(500).json({ error: "فشل في جلب ملخص الإنجازات", details: String(error) });
+  }
+});
+
+router.delete("/achievements/:id", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(engineerAchievementsTable).where(eq(engineerAchievementsTable.id, id));
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: "فشل في حذف الإنجاز", details: String(error) });
   }
 });
 

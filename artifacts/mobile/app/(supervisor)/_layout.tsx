@@ -30,6 +30,7 @@ export default function SupervisorLayout() {
       <Stack.Screen name="database" />
       <Stack.Screen name="tasks" />
       <Stack.Screen name="engineer-management" />
+      <Stack.Screen name="engineer-detail" />
       <Stack.Screen name="subscription-delivery" />
       <Stack.Screen name="finance-audit" />
       <Stack.Screen name="profile" />

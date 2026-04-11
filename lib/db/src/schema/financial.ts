@@ -170,11 +170,29 @@ export const repairTicketsTable = pgTable("repair_tickets", {
   deletedAt: timestamp("deleted_at"),
   startedAt: timestamp("started_at"),
   resolvedAt: timestamp("resolved_at"),
+  archivedAt: timestamp("archived_at"),
+  archivedById: integer("archived_by_id"),
+  archivedByName: text("archived_by_name"),
   contractImageUrl: text("contract_image_url"),
   completionPhotoUrl: text("completion_photo_url"),
   completionPhotoApproved: boolean("completion_photo_approved").default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const engineerAchievementsTable = pgTable("engineer_achievements", {
+  id: serial("id").primaryKey(),
+  engineerId: integer("engineer_id"),
+  engineerName: text("engineer_name").notNull(),
+  ticketId: integer("ticket_id").notNull(),
+  ticketType: text("ticket_type").notNull(),
+  serviceNumber: text("service_number"),
+  serviceType: text("service_type"),
+  clientName: text("client_name"),
+  archivedById: integer("archived_by_id"),
+  archivedByName: text("archived_by_name"),
+  archivedAt: timestamp("archived_at").notNull().defaultNow(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const installationTicketsTable = pgTable("installation_tickets", {
@@ -262,3 +280,4 @@ export type Custody = typeof custodiesTable.$inferSelect;
 export type PurchaseRequest = typeof purchaseRequestsTable.$inferSelect;
 export type FinancialTransaction = typeof financialTransactionsTable.$inferSelect;
 export type InsertFinancialTransaction = z.infer<typeof insertFinancialTransactionSchema>;
+export type EngineerAchievement = typeof engineerAchievementsTable.$inferSelect;

@@ -68,6 +68,7 @@ const STATUS_FILTERS = [
   { key: "pending",     label: "جديدة" },
   { key: "in_progress", label: "جاري" },
   { key: "completed",   label: "مكتملة" },
+  { key: "archived",    label: "مؤرشفة" },
 ];
 
 /* ─────────────── نوع القسم ─────────────── */
@@ -117,6 +118,9 @@ export default function TaskTrackingScreen() {
   /* archive modal */
   const [archiveItem,   setArchiveItem]   = useState<any>(null);
   const [archSubmitting, setArchSubmitting] = useState(false);
+  /* repair archive / reopen */
+  const [repairArchivingId, setRepairArchivingId] = useState<number | null>(null);
+  const [repairReopeningId, setRepairReopeningId] = useState<number | null>(null);
   /* engineers list */
   const [engineers, setEngineers] = useState<{id:number;name:string}[]>([]);
   /* عرض صورة الإتمام */
@@ -169,6 +173,7 @@ export default function TaskTrackingScreen() {
     if (statusFilter === "pending")     return ["pending", "new", "draft"].includes(s);
     if (statusFilter === "in_progress") return ["in_progress", "preparing"].includes(s);
     if (statusFilter === "completed")   return s === "completed";
+    if (statusFilter === "archived")    return s === "archived";
     return true;
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
@@ -213,7 +218,7 @@ export default function TaskTrackingScreen() {
     }
   };
 
-  /* ─── أرشفة التذكرة ─── */
+  /* ─── أرشفة التذكرة (تركيب) ─── */
   const handleArchive = async (id: number, payload: any) => {
     setArchSubmitting(true);
     try {
@@ -224,6 +229,28 @@ export default function TaskTrackingScreen() {
       throw e;
     } finally {
       setArchSubmitting(false);
+    }
+  };
+
+  /* ─── أرشفة تذكرة إصلاح (مكتملة → مؤرشفة + إنجاز) ─── */
+  const handleRepairArchive = async (id: number) => {
+    setRepairArchivingId(id);
+    try {
+      const updated = await apiPost(`/tickets/repair/${id}/archive`, token, {});
+      setRepairTickets(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
+    } catch {} finally {
+      setRepairArchivingId(null);
+    }
+  };
+
+  /* ─── إعادة فتح تذكرة إصلاح مؤرشفة ─── */
+  const handleRepairReopen = async (id: number) => {
+    setRepairReopeningId(id);
+    try {
+      const updated = await apiPost(`/tickets/repair/${id}/reopen`, token, {});
+      setRepairTickets(prev => prev.map(t => t.id === id ? { ...t, ...updated } : t));
+    } catch {} finally {
+      setRepairReopeningId(null);
     }
   };
 
@@ -416,6 +443,10 @@ export default function TaskTrackingScreen() {
                   onViewImage={setViewImageUrl}
                   onApprovePhoto={handleApprovePhoto}
                   onDeletePhoto={handleDeletePhoto}
+                  onArchive={() => handleRepairArchive(item.id)}
+                  onReopen={() => handleRepairReopen(item.id)}
+                  archiving={repairArchivingId === item.id}
+                  reopening={repairReopeningId === item.id}
                 />
               ))
             ) : (
@@ -571,6 +602,7 @@ function countByKey(items: any[], key: string) {
     if (key === "pending")     return ["pending", "new", "draft"].includes(s);
     if (key === "in_progress") return ["in_progress", "preparing"].includes(s);
     if (key === "completed")   return s === "completed";
+    if (key === "archived")    return s === "archived";
     return false;
   }).length;
 }
@@ -580,6 +612,7 @@ const FILTER_META: Record<string, { color: string }> = {
   pending:     { color: "#2196F3" },
   in_progress: { color: "#FF9800" },
   completed:   { color: "#4CAF50" },
+  archived:    { color: "#9E9E9E" },
 };
 
 function FilterBar({ active, onSelect, source }: {
@@ -588,10 +621,11 @@ function FilterBar({ active, onSelect, source }: {
   source: any[];
 }) {
   const filters = [
-    { key: "all",         label: "الكل",          count: source.length },
-    { key: "pending",     label: "جديدة",         count: countByKey(source, "pending") },
-    { key: "in_progress", label: "جاري",          count: countByKey(source, "in_progress") },
-    { key: "completed",   label: "مكتملة",        count: countByKey(source, "completed") },
+    { key: "all",         label: "الكل",     count: source.length },
+    { key: "pending",     label: "جديدة",    count: countByKey(source, "pending") },
+    { key: "in_progress", label: "جاري",     count: countByKey(source, "in_progress") },
+    { key: "completed",   label: "مكتملة",   count: countByKey(source, "completed") },
+    { key: "archived",    label: "مؤرشفة",   count: countByKey(source, "archived") },
   ];
 
   return (
@@ -666,7 +700,7 @@ const fbStyles = StyleSheet.create({
 /* ════════════════════════════════════════════════
    بطاقة تذكرة الإصلاح
 ════════════════════════════════════════════════ */
-function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImage, onApprovePhoto, onDeletePhoto }: {
+function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImage, onApprovePhoto, onDeletePhoto, onArchive, onReopen, archiving, reopening }: {
   item: any;
   expanded: boolean;
   onExpand: () => void;
@@ -675,6 +709,10 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImag
   onViewImage?: (url: string) => void;
   onApprovePhoto?: (id: number) => void;
   onDeletePhoto?: (id: number) => void;
+  onArchive?: () => void;
+  onReopen?: () => void;
+  archiving?: boolean;
+  reopening?: boolean;
 }) {
   const si            = STATUS[item.status] ?? STATUS["pending"];
   const typeLabel     = SERVICE_TYPE_AR[item.serviceType] ?? `إصلاح ${item.serviceType ?? ""}`;
@@ -841,6 +879,38 @@ function RepairCard({ item, expanded, onExpand, onTimeline, onDelete, onViewImag
         <SuperActionBtn icon={expanded ? "chevron-up" : "chevron-down"} label={expanded ? "إخفاء" : "تفاصيل"} color={Colors.textSecondary} onPress={onExpand} />
         <SuperActionBtn icon="time-outline" label="متابعة" color={SUPERVISOR_COLOR} onPress={onTimeline} />
       </View>
+
+      {/* ══ صف الأرشفة (للمكتملة) / إعادة الفتح (للمؤرشفة) ══ */}
+      {isCompleted && onArchive && (
+        <TouchableOpacity
+          style={[rc.mainBtn, { backgroundColor: "#795548" + "18", borderColor: "#795548" + "55", marginTop: 8, width: "100%" }]}
+          onPress={onArchive}
+          disabled={archiving}
+        >
+          {archiving
+            ? <ActivityIndicator size="small" color="#795548" />
+            : <>
+                <Ionicons name="archive-outline" size={16} color="#795548" />
+                <Text style={[rc.mainBtnText, { color: "#795548" }]}>أرشفة — تسجيل إنجاز المهندس</Text>
+              </>
+          }
+        </TouchableOpacity>
+      )}
+      {item.status === "archived" && onReopen && (
+        <TouchableOpacity
+          style={[rc.mainBtn, { backgroundColor: Colors.warning + "18", borderColor: Colors.warning + "55", marginTop: 8, width: "100%" }]}
+          onPress={onReopen}
+          disabled={reopening}
+        >
+          {reopening
+            ? <ActivityIndicator size="small" color={Colors.warning} />
+            : <>
+                <Ionicons name="refresh-outline" size={16} color={Colors.warning} />
+                <Text style={[rc.mainBtnText, { color: Colors.warning }]}>إعادة فتح التذكرة</Text>
+              </>
+          }
+        </TouchableOpacity>
+      )}
 
       {/* ══ صف أساسي: اتصال + خريطة + صورة العقد + حذف ══ */}
       <View style={rc.mainBtnRow}>
