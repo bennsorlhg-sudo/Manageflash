@@ -22,10 +22,9 @@ This is the Flash Net (فلاش نت) network management app for an ISP business
 
 Flash Net is a network management system for ISPs with a mobile app (Expo) and API backend.
 
-### 3 User Roles
-1. **Owner** (`owner`) — Dashboard, custody-log (view/edit/delete), sales (view/edit/delete), expenses, report, team, network, profile
-2. **Supervisor** (`supervisor`) — Dashboard, repair-ticket (create+tabs), installation-tickets, purchase-request, database (hotspot/broadband), engineer-management, subscription-delivery, finance-audit, tasks, profile
-3. **Tech Engineer** (`tech_engineer`) — Home (3 tabs: new/in-progress/completed tasks, call+location buttons, execution flow), profile
+### 2 User Roles
+1. **Supervisor** (`supervisor`) — Dashboard, repair-ticket (create+tabs), installation-tickets, purchase-request, database (hotspot/broadband), engineer-management, subscription-delivery, finance-audit, tasks, profile
+2. **Tech Engineer** (`tech_engineer`) — Home (3 tabs: new/in-progress/completed tasks, call+location buttons, execution flow), profile
 
 ### Status Color System (network points)
 - **Active** (`active`) — Blue (#1E88E5)
@@ -34,9 +33,9 @@ Flash Net is a network management system for ISPs with a mobile app (Expo) and A
 - **Empty** (`empty`) — Red (#E53935)
 - **Stopped** (`stopped`) — Grey (#757575)
 
-### Default Owner Account
-- Phone: `0500000000`
-- Password: `admin123`
+### Default Accounts
+- Supervisor — Phone: `772424239`, Password: `123456`
+- Tech Engineer — Phone: `737214609`, Password: `123456`
 
 ## Structure
 

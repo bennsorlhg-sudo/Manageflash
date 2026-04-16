@@ -12,7 +12,7 @@ router.post("/tasks", requireAuth, async (req, res) => {
     const { title, description, targetRole, assignedToId, priority } = req.body as {
       title: string;
       description: string;
-      targetRole: "finance_manager" | "supervisor" | "tech_engineer";
+      targetRole: "supervisor" | "tech_engineer";
       assignedToId?: number;
       priority?: "low" | "medium" | "high" | "urgent";
     };
@@ -36,7 +36,7 @@ router.post("/tasks", requireAuth, async (req, res) => {
       targetRole,
       assignedToId: assignedToId ?? null,
       targetPersonName,
-      assignedByRole: req.currentUser?.role ?? "owner",
+      assignedByRole: req.currentUser?.role ?? "supervisor",
       status: "pending",
       priority: priority ?? "medium",
       createdById: req.currentUser?.id,

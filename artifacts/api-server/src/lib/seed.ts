@@ -5,8 +5,6 @@ import { sql } from "drizzle-orm";
 import { logger } from "./logger";
 
 const DEFAULT_USERS = [
-  { name: "فهد الهندي", phone: "771163358", role: "owner" as const, password: "123456" },
-  { name: "ريان رضوان", phone: "776218710", role: "finance_manager" as const, password: "123456" },
   { name: "محمد هاشم الزبود", phone: "772424239", role: "supervisor" as const, password: "123456" },
   { name: "خالد وليد", phone: "737214609", role: "tech_engineer" as const, password: "123456" },
 ];
@@ -68,7 +66,7 @@ export async function seedIfEmpty() {
       ON CONFLICT DO NOTHING
     `);
 
-    logger.info("Seeding complete — 4 users created");
+    logger.info("Seeding complete — 2 users created");
   } catch (err) {
     logger.error({ err }, "Seed failed (non-fatal)");
   }

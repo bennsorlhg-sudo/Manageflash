@@ -24,14 +24,14 @@ export default function SupervisorDashboard() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [kpi, setKpi] = useState({
-    ownerTasks: 0,
+    pendingTasks: 0,
     withdrawalTasks: 0,
     repairOpen: 0,
     installPending: 0,
   });
   const [subscriptionValue, setSubscriptionValue] = useState(0);
   const [purchaseRequests, setPurchaseRequests] = useState<any[]>([]);
-  const [ownerTasksList, setOwnerTasksList] = useState<any[]>([]);
+  const [pendingTasksList, setPendingTasksList] = useState<any[]>([]);
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [withdrawalTasks, setWithdrawalTasks] = useState<any[]>([]);
 
@@ -47,8 +47,7 @@ export default function SupervisorDashboard() {
           apiGet("/subscription-deliveries", token).catch(() => []),
         ]);
 
-      /* مهامي: كلها مُسندة لي عبر myTasks=1 */
-      const ownerTasks = (tasks as any[]).filter(
+      const pendingTasks = (tasks as any[]).filter(
         (t: any) => t.status !== "completed" && t.status !== "cancelled"
       );
       const withdrawal = (fieldTasks as any[]).filter(
@@ -68,14 +67,14 @@ export default function SupervisorDashboard() {
       setSubscriptionValue(totalDelivered);
 
       setKpi({
-        ownerTasks: ownerTasks.length,
+        pendingTasks: pendingTasks.length,
         withdrawalTasks: withdrawal.length,
         repairOpen: openRepair.length,
         installPending: pendingInstall.length,
       });
 
       setPurchaseRequests((purchaseReqs as any[]).filter((r: any) => r.status === "pending").slice(0, 5));
-      setOwnerTasksList(ownerTasks.slice(0, 5));
+      setPendingTasksList(pendingTasks.slice(0, 5));
       setRecentTasks((fieldTasks as any[]).slice(0, 5));
       setWithdrawalTasks(withdrawal.slice(0, 5));
     } catch {}
@@ -124,7 +123,7 @@ export default function SupervisorDashboard() {
 
         {/* ─── بطاقات KPI ─── */}
         <View style={styles.kpiRow}>
-          <KpiCard label="مهام المالك"      value={kpi.ownerTasks}    icon="person"    color="#FF9800" onPress={() => router.push("/(supervisor)/tasks")} />
+          <KpiCard label="المهام المعلقة"   value={kpi.pendingTasks}  icon="list"      color="#FF9800" onPress={() => router.push("/(supervisor)/tasks")} />
           <KpiCard label="مهام السحب"       value={kpi.withdrawalTasks} icon="arrow-down-circle" color="#F44336" onPress={() => router.push("/(supervisor)/tasks")} />
         </View>
         <View style={styles.kpiRow}>
@@ -174,15 +173,15 @@ export default function SupervisorDashboard() {
           ))}
         </ListSection>
 
-        {/* ─── مهام المالك ─── */}
+        {/* ─── المهام المعلقة ─── */}
         <ListSection
-          title="مهام المالك"
-          badge={ownerTasksList.length}
+          title="المهام المعلقة"
+          badge={pendingTasksList.length}
           badgeColor="#FF9800"
-          empty="لا توجد مهام من المالك"
+          empty="لا توجد مهام معلقة"
           onMore={() => router.push("/(supervisor)/tasks")}
         >
-          {ownerTasksList.map((t) => (
+          {pendingTasksList.map((t) => (
             <ListCard key={t.id} onPress={() => router.push("/(supervisor)/tasks")}>
               <View style={styles.cardRow}>
                 <Text style={styles.cardTitle}>{t.title ?? t.description ?? "مهمة"}</Text>

@@ -17,8 +17,6 @@ export function useRoleGuard(requiredRole: UserRole) {
 
     if (user.role !== requiredRole) {
       const ROLE_ROUTES: Record<UserRole, string> = {
-        owner: "/(owner)",
-        finance_manager: "/(finance)",
         supervisor: "/(supervisor)",
         tech_engineer: "/(tech)",
       };

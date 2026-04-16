@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, type ReactNode }
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { setAuthTokenGetter } from "@workspace/api-client-react";
 
-export type UserRole = "owner" | "finance_manager" | "supervisor" | "tech_engineer";
+export type UserRole = "supervisor" | "tech_engineer";
 
 export interface AuthUser {
   id: number;
