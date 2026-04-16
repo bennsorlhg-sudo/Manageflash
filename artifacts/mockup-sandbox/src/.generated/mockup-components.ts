@@ -7,16 +7,6 @@ export const modules: ModuleMap = {
   "./components/mockups/OwnerDashboard.tsx": () => import("../components/mockups/OwnerDashboard.tsx"),
   "./components/mockups/PurchaseRequests.tsx": () => import("../components/mockups/PurchaseRequests.tsx"),
   "./components/mockups/RepairTicket.tsx": () => import("../components/mockups/RepairTicket.tsx"),
-  "./components/mockups/SalesPointsList.tsx": () => import("../components/mockups/SalesPointsList.tsx"),
   "./components/mockups/SupervisorDashboard.tsx": () => import("../components/mockups/SupervisorDashboard.tsx"),
   "./components/mockups/TechEngineerHome.tsx": () => import("../components/mockups/TechEngineerHome.tsx"),
-  "./components/mockups/finance/CollectScreen.tsx": () => import("../components/mockups/finance/CollectScreen.tsx"),
-  "./components/mockups/finance/CustodyScreen.tsx": () => import("../components/mockups/finance/CustodyScreen.tsx"),
-  "./components/mockups/finance/DebtsLoansScreen.tsx": () => import("../components/mockups/finance/DebtsLoansScreen.tsx"),
-  "./components/mockups/finance/DisburseScreen.tsx": () => import("../components/mockups/finance/DisburseScreen.tsx"),
-  "./components/mockups/finance/ExpensesScreen.tsx": () => import("../components/mockups/finance/ExpensesScreen.tsx"),
-  "./components/mockups/finance/FinanceDashboard.tsx": () => import("../components/mockups/finance/FinanceDashboard.tsx"),
-  "./components/mockups/finance/ManageSalesScreen.tsx": () => import("../components/mockups/finance/ManageSalesScreen.tsx"),
-  "./components/mockups/finance/SalesScreen.tsx": () => import("../components/mockups/finance/SalesScreen.tsx"),
-  "./components/mockups/finance/SellScreen.tsx": () => import("../components/mockups/finance/SellScreen.tsx")
 };

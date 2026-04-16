@@ -12,8 +12,6 @@ export default function IndexRoute() {
   switch (user.role) {
     case "owner":
       return <Redirect href="/(owner)" />;
-    case "finance_manager":
-      return <Redirect href="/(finance)" />;
     case "supervisor":
       return <Redirect href="/(supervisor)" />;
     case "tech_engineer":
